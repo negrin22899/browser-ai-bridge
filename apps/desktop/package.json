@@ -1,0 +1,82 @@
+{
+  "name": "@bab/desktop",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Desktop application for Browser AI Bridge",
+  "author": "Browser AI Bridge Team",
+  "main": "src/main.js",
+  "scripts": {
+    "dev": "concurrently \"npm run dev:dashboard\" \"wait-on http://localhost:5173 && electron .\"",
+    "dev:dashboard": "npm run dev -w @bab/dashboard",
+    "build": "npm run build:dashboard && tsc && electron-builder",
+    "build:dashboard": "npm run build -w @bab/dashboard",
+    "start": "electron .",
+    "pack": "electron-builder --dir",
+    "dist": "electron-builder",
+    "dist:win": "electron-builder --win",
+    "dist:mac": "electron-builder --mac",
+    "dist:linux": "electron-builder --linux"
+  },
+  "dependencies": {
+    "@bab/api": "file:../../packages/api",
+    "@bab/core": "file:../../packages/core",
+    "@bab/runtime": "file:../../packages/runtime",
+    "@bab/playwright-provider": "file:../../packages/playwright-provider",
+    "@bab/tools-fs": "file:../../packages/tools/fs",
+    "@bab/tools-git": "file:../../packages/tools/git",
+    "@bab/tools-shell": "file:../../packages/tools/shell",
+    "electron-store": "^8.0.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "concurrently": "^8.0.0",
+    "electron": "^30.0.0",
+    "electron-builder": "^24.0.0",
+    "typescript": "^5.6.0",
+    "wait-on": "^7.0.0"
+  },
+  "build": {
+    "appId": "com.bab.desktop",
+    "productName": "Browser AI Bridge",
+    "directories": {
+      "output": "release"
+    },
+    "files": [
+      "src/**/*.js",
+      "node_modules/**/*",
+      "!node_modules/@bab/*/src/**/*",
+      "package.json"
+    ],
+    "extraResources": [
+      {
+        "from": "../dashboard/dist",
+        "to": "dashboard"
+      }
+    ],
+    "win": {
+      "target": [
+        {
+          "target": "nsis",
+          "arch": ["x64"]
+        }
+      ],
+      "icon": "build/icon.ico"
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "Browser AI Bridge"
+    },
+    "mac": {
+      "target": ["dmg", "zip"],
+      "icon": "build/icon.icns"
+    },
+    "linux": {
+      "target": ["AppImage", "deb"],
+      "icon": "build/icon.png",
+      "category": "Development"
+    }
+  }
+}

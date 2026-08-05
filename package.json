@@ -1,0 +1,34 @@
+{
+  "name": "browser-ai-bridge",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Local runtime bridging browser AI with developer tools via Tool Negotiation",
+  "license": "MIT",
+  "workspaces": [
+    "apps/*",
+    "packages/*",
+    "packages/tools/*",
+    "examples/*",
+    "!apps/desktop"
+  ],
+  "engines": {
+    "node": ">=20.0.0"
+  },
+  "scripts": {
+    "build": "npm run build --workspaces",
+    "test": "npm run test --workspaces",
+    "lint": "npm run lint --workspaces",
+    "clean": "npm run clean --workspaces",
+    "dashboard": "npm run dev -w @bab/dashboard",
+    "start": "node scripts/start-dashboard.js"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "typescript": "^5.6.0",
+    "vitest": "^3.0.0"
+  },
+  "dependencies": {
+    "@hono/node-server": "^2.0.12",
+    "commander": "^15.0.0"
+  }
+}

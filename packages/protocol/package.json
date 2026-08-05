@@ -1,0 +1,17 @@
+{
+  "name": "@bab/protocol",
+  "version": "0.1.0",
+  "description": "TypeScript types and interfaces for Browser AI Bridge",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "scripts": {
+    "build": "tsc --project tsconfig.build.json",
+    "test": "vitest run",
+    "clean": "rm -rf dist"
+  },
+  "devDependencies": {
+    "typescript": "^5.6.0"
+  }
+}
+
+

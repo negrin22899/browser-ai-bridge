@@ -1,0 +1,18 @@
+{
+  "name": "@bab/integration-tests",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "test": "vitest run"
+  },
+  "devDependencies": {
+    "@bab/api": "file:../../packages/api",
+    "@bab/core": "file:../../packages/core",
+    "@bab/runtime": "file:../../packages/runtime",
+    "@bab/prompt-engine": "file:../../packages/prompt-engine",
+    "@bab/tools-fs": "file:../../packages/tools/fs",
+    "@bab/tools-git": "file:../../packages/tools/git",
+    "@bab/tools-shell": "file:../../packages/tools/shell",
+    "vitest": "^3.0.0"
+  }
+}

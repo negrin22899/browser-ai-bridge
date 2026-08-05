@@ -1,0 +1,25 @@
+// Core components
+export { PlaywrightProvider } from './playwright-provider.js';
+export type { PlaywrightProviderOptions } from './playwright-provider.js';
+
+// Adapter abstraction
+export { PlaywrightAdapter } from './playwright-adapter.js';
+export type { PlaywrightAdapterConfig } from './playwright-adapter.js';
+
+// Browser session management
+export { BrowserSession } from './browser-session.js';
+export { TabManager } from './tab-manager.js';
+
+// Message handling
+export { MessageSender } from './message-sender.js';
+export { ResponseReader } from './response-reader.js';
+export type { ResponseReaderOptions } from './response-reader.js';
+
+// Site-specific adapters
+export { GeminiAdapter } from './adapters/gemini-adapter.js';
+export { ChatGPTAdapter } from './adapters/chatgpt-adapter.js';
+export { ClaudeAdapter } from './adapters/claude-adapter.js';
+export { DeepSeekAdapter } from './adapters/deepseek-adapter.js';
+
+// CDP client
+export { CDPClient } from './cdp-client.js';

@@ -1,0 +1,36 @@
+{
+  "name": "@bab/provider-gemini",
+  "version": "0.1.0",
+  "description": "Gemini provider plugin for Browser AI Bridge",
+  "type": "module",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "bab": {
+    "name": "provider-gemini",
+    "version": "0.1.0",
+    "description": "Google Gemini AI provider",
+    "provides": {
+      "providers": [
+        {
+          "id": "gemini",
+          "name": "Google Gemini",
+          "type": "browser",
+          "capabilities": ["streaming", "images", "files", "thinking", "webSearch", "markdown", "codeGeneration", "multiModal"]
+        }
+      ]
+    }
+  },
+  "scripts": {
+    "build": "tsc --project tsconfig.json",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@bab/protocol": "*",
+    "@bab/core": "*",
+    "@bab/playwright-provider": "*"
+  },
+  "devDependencies": {
+    "typescript": "^5.6.0",
+    "vitest": "^3.0.0"
+  }
+}

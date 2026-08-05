@@ -1,0 +1,21 @@
+{
+  "name": "@bab/prompt-engine",
+  "version": "0.1.0",
+  "description": "System prompt generator with Tool Negotiation for Browser AI Bridge",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "scripts": {
+    "build": "tsc --project tsconfig.build.json",
+    "test": "vitest run",
+    "clean": "rm -rf dist"
+  },
+  "dependencies": {
+    "@bab/protocol": "*"
+  },
+  "devDependencies": {
+    "typescript": "^5.6.0",
+    "vitest": "^3.0.0"
+  }
+}
+
+
