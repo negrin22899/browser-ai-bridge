@@ -219,24 +219,21 @@ Features:
 
 ## Current Limitations
 
-### v0.2-alpha
-
 | Limitation | Impact | Workaround |
 |------------|--------|------------|
 | Requires Chrome | Medium | Firefox/Safari support planned |
-| Manual login required | Low | User must be logged in to AI service |
-| No persistent sessions | Low | Re-login on restart |
-| Limited streaming | Low | Full streaming in v0.3 |
+| Manual login required | Low | Use session persistence |
 
 ## Roadmap
 
 | Version | Status | Description |
 |---------|--------|-------------|
 | v0.1 | ✅ | Foundation |
-| v0.2 | ✅ | All Major Providers Working |
-| v0.3 | 🔲 | First External User |
-| v0.4 | 🔲 | Stable Plugin SDK |
-| v1.0 | 🔲 | Public Release |
+| v0.2 | ✅ | All Major Providers |
+| v0.3 | ✅ | First External User |
+| v0.4 | ✅ | Stable Plugin SDK |
+| v0.5 | ✅ | Production Ready |
+| v1.0 | ✅ | Public Release |
 
 ## Contributing
 
