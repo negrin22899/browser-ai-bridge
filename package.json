@@ -17,6 +17,9 @@
   "scripts": {
     "setup": "node setup.js",
     "build": "npm run build --workspaces",
+    "build:desktop": "cd apps/desktop && npm run build:win",
+    "build:desktop:mac": "cd apps/desktop && npm run build:mac",
+    "build:desktop:linux": "cd apps/desktop && npm run build:linux",
     "test": "npm run test --workspaces",
     "lint": "npm run lint --workspaces",
     "clean": "npm run clean --workspaces",
