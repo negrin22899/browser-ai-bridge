@@ -17,28 +17,19 @@ OpenCode → Browser AI Bridge → AI Provider → Browser → Your Files → Re
 ✔ **Browser Providers** — Gemini, ChatGPT, Claude, DeepSeek via Playwright  
 ✔ **Recording & Replay** — Debug AI interactions  
 
-## Quick Start
+## Quick Start (5 minutes)
 
 ```bash
-# Install
-npm install
-npm run build
+# Clone and setup
+git clone https://github.com/negrin22899/browser-ai-bridge.git
+cd browser-ai-bridge
+npm run setup
 
-# Run doctor to check setup
-node apps/cli/dist/index.js doctor
-
-# Start with Gemini
+# Start with your AI
 node apps/cli/dist/index.js serve --site gemini
-
-# Start with ChatGPT
-node apps/cli/dist/index.js serve --site chatgpt
-
-# Start with Claude
-node apps/cli/dist/index.js serve --site claude
-
-# Start with DeepSeek
-node apps/cli/dist/index.js serve --site deepseek
 ```
+
+> **New here?** See [QUICK_START.md](./QUICK_START.md) or [USER_GUIDE.md](./USER_GUIDE.md)
 
 ## Supported Providers
 
@@ -197,6 +188,12 @@ Features:
 
 ## Documentation
 
+**For Users:**
+- [Quick Start Guide](./QUICK_START.md) - Get started in 5 minutes
+- [User Guide](./USER_GUIDE.md) - Complete user documentation
+- [API Reference](./docs/api-reference.md) - API documentation
+
+**For Developers:**
 - [Provider SDK Guide](./docs/provider-sdk.md)
 - [Tool SDK Guide](./docs/tool-sdk.md)
 - [Plugin SDK Guide](./docs/plugin-sdk.md)

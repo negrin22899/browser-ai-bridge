@@ -15,6 +15,7 @@
     "node": ">=20.0.0"
   },
   "scripts": {
+    "setup": "node setup.js",
     "build": "npm run build --workspaces",
     "test": "npm run test --workspaces",
     "lint": "npm run lint --workspaces",

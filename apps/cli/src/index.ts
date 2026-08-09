@@ -22,7 +22,7 @@ const program = new Command();
 program
   .name('bab')
   .description('Browser AI Bridge - Use browser AI in your local environment')
-  .version('0.2.0');
+  .version('1.0.0');
 
 // Doctor command
 program
