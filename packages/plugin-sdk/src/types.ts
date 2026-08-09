@@ -1,4 +1,4 @@
-import type { Provider, Tool, ToolDescription } from '@bab/protocol';
+import type { Provider, Tool } from '@bab/protocol';
 
 /**
  * Plugin manifest - describes a plugin

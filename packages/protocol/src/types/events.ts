@@ -18,6 +18,18 @@ export type EventMap = {
 
   'session.created': { sessionId: string };
   'session.closed': { sessionId: string };
+
+  'recording.started': { sessionId: string };
+  'recording.stopped': { sessionId: string };
+
+  'replay.started': { sessionId: string };
+  'replay.completed': { sessionId: string; result?: unknown };
+  'replay.error': { sessionId: string; error: string };
+  'replay.request': { sessionId: string; data: unknown };
+  'replay.response': { sessionId: string; data: unknown };
+  'replay.tool_call': { sessionId: string; data: unknown };
+  'replay.tool_result': { sessionId: string; data: unknown };
+  'replay.permission': { sessionId: string; data: unknown };
 };
 
 export type EventHandler<T> = (data: T) => void | Promise<void>;

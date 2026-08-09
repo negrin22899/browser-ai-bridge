@@ -11,6 +11,8 @@ export type * from './types/bridge-protocol.js';
 
 // Adapters
 export { OpenAIAdapter } from './adapters/openai-adapter.js';
+export { AnthropicAdapter } from './adapters/anthropic-adapter.js';
+export { GoogleAdapter } from './adapters/google-adapter.js';
 
 // Capability utilities
 export {

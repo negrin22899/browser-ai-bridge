@@ -4,8 +4,9 @@
 
 | Version | Supported |
 |---------|-----------|
-| 0.2.x-alpha | ✅ |
-| < 0.2.0 | ❌ |
+| 1.0.x | ✅ |
+| 0.5.x | ⚠️ Security fixes only |
+| < 0.5.0 | ❌ |
 
 ## Reporting a Vulnerability
 

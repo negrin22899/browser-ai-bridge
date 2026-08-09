@@ -3,12 +3,14 @@ import { cors } from 'hono/cors';
 import type { ProviderManager, SessionManager, Logger } from '@bab/core';
 import type { PromptEngine } from '@bab/prompt-engine';
 import type { ChatCompletionRequest } from '@bab/protocol';
+import { RateLimiter } from './rate-limiter.js';
 
 interface ServerDeps {
   providerManager: ProviderManager;
   sessionManager: SessionManager;
   logger: Logger;
   promptEngine: PromptEngine;
+  rateLimiter?: RateLimiter;
 }
 
 /**
@@ -17,8 +19,30 @@ interface ServerDeps {
 export function createServer(deps: ServerDeps): Hono {
   const app = new Hono();
   const { providerManager, sessionManager, logger, promptEngine } = deps;
+  const rateLimiter = deps.rateLimiter ?? new RateLimiter();
 
   app.use('*', cors());
+
+  // Rate limiting middleware
+  app.use('*', async (c, next) => {
+    const ip = c.req.header('x-forwarded-for') || c.req.header('x-real-ip') || 'unknown';
+    const { allowed, info } = rateLimiter.check(ip);
+
+    c.header('X-RateLimit-Limit', info.total.toString());
+    c.header('X-RateLimit-Remaining', info.remaining.toString());
+    c.header('X-RateLimit-Reset', info.reset.toString());
+
+    if (!allowed) {
+      return c.json({
+        error: {
+          message: 'Rate limit exceeded',
+          type: 'rate_limit_error',
+        },
+      }, 429);
+    }
+
+    return next();
+  });
 
   // Health check
   app.get('/health', async (c) => {

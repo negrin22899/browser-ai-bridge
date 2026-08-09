@@ -53,11 +53,15 @@ export class Replay {
 
       try {
         // Emit the action as if it's happening now
-        this.eventBus.emit(`replay.${action.type}`, {
-          ...action.data,
-          replayIndex: i,
-          originalTimestamp: action.timestamp,
-        });
+        const replayData = {
+          sessionId: recording.id,
+          data: {
+            ...((action.data as Record<string, unknown>) || {}),
+            replayIndex: i,
+            originalTimestamp: action.timestamp,
+          },
+        };
+        this.eventBus.emit(`replay.${action.type}` as any, replayData);
 
         // Call callback if provided
         options?.onAction?.(action, i);
@@ -84,7 +88,7 @@ export class Replay {
 
     this.eventBus.emit('replay.completed', {
       sessionId: recording.id,
-      result,
+      result: result as unknown,
     });
 
     return result;
@@ -94,7 +98,10 @@ export class Replay {
    * Replay a single action
    */
   async replayAction(action: RecordedAction): Promise<void> {
-    this.eventBus.emit(`replay.${action.type}`, action.data);
+    this.eventBus.emit(`replay.${action.type}` as any, {
+      sessionId: 'single-replay',
+      data: action.data,
+    });
   }
 
   /**

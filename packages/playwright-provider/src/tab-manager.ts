@@ -1,4 +1,4 @@
-import type { Browser, Page } from 'playwright-core';
+import type { Browser } from 'playwright-core';
 import { BrowserSession } from './browser-session.js';
 
 /**

@@ -6,7 +6,6 @@ import type {
   ToolContext,
   ToolDescription,
   PermissionEngine as IPermissionEngine,
-  PermissionResult,
   PermissionContext,
   ToolScope,
   AuditLogger as IAuditLogger,

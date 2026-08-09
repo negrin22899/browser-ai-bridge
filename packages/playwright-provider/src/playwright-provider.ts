@@ -2,12 +2,14 @@ import type {
   Provider,
   ProviderStatus,
   ProviderType,
+  ProviderCapabilities,
   HealthCheckResult,
   ChatCompletionRequest,
   ChatCompletionResponse,
   ChatCompletionChunk,
   ToolDescription,
 } from '@bab/protocol';
+import { DEFAULT_CAPABILITIES } from '@bab/protocol';
 import { chromium, type Browser } from 'playwright-core';
 import type { PlaywrightAdapter } from './playwright-adapter.js';
 import type { BrowserSession } from './browser-session.js';
@@ -136,32 +138,56 @@ export class PlaywrightProvider implements Provider {
   }
 
   async *stream(request: ChatCompletionRequest): AsyncIterable<ChatCompletionChunk> {
-    // For now, convert non-streaming to streaming
-    const response = await this.send(request);
+    if (this._status !== 'connected' || !this.session) {
+      throw new Error('Provider not connected');
+    }
 
-    yield {
-      id: response.id,
-      object: 'chat.completion.chunk',
-      created: response.created,
-      model: response.model,
-      choices: [{
-        index: 0,
-        delta: response.choices[0].message,
-        finish_reason: null,
-      }],
-    };
+    this._status = 'busy';
+    const chunkId = `pw-${Date.now()}`;
 
-    yield {
-      id: response.id,
-      object: 'chat.completion.chunk',
-      created: response.created,
-      model: response.model,
-      choices: [{
-        index: 0,
-        delta: {},
-        finish_reason: 'stop',
-      }],
-    };
+    try {
+      // Get the last user message
+      const userMessage = request.messages[request.messages.length - 1]?.content ?? '';
+
+      // Send message to AI
+      await this.adapter.sendMessage(this.session, userMessage);
+
+      // Stream response chunks
+      for await (const chunk of this.adapter.streamResponse(this.session)) {
+        yield {
+          id: chunkId,
+          object: 'chat.completion.chunk',
+          created: Math.floor(Date.now() / 1000),
+          model: request.model,
+          choices: [{
+            index: 0,
+            delta: {
+              role: 'assistant',
+              content: chunk,
+            },
+            finish_reason: null,
+          }],
+        };
+      }
+
+      // Send final chunk
+      yield {
+        id: chunkId,
+        object: 'chat.completion.chunk',
+        created: Math.floor(Date.now() / 1000),
+        model: request.model,
+        choices: [{
+          index: 0,
+          delta: {},
+          finish_reason: 'stop',
+        }],
+      };
+
+      this._status = 'connected';
+    } catch (error) {
+      this._status = 'error';
+      throw error;
+    }
   }
 
   async health(): Promise<HealthCheckResult> {
@@ -204,6 +230,15 @@ export class PlaywrightProvider implements Provider {
 
   getTools(): ToolDescription[] {
     return this.tools;
+  }
+
+  getCapabilities(): ProviderCapabilities {
+    return {
+      ...DEFAULT_CAPABILITIES,
+      streaming: true,
+      markdown: true,
+      codeGeneration: true,
+    };
   }
 
   cancel(): void {

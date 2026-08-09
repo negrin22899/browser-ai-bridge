@@ -19,6 +19,7 @@ export class PluginLoader {
   private config: PluginLoaderConfig;
   private eventBus: EventBus;
   private pluginContexts = new Map<string, PluginContext>();
+  private watchers: Map<string, fs.FSWatcher> = new Map();
 
   constructor(eventBus: EventBus, config?: Partial<PluginLoaderConfig>) {
     this.eventBus = eventBus;
@@ -260,6 +261,73 @@ export class PluginLoader {
       getLogger: (name) => this.createLogger(entry.manifest.name, name),
       resolvePath: (...segments) => path.join(entry.path, ...segments),
     };
+  }
+
+  /**
+   * Reload a specific plugin (unload + load)
+   */
+  async reload(pluginName: string): Promise<void> {
+    const entry = this.registry.get(pluginName);
+    if (!entry) {
+      throw new Error(`Plugin "${pluginName}" not found in registry`);
+    }
+
+    // Unload if loaded
+    if (entry.loaded) {
+      await this.unload(pluginName);
+    }
+
+    // Clear module cache for this plugin
+    const pluginPath = path.join(entry.path, 'dist', 'index.js');
+    delete require.cache[pluginPath];
+
+    // Reload
+    await this.load(pluginName);
+
+    this.eventBus.emit('plugin.reloaded', { name: pluginName });
+  }
+
+  /**
+   * Start watching for plugin changes
+   */
+  startWatching(): void {
+    if (!this.config.watch) return;
+
+    for (const dir of this.config.directories) {
+      const resolvedDir = path.resolve(dir);
+      if (!fs.existsSync(resolvedDir)) continue;
+
+      try {
+        const watcher = fs.watch(resolvedDir, { recursive: true }, (_eventType, filename) => {
+          if (!filename) return;
+
+          // Find which plugin was changed
+          for (const [name, entry] of this.registry) {
+            if (filename.startsWith(path.basename(entry.path))) {
+              console.log(`Plugin "${name}" changed, reloading...`);
+              this.reload(name).catch(err => {
+                console.error(`Failed to reload plugin "${name}":`, err);
+              });
+              break;
+            }
+          }
+        });
+
+        this.watchers.set(resolvedDir, watcher);
+      } catch (error) {
+        console.error(`Failed to watch directory "${resolvedDir}":`, error);
+      }
+    }
+  }
+
+  /**
+   * Stop watching for plugin changes
+   */
+  stopWatching(): void {
+    for (const watcher of this.watchers.values()) {
+      watcher.close();
+    }
+    this.watchers.clear();
   }
 
   /**

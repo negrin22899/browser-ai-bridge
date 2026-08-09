@@ -1,4 +1,4 @@
-import type { Browser, Page } from 'playwright-core';
+import type { Browser } from 'playwright-core';
 import { BrowserSession } from './browser-session.js';
 import { TabManager } from './tab-manager.js';
 import { MessageSender } from './message-sender.js';
@@ -75,6 +75,10 @@ export class PlaywrightAdapter {
 
   async readResponse(session: BrowserSession): Promise<string> {
     return await this.responseReader.waitForResponse(session);
+  }
+
+  async *streamResponse(session: BrowserSession): AsyncIterable<string> {
+    yield* this.responseReader.streamResponse(session);
   }
 
   async isReady(session: BrowserSession): Promise<boolean> {

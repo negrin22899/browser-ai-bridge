@@ -1,0 +1,31 @@
+# Browser AI Bridge - Code Owners
+
+# Default owner for everything
+*       @browser-ai-bridge/core
+
+# Core packages
+packages/protocol/      @browser-ai-bridge/core
+packages/core/          @browser-ai-bridge/core
+packages/runtime/       @browser-ai-bridge/core
+packages/api/           @browser-ai-bridge/core
+
+# Provider packages
+packages/playwright-provider/   @browser-ai-bridge/providers
+plugins/                        @browser-ai-bridge/providers
+
+# Plugin SDK
+packages/plugin-sdk/    @browser-ai-bridge/sdk
+
+# Tools
+packages/tools/         @browser-ai-bridge/tools
+
+# Documentation
+docs/                   @browser-ai-bridge/docs
+*.md                    @browser-ai-bridge/docs
+
+# CI/CD
+.github/                @browser-ai-bridge/devops
+scripts/                @browser-ai-bridge/devops
+
+# Extensions
+extensions/             @browser-ai-bridge/extensions

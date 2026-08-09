@@ -2,10 +2,10 @@
 
 **Open Runtime for AI Providers**
 
-Use browser AI (Gemini, ChatGPT, Claude) in your local development environment.
+Use browser AI (Gemini, ChatGPT, Claude, DeepSeek) in your local development environment.
 
 ```
-OpenCode → Browser AI Bridge → Gemini → Browser → Your Files → Response
+OpenCode → Browser AI Bridge → AI Provider → Browser → Your Files → Response
 ```
 
 ## Features
@@ -14,7 +14,7 @@ OpenCode → Browser AI Bridge → Gemini → Browser → Your Files → Respons
 ✔ **Plugin SDK** — Extend with custom providers and tools  
 ✔ **Runtime Engine** — Execute tools with permissions  
 ✔ **Permission System** — Auto/Confirm/Deny for safety  
-✔ **Browser Providers** — Gemini, ChatGPT, Claude via Playwright  
+✔ **Browser Providers** — Gemini, ChatGPT, Claude, DeepSeek via Playwright  
 ✔ **Recording & Replay** — Debug AI interactions  
 
 ## Quick Start
@@ -28,8 +28,26 @@ npm run build
 node apps/cli/dist/index.js doctor
 
 # Start with Gemini
-node apps/cli/dist/index.js serve --site https://gemini.google.com
+node apps/cli/dist/index.js serve --site gemini
+
+# Start with ChatGPT
+node apps/cli/dist/index.js serve --site chatgpt
+
+# Start with Claude
+node apps/cli/dist/index.js serve --site claude
+
+# Start with DeepSeek
+node apps/cli/dist/index.js serve --site deepseek
 ```
+
+## Supported Providers
+
+| Provider | URL | Status |
+|----------|-----|--------|
+| Google Gemini | gemini.google.com | ✅ Working |
+| ChatGPT | chatgpt.com | ✅ Working |
+| Claude | claude.ai | ✅ Working |
+| DeepSeek | chat.deepseek.com | ✅ Working |
 
 ## Architecture
 
@@ -62,7 +80,7 @@ node apps/cli/dist/index.js serve --site https://gemini.google.com
        ▼                 ▼                 ▼
 ┌─────────────────────────────────────────────────────────────┐
 │                      Browser (Playwright)                    │
-│         gemini.google.com / chat.openai.com / claude.ai     │
+│    gemini.google.com / chatgpt.com / claude.ai / deepseek   │
 └─────────────────────────────────────────────────────────────┘
 ```
 
@@ -85,8 +103,19 @@ curl http://localhost:3000/v1/chat/completions \
 curl http://localhost:3000/v1/chat/completions \
   -H "Content-Type: application/json" \
   -d '{
-    "model": "gemini",
+    "model": "chatgpt",
     "messages": [{"role": "user", "content": "Show git status"}]
+  }'
+```
+
+### Use Claude
+
+```bash
+curl http://localhost:3000/v1/chat/completions \
+  -H "Content-Type: application/json" \
+  -d '{
+    "model": "claude",
+    "messages": [{"role": "user", "content": "Explain this code"}]
   }'
 ```
 
@@ -139,11 +168,17 @@ bab doctor
 # Collect diagnostic info
 bab diagnose
 
-# Start API server
-bab serve --site https://gemini.google.com
+# List available providers
+bab providers
+
+# Start API server with specific provider
+bab serve --site gemini
+bab serve --site chatgpt
+bab serve --site claude
+bab serve --site deepseek
 
 # Quick chat
-bab chat "Read package.json"
+bab chat "Read package.json" --site chatgpt
 ```
 
 ## Dashboard
@@ -169,44 +204,36 @@ Features:
 - [Known Limitations](./KNOWN_LIMITATIONS.md)
 - [Roadmap](./docs/roadmap.md)
 
-## Current Limitations
-
-### v0.2-alpha
-
-| Limitation | Impact | Workaround |
-|------------|--------|------------|
-| Gemini only | Medium | ChatGPT/Claude planned for v0.3 |
-| Requires Chrome | Medium | Firefox/Safari support planned |
-| Manual login required | Low | User must be logged in to Gemini |
-| No persistent sessions | Low | Re-login on restart |
-| Limited streaming | Low | Full streaming in v0.3 |
-
-### What Works
+## What Works
 
 - ✅ OpenAI-compatible API (`/v1/chat/completions`, `/v1/responses`)
 - ✅ Gemini Provider via Playwright
+- ✅ ChatGPT Provider via Playwright
+- ✅ Claude Provider via Playwright
+- ✅ DeepSeek Provider via Playwright
 - ✅ File reading with permissions
 - ✅ Git operations (status, diff, log)
 - ✅ Runtime Inspector (real-time)
 - ✅ Audit logging
 - ✅ Plugin system
 
-### What Doesn't Work Yet
+## Current Limitations
 
-- ❌ ChatGPT provider
-- ❌ Claude provider
-- ❌ DeepSeek provider
-- ❌ Local models
-- ❌ Persistent browser sessions
-- ❌ Automatic re-login
-- ❌ Multi-tab support
+### v0.2-alpha
+
+| Limitation | Impact | Workaround |
+|------------|--------|------------|
+| Requires Chrome | Medium | Firefox/Safari support planned |
+| Manual login required | Low | User must be logged in to AI service |
+| No persistent sessions | Low | Re-login on restart |
+| Limited streaming | Low | Full streaming in v0.3 |
 
 ## Roadmap
 
 | Version | Status | Description |
 |---------|--------|-------------|
 | v0.1 | ✅ | Foundation |
-| v0.2 | 🔄 | First Working Provider |
+| v0.2 | ✅ | All Major Providers Working |
 | v0.3 | 🔲 | First External User |
 | v0.4 | 🔲 | Stable Plugin SDK |
 | v1.0 | 🔲 | Public Release |
@@ -222,7 +249,3 @@ See [SECURITY.md](./SECURITY.md).
 ## License
 
 MIT
-
----
-
-**One provider that works flawlessly > Five providers with stubs.**

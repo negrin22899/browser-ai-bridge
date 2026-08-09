@@ -252,6 +252,81 @@ const plugin: Plugin = {
 };
 ```
 
+## Plugin Builder (New!)
+
+Use the fluent API to create plugins easily:
+
+```typescript
+import { createPlugin, createProviderPlugin, createToolPlugin } from '@bab/plugin-sdk';
+
+// Using builder pattern
+const myPlugin = createPlugin('my-plugin', '1.0.0', 'My awesome plugin')
+  .provider(new MyProvider())
+  .tool(new MyTool())
+  .onInit(async (ctx) => {
+    console.log('Plugin initialized!');
+  })
+  .onShutdown(async () => {
+    console.log('Plugin shutting down');
+  })
+  .onHealth(async () => {
+    return { healthy: true };
+  })
+  .build();
+
+// Quick provider plugin
+const providerPlugin = createProviderPlugin(new MyProvider(), {
+  version: '1.0.0',
+  author: 'Your Name',
+});
+
+// Quick tool plugin
+const toolPlugin = createToolPlugin(new MyTool(), {
+  version: '1.0.0',
+  author: 'Your Name',
+});
+```
+
+## Plugin Validation (New!)
+
+Validate plugins before loading:
+
+```typescript
+import { validatePlugin, validateManifest, PluginValidator } from '@bab/plugin-sdk';
+
+// Validate plugin instance
+const result = validatePlugin(myPlugin);
+console.log(result.valid); // true/false
+console.log(result.errors); // ['...']
+console.log(result.warnings); // ['...']
+
+// Validate manifest
+const manifestResult = validateManifest(myManifest);
+
+// Print report
+const validator = new PluginValidator();
+validator.printReport(result, 'my-plugin');
+```
+
+## Hot-Reload (New!)
+
+Plugins can be hot-reloaded without restarting:
+
+```typescript
+const loader = new PluginLoader(eventBus, {
+  watch: true, // Enable file watching
+});
+
+// Start watching for changes
+loader.startWatching();
+
+// Manually reload a plugin
+await loader.reload('my-plugin');
+
+// Stop watching
+loader.stopWatching();
+```
+
 ## Best Practices
 
 1. **Single responsibility**: One plugin = one feature
@@ -260,16 +335,22 @@ const plugin: Plugin = {
 4. **Configuration**: Use `config.json` for settings
 5. **Events**: Use event bus for loose coupling
 6. **Health check**: Implement for monitoring
+7. **Validation**: Use validator to check plugin structure
+8. **Builder pattern**: Use `createPlugin()` for simpler code
 
 ## Publishing
 
 1. Create plugin in `plugins/`
 2. Implement Plugin interface
 3. Add tests
-4. Submit PR
+4. Validate with `validatePlugin()`
+5. Submit PR
 
 ## Examples
 
 See:
 - `plugins/provider-gemini/` - Browser provider example
+- `plugins/provider-chatgpt/` - Browser provider example
+- `plugins/provider-claude/` - Browser provider example
+- `plugins/provider-deepseek/` - Browser provider example
 - `examples/plugins/` - Simple tool example

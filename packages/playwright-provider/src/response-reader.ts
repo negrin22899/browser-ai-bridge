@@ -100,6 +100,53 @@ export class ResponseReader {
     }
   }
 
+  /**
+   * Stream response chunks as they are generated
+   * Yields new content as it appears in the response element
+   */
+  async *streamResponse(session: BrowserSession): AsyncIterable<string> {
+    const startTime = Date.now();
+    let lastContent = '';
+    let stableCount = 0;
+    let yieldedUpTo = 0;
+
+    // Wait for response to start
+    await this.wait(500);
+
+    while (Date.now() - startTime < this.timeout) {
+      // Check if still loading
+      if (this.loadingSelector) {
+        const isLoading = await this.isLoading(session);
+        if (isLoading) {
+          stableCount = 0;
+        }
+      }
+
+      // Get current response content
+      const content = await this.getLatestResponse(session);
+
+      if (content.length > yieldedUpTo) {
+        // Yield new content
+        const newContent = content.slice(yieldedUpTo);
+        yieldedUpTo = content.length;
+        yield newContent;
+      }
+
+      // Check if content is stable (not changing)
+      if (content === lastContent && content.length > 0) {
+        stableCount++;
+        if (stableCount >= 3) {
+          return;
+        }
+      } else {
+        stableCount = 0;
+        lastContent = content;
+      }
+
+      await this.wait(this.pollInterval);
+    }
+  }
+
   private wait(ms: number): Promise<void> {
     return new Promise(resolve => setTimeout(resolve, ms));
   }

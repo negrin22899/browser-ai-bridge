@@ -1,6 +1,6 @@
 ---
 name: Feature Request
-about: Suggest an idea for this project
+about: Suggest an idea for Browser AI Bridge
 title: '[FEATURE] '
 labels: enhancement
 assignees: ''
@@ -8,32 +8,31 @@ assignees: ''
 
 ## Description
 
-A clear and concise description of the feature.
+A clear and concise description of the feature you'd like.
 
-## Problem
+## Problem Statement
 
-What problem does this feature solve?
+A clear and concise description of what problem this feature would solve.
 
 ## Proposed Solution
 
-How you think this should be implemented.
+A clear and concise description of how you'd like this feature to work.
 
 ## Alternatives Considered
 
-Other solutions you've considered.
+A clear and concise description of any alternative solutions or features you've considered.
+
+## Use Cases
+
+Describe specific use cases for this feature:
+
+1. Use case 1: ...
+2. Use case 2: ...
 
 ## Additional Context
 
 Add any other context, screenshots, or examples about the feature request here.
 
-## Impact
+## Implementation Ideas
 
-- [ ] This is a breaking change
-- [ ] This requires documentation updates
-- [ ] This requires new tests
-
-## Checklist
-
-- [ ] I have searched existing issues to avoid duplicates
-- [ ] This feature aligns with the project's goals
-- [ ] I am willing to help implement this feature
+If you have ideas about how to implement this feature, please share them here.

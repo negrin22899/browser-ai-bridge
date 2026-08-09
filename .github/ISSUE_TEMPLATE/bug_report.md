@@ -1,6 +1,6 @@
 ---
 name: Bug Report
-about: Report a bug to help us improve
+about: Report a bug in Browser AI Bridge
 title: '[BUG] '
 labels: bug
 assignees: ''
@@ -8,7 +8,7 @@ assignees: ''
 
 ## Description
 
-A clear and concise description of the bug.
+A clear and concise description of what the bug is.
 
 ## Steps to Reproduce
 
@@ -19,11 +19,11 @@ A clear and concise description of the bug.
 
 ## Expected Behavior
 
-What you expected to happen.
+A clear and concise description of what you expected to happen.
 
 ## Actual Behavior
 
-What actually happened.
+A clear and concise description of what actually happened.
 
 ## Screenshots
 
@@ -33,17 +33,22 @@ If applicable, add screenshots to help explain your problem.
 
 - OS: [e.g., Windows 11, macOS 14, Ubuntu 22.04]
 - Node.js version: [e.g., 20.10.0]
-- Browser AI Bridge version: [e.g., 0.2.0-alpha]
 - Browser: [e.g., Chrome 120, Firefox 121]
+- Browser AI Bridge version: [e.g., 1.0.0]
 
-## Additional Context
+## Provider
 
-Add any other context about the problem here.
+- Provider: [e.g., Gemini, ChatGPT, Claude, DeepSeek]
+- Provider URL: [e.g., https://gemini.google.com]
 
 ## Logs
 
-If applicable, include relevant logs:
+If applicable, add relevant log output.
 
 ```
 Paste logs here
 ```
+
+## Additional Context
+
+Add any other context about the problem here.

@@ -1,6 +1,6 @@
 ## Description
 
-Brief description of the changes.
+Brief description of the changes in this PR.
 
 ## Type of Change
 
@@ -9,6 +9,8 @@ Brief description of the changes.
 - [ ] Breaking change (fix or feature that would cause existing functionality to not work as expected)
 - [ ] Documentation update
 - [ ] Refactoring (no functional changes)
+- [ ] Test update
+- [ ] CI/CD update
 
 ## Related Issues
 
@@ -22,25 +24,27 @@ Closes #(issue number)
 
 ## Testing
 
+Describe the tests that you ran to verify your changes:
+
 - [ ] Unit tests pass
 - [ ] Integration tests pass
-- [ ] Manual testing completed
+- [ ] Manual testing performed
 
 ## Checklist
 
-- [ ] My code follows the project's coding standards
-- [ ] I have performed a self-review of my code
-- [ ] I have commented my code where necessary
-- [ ] I have updated documentation as needed
+- [ ] My code follows the style guidelines of this project
+- [ ] I have performed a self-review of my own code
+- [ ] I have commented my code, particularly in hard-to-understand areas
+- [ ] I have made corresponding changes to the documentation
 - [ ] My changes generate no new warnings
-- [ ] I have added tests that prove my fix/feature works
-- [ ] New and existing unit tests pass locally
-- [ ] Any dependent changes have been merged and published
+- [ ] I have added tests that prove my fix is effective or that my feature works
+- [ ] New and existing unit tests pass locally with my changes
+- [ ] Any dependent changes have been merged and published in downstream modules
 
-## Screenshots (if applicable)
+## Screenshots
 
-Add screenshots to show visual changes.
+If applicable, add screenshots to help explain your changes.
 
 ## Additional Notes
 
-Any additional information that reviewers should know.
+Add any additional notes about the PR here.

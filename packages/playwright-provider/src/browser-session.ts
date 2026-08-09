@@ -1,4 +1,4 @@
-import type { Page, Browser } from 'playwright-core';
+import type { Page, ElementHandle } from 'playwright-core';
 
 /**
  * Browser Session - manages a single browser tab/page
@@ -92,11 +92,18 @@ export class BrowserSession {
     return await this.page.textContent(selector) ?? '';
   }
 
-  async $(selector: string): Promise<any> {
+  async $(selector: string): Promise<ElementHandle | null> {
     if (!this.page) {
       throw new Error('Session not attached to a page');
     }
     return await this.page.$(selector);
+  }
+
+  async $$(selector: string): Promise<ElementHandle[]> {
+    if (!this.page) {
+      throw new Error('Session not attached to a page');
+    }
+    return await this.page.$$(selector);
   }
 
   async close(): Promise<void> {

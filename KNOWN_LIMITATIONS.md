@@ -8,7 +8,7 @@ This document lists current limitations of Browser AI Bridge.
 
 | Limitation | Status | Workaround |
 |------------|--------|------------|
-| Only Gemini provider implemented | In Progress | ChatGPT, Claude planned for v0.3 |
+| All major providers implemented | ✅ Done | Gemini, ChatGPT, Claude, DeepSeek |
 | Provider connects to new browser profile | Known Issue | Manual login required |
 | No persistent browser sessions | Known Issue | Re-login on each restart |
 
@@ -48,8 +48,11 @@ This document lists current limitations of Browser AI Bridge.
 
 ### Must Fix (v0.2)
 
+- [x] Implement real Gemini provider connection
+- [x] Implement real ChatGPT provider connection
+- [x] Implement real Claude provider connection
+- [x] Implement real DeepSeek provider connection
 - [ ] Remove mock provider from integration tests
-- [ ] Implement real Gemini provider connection
 - [ ] Add proper error handling for browser automation
 - [ ] Implement browser session persistence
 
@@ -80,10 +83,10 @@ This document lists current limitations of Browser AI Bridge.
 
 | Service | Status | Notes |
 |---------|--------|-------|
-| Gemini | ✅ Working | Browser automation |
-| ChatGPT | 🔲 Planned | v0.3 |
-| Claude | 🔲 Planned | v0.3 |
-| DeepSeek | 🔲 Planned | v0.4 |
+| Gemini | ✅ Working | Browser automation via gemini.google.com |
+| ChatGPT | ✅ Working | Browser automation via chatgpt.com |
+| Claude | ✅ Working | Browser automation via claude.ai |
+| DeepSeek | ✅ Working | Browser automation via chat.deepseek.com |
 | Local Models | 🔲 Planned | v0.5 |
 
 ## Security Limitations

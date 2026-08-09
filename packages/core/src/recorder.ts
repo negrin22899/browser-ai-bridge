@@ -31,17 +31,21 @@ export class Recorder {
   private recordings = new Map<string, RecordingSession>();
   private currentSession: string | null = null;
   private eventBus: EventBus;
-  private maxRecordings: number;
+  private _maxRecordings: number;
   private autoRecord: boolean;
 
   constructor(eventBus: EventBus, options?: { maxRecordings?: number; autoRecord?: boolean }) {
     this.eventBus = eventBus;
-    this.maxRecordings = options?.maxRecordings ?? 100;
+    this._maxRecordings = options?.maxRecordings ?? 100;
     this.autoRecord = options?.autoRecord ?? false;
 
     if (this.autoRecord) {
       this.setupAutoRecord();
     }
+  }
+
+  get maxRecordings(): number {
+    return this._maxRecordings;
   }
 
   /**

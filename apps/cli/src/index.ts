@@ -6,10 +6,10 @@ import { Router, SessionManager, EventBus, Logger } from '@bab/core';
 import { PromptEngine } from '@bab/prompt-engine';
 import { ToolDispatcher } from '@bab/runtime';
 import { PlaywrightProvider } from '@bab/playwright-provider';
-import { GeminiAdapter } from '@bab/playwright-provider';
-import { ChatGPTAdapter } from '@bab/playwright-provider';
-import { ClaudeAdapter } from '@bab/playwright-provider';
-import { DeepSeekAdapter } from '@bab/playwright-provider';
+import { GeminiPlaywrightAdapter } from '@bab/playwright-provider';
+import { ChatGPTPlaywrightAdapter } from '@bab/playwright-provider';
+import { ClaudePlaywrightAdapter } from '@bab/playwright-provider';
+import { DeepSeekPlaywrightAdapter } from '@bab/playwright-provider';
 import { FsReadTool, FsWriteTool } from '@bab/tools-fs';
 import { GitStatusTool, GitDiffTool, GitCommitTool } from '@bab/tools-git';
 import { ShellExecTool } from '@bab/tools-shell';
@@ -54,13 +54,75 @@ program
     console.log('Attach this file to your bug report.\n');
   });
 
-// Helper function to get adapter by site URL
-function getAdapter(siteUrl: string) {
-  if (siteUrl.includes('gemini.google.com')) return new GeminiAdapter();
-  if (siteUrl.includes('chat.openai.com') || siteUrl.includes('chatgpt.com')) return new ChatGPTAdapter();
-  if (siteUrl.includes('claude.ai')) return new ClaudeAdapter();
-  if (siteUrl.includes('chat.deepseek.com')) return new DeepSeekAdapter();
-  return new GeminiAdapter(); // Default
+// List providers command
+program
+  .command('providers')
+  .description('List available AI providers')
+  .action(() => {
+    console.log('\nAvailable AI Providers:');
+    console.log('='.repeat(50));
+    console.log('');
+    console.log('  gemini      - Google Gemini (gemini.google.com)');
+    console.log('  chatgpt     - ChatGPT (chatgpt.com)');
+    console.log('  claude      - Claude (claude.ai)');
+    console.log('  deepseek    - DeepSeek (chat.deepseek.com)');
+    console.log('');
+    console.log('Usage:');
+    console.log('  bab serve --site https://gemini.google.com');
+    console.log('  bab serve --site https://chatgpt.com');
+    console.log('  bab serve --site https://claude.ai');
+    console.log('  bab serve --site https://chat.deepseek.com');
+    console.log('');
+    console.log('='.repeat(50));
+  });
+
+// Helper function to get adapter by site URL or provider name
+function getAdapter(siteUrlOrName: string) {
+  const normalized = siteUrlOrName.toLowerCase().trim();
+
+  // Check by provider name
+  if (normalized === 'gemini' || normalized === 'google') {
+    return new GeminiPlaywrightAdapter();
+  }
+  if (normalized === 'chatgpt' || normalized === 'openai') {
+    return new ChatGPTPlaywrightAdapter();
+  }
+  if (normalized === 'claude' || normalized === 'anthropic') {
+    return new ClaudePlaywrightAdapter();
+  }
+  if (normalized === 'deepseek') {
+    return new DeepSeekPlaywrightAdapter();
+  }
+
+  // Check by URL
+  if (normalized.includes('gemini.google.com')) return new GeminiPlaywrightAdapter();
+  if (normalized.includes('chat.openai.com') || normalized.includes('chatgpt.com')) return new ChatGPTPlaywrightAdapter();
+  if (normalized.includes('claude.ai')) return new ClaudePlaywrightAdapter();
+  if (normalized.includes('chat.deepseek.com')) return new DeepSeekPlaywrightAdapter();
+
+  // Default to Gemini
+  console.log('Unknown provider, defaulting to Gemini');
+  return new GeminiPlaywrightAdapter();
+}
+
+// Helper function to get provider ID from site URL or name
+function getProviderId(siteUrlOrName: string): string {
+  const normalized = siteUrlOrName.toLowerCase().trim();
+
+  if (normalized === 'gemini' || normalized === 'google' || normalized.includes('gemini.google.com')) {
+    return 'gemini';
+  }
+  if (normalized === 'chatgpt' || normalized === 'openai' || normalized.includes('chat.openai.com') || normalized.includes('chatgpt.com')) {
+    return 'chatgpt';
+  }
+  if (normalized === 'claude' || normalized === 'anthropic' || normalized.includes('claude.ai')) {
+    return 'claude';
+  }
+  if (normalized === 'deepseek' || normalized.includes('chat.deepseek.com')) {
+    return 'deepseek';
+  }
+
+  return 'gemini';
 }
 
 // Serve command
@@ -69,7 +131,7 @@ program
   .description('Start the API server')
   .option('-p, --port <port>', 'Port to listen on', '3000')
   .option('-h, --host <host>', 'Host to bind to', 'localhost')
-  .option('--site <url>', 'AI site URL to connect to')
+  .option('--site <url>', 'AI site URL or provider name (gemini, chatgpt, claude, deepseek)')
   .option('--headless', 'Run browser in headless mode', false)
   .action(async (options) => {
     const eventBus = new EventBus();
@@ -90,20 +152,28 @@ program
     // Create provider if site URL provided
     if (options.site) {
       const adapter = getAdapter(options.site);
+      const providerId = getProviderId(options.site);
       const provider = new PlaywrightProvider({
-        id: 'browser',
-        name: 'Browser AI',
+        id: providerId,
+        name: options.site,
         adapter,
         headless: options.headless,
       });
 
       provider.setTools(toolDispatcher.getDescriptions());
       router.registerProvider(provider);
-      router.setActiveProvider('browser');
+      router.setActiveProvider(providerId);
 
       logger.info(`Connecting to ${options.site}...`);
-      await provider.connect();
-      logger.info('Connected to browser AI');
+      try {
+        await provider.connect();
+        logger.info('Connected to browser AI');
+      } catch (error) {
+        logger.error('Failed to connect:', {
+          error: error instanceof Error ? error.message : String(error),
+        });
+        process.exit(1);
+      }
     }
 
     const app = createServer({ providerManager: router, sessionManager, logger, promptEngine });
@@ -124,7 +194,7 @@ program
   .command('chat')
   .description('Send a chat message to browser AI')
   .argument('<message>', 'Message to send')
-  .option('--site <url>', 'AI site URL', 'https://gemini.google.com')
+  .option('--site <url>', 'AI site URL or provider name', 'gemini')
   .option('--headless', 'Run browser in headless mode', false)
   .action(async (message, options) => {
     const logger = new Logger({ level: 'info', format: 'text', context: 'Chat' });
@@ -140,9 +210,10 @@ program
     toolDispatcher.register(new ShellExecTool());
 
     const adapter = getAdapter(options.site);
+    const providerId = getProviderId(options.site);
     const provider = new PlaywrightProvider({
-      id: 'browser',
-      name: 'Browser AI',
+      id: providerId,
+      name: options.site,
       adapter,
       headless: options.headless,
     });
@@ -150,14 +221,21 @@ program
     provider.setTools(toolDispatcher.getDescriptions());
 
     logger.info(`Connecting to ${options.site}...`);
-    await provider.connect();
-    logger.info('Connected!');
+    try {
+      await provider.connect();
+      logger.info('Connected!');
+    } catch (error) {
+      logger.error('Failed to connect:', {
+        error: error instanceof Error ? error.message : String(error),
+      });
+      process.exit(1);
+    }
 
     const promptEngine = new PromptEngine();
     const systemPrompt = promptEngine.generateSystemPrompt(toolDispatcher.getDescriptions());
 
     const response = await provider.send({
-      model: 'browser-ai',
+      model: providerId,
       messages: [
         { role: 'system', content: systemPrompt },
         { role: 'user', content: message },
