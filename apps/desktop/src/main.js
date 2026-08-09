@@ -1,127 +1,128 @@
 const { app, BrowserWindow, ipcMain, shell, Tray, Menu, nativeImage, dialog } = require('electron');
 const path = require('path');
 const fs = require('fs');
+const { execSync, spawn } = require('child_process');
 
 let mainWindow = null;
 let tray = null;
-let server = null;
-let provider = null;
-let modules = {};
+let serverProcess = null;
+let isServerRunning = false;
 
-// Log file for debugging
-const logFile = path.join(app.getPath('userData'), 'bab-debug.log');
+// App state
+const state = {
+  serverRunning: false,
+  connected: false,
+  provider: null,
+  port: 3000,
+  site: null,
+};
 
-function log(message) {
-  const timestamp = new Date().toISOString();
-  const line = `[${timestamp}] ${message}\n`;
-  console.log(line.trim());
-  try {
-    fs.appendFileSync(logFile, line);
-  } catch (e) {
-    // ignore
+// Get Chrome user data directory based on platform
+function getChromeUserDataDir() {
+  switch (process.platform) {
+    case 'win32':
+      return path.join(process.env.LOCALAPPDATA || '', 'Google', 'Chrome', 'User Data');
+    case 'darwin':
+      return path.join(process.env.HOME || '', 'Library', 'Application Support', 'Google', 'Chrome');
+    case 'linux':
+      return path.join(process.env.HOME || '', '.config', 'google-chrome');
+    default:
+      return '';
   }
 }
 
-// Initialize modules dynamically
-async function initializeModules() {
+// Get default Chrome executable path
+function getChromeExecutablePath() {
+  switch (process.platform) {
+    case 'win32':
+      return 'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe';
+    case 'darwin':
+      return '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome';
+    case 'linux':
+      return '/usr/bin/google-chrome';
+    default:
+      return '';
+  }
+}
+
+// Check if Chrome is installed
+function isChromeInstalled() {
+  const executablePath = getChromeExecutablePath();
+  return fs.existsSync(executablePath);
+}
+
+// Check if Node.js is installed
+function isNodeInstalled() {
   try {
-    log('Initializing modules...');
-    const core = await import('@bab/core');
-    const runtime = await import('@bab/runtime');
-    const promptEngineModule = await import('@bab/prompt-engine');
-    const toolsFs = await import('@bab/tools-fs');
-    const toolsGit = await import('@bab/tools-git');
-    const toolsShell = await import('@bab/tools-shell');
-
-    modules = { core, runtime, promptEngineModule, toolsFs, toolsGit, toolsShell };
-
-    modules.eventBus = new core.EventBus();
-    modules.logger = new core.Logger({ level: 'info', format: 'text', context: 'Desktop' });
-    modules.sessionManager = new core.SessionManager(modules.eventBus);
-    modules.router = new core.Router(modules.eventBus);
-    modules.promptEngine = new promptEngineModule.PromptEngine();
-    modules.toolDispatcher = new runtime.ToolDispatcher(modules.eventBus);
-
-    modules.toolDispatcher.register(new toolsFs.FsReadTool());
-    modules.toolDispatcher.register(new toolsFs.FsWriteTool());
-    modules.toolDispatcher.register(new toolsGit.GitStatusTool());
-    modules.toolDispatcher.register(new toolsGit.GitDiffTool());
-    modules.toolDispatcher.register(new toolsGit.GitCommitTool());
-    modules.toolDispatcher.register(new toolsShell.ShellExecTool());
-
-    log('Modules initialized successfully');
+    execSync('node --version', { stdio: 'ignore' });
     return true;
-  } catch (error) {
-    log('Failed to initialize modules: ' + error.message);
+  } catch {
     return false;
   }
 }
 
-// Find dashboard path
-function findDashboardPath() {
-  const possiblePaths = [
-    // Development
-    path.join(__dirname, '..', '..', 'dashboard', 'dist', 'index.html'),
-    // Production - resources
-    path.join(process.resourcesPath || '', 'dashboard', 'index.html'),
-    // Production - app.asar
-    path.join(app.getAppPath(), '..', 'dashboard', 'index.html'),
-    // Production - unpacked
-    path.join(app.getAppPath(), '..', '..', 'dashboard', 'dist', 'index.html'),
-  ];
-
-  for (const p of possiblePaths) {
-    log('Checking dashboard path: ' + p);
-    if (fs.existsSync(p)) {
-      log('Found dashboard at: ' + p);
-      return p;
-    }
+// Get app path
+function getAppPath() {
+  if (app.isPackaged) {
+    return process.resourcesPath;
   }
+  return path.join(__dirname, '..');
+}
 
-  log('Dashboard not found in any path');
-  return null;
+// Get CLI path
+function getCliPath() {
+  const appPath = getAppPath();
+  return path.join(appPath, 'apps', 'cli', 'dist', 'index.js');
 }
 
 function createWindow() {
-  log('Creating window...');
-
   mainWindow = new BrowserWindow({
     width: 1280,
     height: 800,
     minWidth: 1024,
     minHeight: 700,
     title: 'Browser AI Bridge',
-    show: true,
-    autoHideMenuBar: true,
+    icon: path.join(__dirname, '../build/icon.png'),
     webPreferences: {
       nodeIntegration: false,
       contextIsolation: true,
       preload: path.join(__dirname, 'preload.js'),
     },
+    show: false,
+    backgroundColor: '#1a1a2e',
   });
 
-  // Remove menu bar completely
-  mainWindow.setMenu(null);
-
   // Load the dashboard
-  const dashboardPath = findDashboardPath();
-
-  if (dashboardPath) {
-    log('Loading dashboard from: ' + dashboardPath);
-    mainWindow.loadFile(dashboardPath).catch(err => {
-      log('Failed to load dashboard: ' + err.message);
-      // Fallback to inline HTML
-      loadFallbackHTML();
-    });
-  } else {
-    log('No dashboard found, loading fallback');
-    loadFallbackHTML();
-  }
-
-  // Open devtools in development
   if (process.env.NODE_ENV === 'development') {
+    mainWindow.loadURL('http://localhost:5173');
     mainWindow.webContents.openDevTools();
+  } else {
+    const dashboardPath = path.join(process.resourcesPath, 'dashboard', 'index.html');
+    if (fs.existsSync(dashboardPath)) {
+      mainWindow.loadFile(dashboardPath);
+    } else {
+      // Fallback to local dashboard
+      const localDashboardPath = path.join(__dirname, '../../dashboard/dist/index.html');
+      if (fs.existsSync(localDashboardPath)) {
+        mainWindow.loadFile(localDashboardPath);
+      } else {
+        mainWindow.loadURL('data:text/html,<h1>Dashboard not found</h1>');
+      }
+    }
   }
+
+  // Show window when ready
+  mainWindow.once('ready-to-show', () => {
+    mainWindow?.show();
+    
+    // Send initial status
+    mainWindow?.webContents.send('app-status', {
+      chromeInstalled: isChromeInstalled(),
+      nodeInstalled: isNodeInstalled(),
+      serverRunning: state.serverRunning,
+      connected: state.connected,
+    });
+  });
 
   // Handle external links
   mainWindow.webContents.setWindowOpenHandler(({ url }) => {
@@ -132,246 +133,203 @@ function createWindow() {
   mainWindow.on('closed', () => {
     mainWindow = null;
   });
-
-  log('Window created');
-}
-
-function loadFallbackHTML() {
-  const html = `
-    <!DOCTYPE html>
-    <html>
-    <head>
-      <title>Browser AI Bridge</title>
-      <style>
-        body {
-          font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-          display: flex;
-          justify-content: center;
-          align-items: center;
-          height: 100vh;
-          margin: 0;
-          background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-          color: white;
-        }
-        .container {
-          text-align: center;
-          padding: 40px;
-          background: rgba(255,255,255,0.1);
-          border-radius: 20px;
-          backdrop-filter: blur(10px);
-        }
-        h1 { font-size: 2.5em; margin-bottom: 10px; }
-        p { font-size: 1.2em; opacity: 0.9; }
-        .status { margin-top: 20px; padding: 15px; background: rgba(255,255,255,0.2); border-radius: 10px; }
-        .btn {
-          display: inline-block;
-          margin-top: 20px;
-          padding: 12px 30px;
-          background: white;
-          color: #667eea;
-          border: none;
-          border-radius: 8px;
-          font-size: 16px;
-          font-weight: 600;
-          cursor: pointer;
-        }
-        .btn:hover { background: #f0f0f0; }
-      </style>
-    </head>
-    <body>
-      <div class="container">
-        <h1>⚡ Browser AI Bridge</h1>
-        <p>Use browser AI in your local environment</p>
-        <div class="status">
-          <p>Server: <strong id="server-status">Stopped</strong></p>
-          <p>Port: <strong>3000</strong></p>
-        </div>
-        <button class="btn" onclick="startServer()">Start Server</button>
-      </div>
-      <script>
-        const { ipcRenderer } = require('electron');
-
-        async function startServer() {
-          const result = await ipcRenderer.invoke('start-server', 3000);
-          if (result.success) {
-            document.getElementById('server-status').textContent = 'Running';
-          }
-        }
-
-        ipcRenderer.on('server-status', (event, status) => {
-          document.getElementById('server-status').textContent = status.running ? 'Running' : 'Stopped';
-        });
-
-        // Check status on load
-        ipcRenderer.invoke('get-status').then(status => {
-          document.getElementById('server-status').textContent = status.serverRunning ? 'Running' : 'Stopped';
-        });
-      </script>
-    </body>
-    </html>
-  `;
-
-  mainWindow.loadURL('data:text/html,' + encodeURIComponent(html));
 }
 
 function createTray() {
-  try {
-    // Create a simple tray icon programmatically
-    const icon = nativeImage.createEmpty();
-
-    const contextMenu = Menu.buildFromTemplate([
-      {
-        label: 'Show Window',
-        click: () => {
-          if (mainWindow) mainWindow.show();
-        },
-      },
-      { type: 'separator' },
-      {
-        label: 'Start Server',
-        click: () => startServer(3000),
-      },
-      {
-        label: 'Stop Server',
-        click: () => stopServer(),
-      },
-      { type: 'separator' },
-      {
-        label: 'Quit',
-        click: () => {
-          app.quit();
-        },
-      },
-    ]);
-
-    tray = new Tray(icon);
-    tray.setToolTip('Browser AI Bridge');
-    tray.setContextMenu(contextMenu);
-
-    tray.on('click', () => {
-      if (mainWindow) {
-        mainWindow.show();
-        mainWindow.focus();
-      }
-    });
-
-    log('Tray created');
-  } catch (error) {
-    log('Failed to create tray: ' + error.message);
+  const iconPath = path.join(__dirname, '../build/icon.png');
+  
+  if (!fs.existsSync(iconPath)) {
+    // Create a simple icon if not exists
+    return;
   }
+  
+  const icon = nativeImage.createFromPath(iconPath);
+  tray = new Tray(icon.resize({ width: 16, height: 16 }));
+
+  const contextMenu = Menu.buildFromTemplate([
+    {
+      label: 'Show Window',
+      click: () => {
+        mainWindow?.show();
+      },
+    },
+    { type: 'separator' },
+    {
+      label: state.serverRunning ? 'Server Running ✓' : 'Start Server',
+      enabled: !state.serverRunning,
+      click: () => startServer(),
+    },
+    {
+      label: state.serverRunning ? 'Stop Server' : 'Server Stopped',
+      enabled: state.serverRunning,
+      click: () => stopServer(),
+    },
+    { type: 'separator' },
+    {
+      label: 'Quit',
+      click: () => {
+        app.quit();
+      },
+    },
+  ]);
+
+  tray.setToolTip('Browser AI Bridge - v1.0.0');
+  tray.setContextMenu(contextMenu);
+
+  tray.on('click', () => {
+    mainWindow?.show();
+  });
+}
+
+function updateTray() {
+  if (!tray) return;
+  
+  const contextMenu = Menu.buildFromTemplate([
+    {
+      label: 'Show Window',
+      click: () => {
+        mainWindow?.show();
+      },
+    },
+    { type: 'separator' },
+    {
+      label: state.serverRunning ? 'Server Running ✓' : 'Start Server',
+      enabled: !state.serverRunning,
+      click: () => startServer(),
+    },
+    {
+      label: state.serverRunning ? 'Stop Server' : 'Server Stopped',
+      enabled: state.serverRunning,
+      click: () => stopServer(),
+    },
+    { type: 'separator' },
+    {
+      label: 'Quit',
+      click: () => {
+        app.quit();
+      },
+    },
+  ]);
+
+  tray.setContextMenu(contextMenu);
 }
 
 async function startServer(port = 3000) {
-  if (server) {
-    log('Server already running');
-    return;
+  if (state.serverRunning) {
+    return { success: true, message: 'Server already running' };
   }
 
   try {
-    const { createServer } = await import('@bab/api');
-    const { serve } = await import('@hono/node-server');
+    const cliPath = getCliPath();
+    
+    if (!fs.existsSync(cliPath)) {
+      // Try to build first
+      const appPath = getAppPath();
+      try {
+        execSync('npm run build', { cwd: appPath, stdio: 'ignore' });
+      } catch (e) {
+        return { success: false, error: 'CLI not found. Please build the project first.' };
+      }
+    }
 
-    const appInstance = createServer({
-      router: modules.router,
-      sessionManager: modules.sessionManager,
-      logger: modules.logger,
-      promptEngine: modules.promptEngine
+    // Start server as child process
+    serverProcess = spawn('node', [cliPath, 'serve', '--port', port.toString()], {
+      cwd: getAppPath(),
+      stdio: 'pipe',
     });
 
-    server = serve({ fetch: appInstance.fetch, port }, () => {
-      log(`Server running on port ${port}`);
-      if (mainWindow) mainWindow.webContents.send('server-status', { running: true, port });
+    serverProcess.stdout.on('data', (data) => {
+      const output = data.toString();
+      console.log(output);
+      if (output.includes('running at')) {
+        state.serverRunning = true;
+        state.port = port;
+        mainWindow?.webContents.send('server-status', { running: true, port });
+        updateTray();
+      }
     });
+
+    serverProcess.stderr.on('data', (data) => {
+      console.error(data.toString());
+    });
+
+    serverProcess.on('close', (code) => {
+      state.serverRunning = false;
+      serverProcess = null;
+      mainWindow?.webContents.send('server-status', { running: false });
+      updateTray();
+    });
+
+    // Wait a bit for server to start
+    await new Promise(resolve => setTimeout(resolve, 2000));
+
+    state.serverRunning = true;
+    state.port = port;
+    mainWindow?.webContents.send('server-status', { running: true, port });
+    updateTray();
+
+    return { success: true };
   } catch (error) {
-    log('Failed to start server: ' + error.message);
+    return { success: false, error: error.message };
   }
 }
 
 function stopServer() {
-  if (server) {
-    server.close();
-    server = null;
-    log('Server stopped');
-    if (mainWindow) mainWindow.webContents.send('server-status', { running: false });
+  if (serverProcess) {
+    serverProcess.kill();
+    serverProcess = null;
   }
+  
+  state.serverRunning = false;
+  mainWindow?.webContents.send('server-status', { running: false });
+  updateTray();
+  
+  return { success: true };
 }
 
 // IPC Handlers
 ipcMain.handle('start-server', async (_event, port) => {
-  await startServer(port);
-  return { success: true };
+  return await startServer(port || 3000);
 });
 
 ipcMain.handle('stop-server', async () => {
-  stopServer();
-  return { success: true };
+  return stopServer();
 });
 
 ipcMain.handle('get-status', async () => {
   return {
-    serverRunning: !!server,
-    connected: !!provider,
-    tools: modules.toolDispatcher ? modules.toolDispatcher.getDescriptions() : [],
+    chromeInstalled: isChromeInstalled(),
+    nodeInstalled: isNodeInstalled(),
+    serverRunning: state.serverRunning,
+    connected: state.connected,
+    port: state.port,
+    site: state.site,
+    version: app.getVersion(),
   };
 });
 
-ipcMain.handle('connect-site', async (_event, siteUrl, useExistingProfile) => {
+ipcMain.handle('open-chrome', async (_event, url) => {
   try {
-    if (!modules.router) {
-      return { success: false, error: 'Modules not initialized' };
-    }
-
-    const { PlaywrightProvider } = await import('@bab/playwright-provider');
-
-    const options = {
-      id: 'browser',
-      name: 'Browser AI',
-      siteUrl,
-      headless: false,
-    };
-
-    provider = new PlaywrightProvider(options);
-    provider.setTools(modules.toolDispatcher.getDescriptions());
-
-    await provider.connect();
-    modules.router.registerProvider(provider);
-    modules.router.setActiveProvider('browser');
-
-    log(`Connected to ${siteUrl}`);
+    shell.openExternal(url);
     return { success: true };
   } catch (error) {
-    log('Failed to connect: ' + error.message);
     return { success: false, error: error.message };
   }
 });
 
-ipcMain.handle('disconnect-site', async () => {
-  if (provider) {
-    await provider.shutdown();
-    provider = null;
-    if (modules.router) modules.router.unregisterProvider('browser');
+ipcMain.handle('open-external', async (_event, url) => {
+  try {
+    shell.openExternal(url);
+    return { success: true };
+  } catch (error) {
+    return { success: false, error: error.message };
   }
-  return { success: true };
 });
 
 // App lifecycle
 app.whenReady().then(async () => {
-  log('App starting...');
-  log('App path: ' + app.getAppPath());
-  log('Resources path: ' + (process.resourcesPath || 'N/A'));
-  log('User data: ' + app.getPath('userData'));
-
-  // Initialize modules (non-blocking)
-  initializeModules().then(success => {
-    if (success) {
-      log('All modules ready');
-    } else {
-      log('Some modules failed to load');
-    }
-  });
-
-  // Create window immediately
   createWindow();
+  createTray();
 
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) {
@@ -388,7 +346,4 @@ app.on('window-all-closed', () => {
 
 app.on('before-quit', async () => {
   stopServer();
-  if (provider) {
-    await provider.shutdown();
-  }
 });
