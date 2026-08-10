@@ -2,7 +2,7 @@
 
 import { Command } from 'commander';
 import { createServer } from '@bab/api';
-import { Router, SessionManager, EventBus, Logger } from '@bab/core';
+import { ProviderManager, SessionManager, EventBus, Logger } from '@bab/core';
 import { PromptEngine } from '@bab/prompt-engine';
 import { ToolDispatcher } from '@bab/runtime';
 import { PlaywrightProvider } from '@bab/playwright-provider';
@@ -132,12 +132,15 @@ program
   .option('-p, --port <port>', 'Port to listen on', '3000')
   .option('-h, --host <host>', 'Host to bind to', 'localhost')
   .option('--site <url>', 'AI site URL or provider name (gemini, chatgpt, claude, deepseek)')
-  .option('--headless', 'Run browser in headless mode', false)
+  .option('--headless', 'Run browser in headless mode (no visible window)', true)
+  .option('--no-headless', 'Show browser window')
+  .option('--profile', 'Use existing Chrome profile (for logged-in sessions)', true)
+  .option('--no-profile', 'Use new browser profile')
   .action(async (options) => {
     const eventBus = new EventBus();
     const logger = new Logger({ level: 'info', format: 'text', context: 'CLI' });
     const sessionManager = new SessionManager(eventBus);
-    const router = new Router(eventBus);
+    const providerManager = new ProviderManager(eventBus);
     const promptEngine = new PromptEngine();
     const toolDispatcher = new ToolDispatcher(eventBus);
 
@@ -158,11 +161,12 @@ program
         name: options.site,
         adapter,
         headless: options.headless,
+        useExistingProfile: options.profile,
       });
 
       provider.setTools(toolDispatcher.getDescriptions());
-      router.registerProvider(provider);
-      router.setActiveProvider(providerId);
+      providerManager.register(provider);
+      providerManager.setActive(providerId);
 
       logger.info(`Connecting to ${options.site}...`);
       try {
@@ -176,7 +180,7 @@ program
       }
     }
 
-    const app = createServer({ providerManager: router, sessionManager, logger, promptEngine });
+    const app = createServer({ providerManager, sessionManager, logger, promptEngine });
 
     const port = parseInt(options.port);
     serve({ fetch: app.fetch, port }, (info) => {
@@ -195,7 +199,10 @@ program
   .description('Send a chat message to browser AI')
   .argument('<message>', 'Message to send')
   .option('--site <url>', 'AI site URL or provider name', 'gemini')
-  .option('--headless', 'Run browser in headless mode', false)
+  .option('--headless', 'Run browser in headless mode (no visible window)', true)
+  .option('--no-headless', 'Show browser window')
+  .option('--profile', 'Use existing Chrome profile', true)
+  .option('--no-profile', 'Use new browser profile')
   .action(async (message, options) => {
     const logger = new Logger({ level: 'info', format: 'text', context: 'Chat' });
     const eventBus = new EventBus();
@@ -216,6 +223,7 @@ program
       name: options.site,
       adapter,
       headless: options.headless,
+      useExistingProfile: options.profile,
     });
 
     provider.setTools(toolDispatcher.getDescriptions());

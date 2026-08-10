@@ -68,7 +68,17 @@ export class BrowserSession {
     if (!this.page) {
       throw new Error('Session not attached to a page');
     }
-    await this.page.click(selector);
+
+    // Use JavaScript click to bypass element interception issues
+    // This is more reliable for modern web apps with overlays
+    await this.page.evaluate((sel) => {
+      const element = document.querySelector(sel);
+      if (element) {
+        (element as HTMLElement).click();
+        return true;
+      }
+      return false;
+    }, selector);
   }
 
   async fill(selector: string, value: string): Promise<void> {

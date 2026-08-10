@@ -12,6 +12,8 @@ export interface BrowserManagerOptions {
   userDataDir?: string;
   /** Headless mode */
   headless?: boolean;
+  /** Connect to existing Chrome via CDP */
+  cdpPort?: number;
 }
 
 export class BrowserManager {
@@ -25,6 +27,7 @@ export class BrowserManager {
       executablePath: options?.executablePath ?? this.findChromePath(),
       userDataDir: options?.userDataDir ?? this.findUserDataDir(),
       headless: options?.headless ?? false,
+      cdpPort: options?.cdpPort ?? 9222,
     };
   }
 
@@ -32,13 +35,20 @@ export class BrowserManager {
    * Find Chrome executable path
    */
   private findChromePath(): string {
-    const paths = [
-      'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe',
-      'C:\\Program Files (x86)\\Google\\Chrome\\Application\\chrome.exe',
-      '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',
-      '/usr/bin/google-chrome',
-      '/usr/bin/google-chrome-stable',
-    ];
+    const platform = os.platform();
+    const paths: string[] = [];
+
+    if (platform === 'win32') {
+      paths.push(
+        'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe',
+        'C:\\Program Files (x86)\\Google\\Chrome\\Application\\chrome.exe',
+        path.join(os.homedir(), 'AppData', 'Local', 'Google', 'Chrome', 'Application', 'chrome.exe')
+      );
+    } else if (platform === 'darwin') {
+      paths.push('/Applications/Google Chrome.app/Contents/MacOS/Google Chrome');
+    } else {
+      paths.push('/usr/bin/google-chrome', '/usr/bin/google-chrome-stable');
+    }
 
     for (const p of paths) {
       if (fs.existsSync(p)) {
@@ -53,11 +63,23 @@ export class BrowserManager {
    * Find Chrome user data directory
    */
   private findUserDataDir(): string {
-    const paths = [
-      path.join(os.homedir(), 'AppData', 'Local', 'Google', 'Chrome', 'User Data'),
-      path.join(os.homedir(), 'Library', 'Application Support', 'Google', 'Chrome'),
-      path.join(os.homedir(), '.config', 'google-chrome'),
-    ];
+    const platform = os.platform();
+    const paths: string[] = [];
+
+    if (platform === 'win32') {
+      paths.push(
+        path.join(os.homedir(), 'AppData', 'Local', 'Google', 'Chrome', 'User Data'),
+        path.join(os.homedir(), 'AppData', 'Local', 'Microsoft', 'Edge', 'User Data')
+      );
+    } else if (platform === 'darwin') {
+      paths.push(
+        path.join(os.homedir(), 'Library', 'Application Support', 'Google', 'Chrome')
+      );
+    } else {
+      paths.push(
+        path.join(os.homedir(), '.config', 'google-chrome')
+      );
+    }
 
     for (const p of paths) {
       if (fs.existsSync(p)) {
@@ -69,7 +91,8 @@ export class BrowserManager {
   }
 
   /**
-   * Launch browser
+   * Launch browser with user's existing profile
+   * This uses a copy of the profile to avoid conflicts with running Chrome
    */
   async launch(): Promise<BrowserContext> {
     if (this.context) {
@@ -81,12 +104,28 @@ export class BrowserManager {
       throw new Error('Chrome executable path not set');
     }
 
-    // Launch with existing profile if available
+    // Try to connect to existing Chrome via CDP first
+    try {
+      this.browser = await chromium.connectOverCDP(`http://localhost:${this.options.cdpPort}`);
+      this.context = this.browser.contexts()[0] || await this.browser.newContext();
+      console.log('Connected to existing Chrome via CDP');
+      return this.context;
+    } catch {
+      // CDP connection failed, try other methods
+    }
+
+    // Try to launch with a copy of the user profile
     if (this.options.useExistingProfile && this.options.userDataDir) {
       try {
-        // Use persistent context to reuse existing profile
+        // Create a temporary profile directory
+        const tempProfileDir = path.join(os.tmpdir(), 'bab-chrome-profile', Date.now().toString());
+
+        // Copy essential files from user profile
+        this.copyProfile(this.options.userDataDir, tempProfileDir);
+
+        // Launch with the copied profile
         this.context = await chromium.launchPersistentContext(
-          this.options.userDataDir,
+          tempProfileDir,
           {
             headless: this.options.headless,
             executablePath,
@@ -94,12 +133,14 @@ export class BrowserManager {
               '--disable-blink-features=AutomationControlled',
               '--no-first-run',
               '--no-default-browser-check',
+              '--disable-extensions',
             ],
           }
         );
+        console.log('Launched Chrome with copied profile');
         return this.context;
       } catch (error) {
-        console.warn('Failed to launch with existing profile, falling back to new profile:', error);
+        console.warn('Failed to launch with copied profile:', error);
       }
     }
 
@@ -111,7 +152,46 @@ export class BrowserManager {
     });
 
     this.context = await this.browser.newContext();
+    console.log('Launched new Chrome instance');
     return this.context;
+  }
+
+  /**
+   * Copy essential profile files
+   */
+  private copyProfile(source: string, dest: string): void {
+    if (!fs.existsSync(dest)) {
+      fs.mkdirSync(dest, { recursive: true });
+    }
+
+    // Copy cookies and login state
+    const filesToCopy = [
+      'Cookies',
+      'Cookies-journal',
+      'Login Data',
+      'Login Data-journal',
+      'Web Data',
+      'Web Data-journal',
+      'Preferences',
+      'Secure Preferences',
+    ];
+
+    for (const file of filesToCopy) {
+      const sourcePath = path.join(source, 'Default', file);
+      const destPath = path.join(dest, 'Default', file);
+
+      try {
+        if (fs.existsSync(sourcePath)) {
+          const destDir = path.dirname(destPath);
+          if (!fs.existsSync(destDir)) {
+            fs.mkdirSync(destDir, { recursive: true });
+          }
+          fs.copyFileSync(sourcePath, destPath);
+        }
+      } catch {
+        // Ignore copy errors
+      }
+    }
   }
 
   /**
@@ -124,11 +204,12 @@ export class BrowserManager {
 
     // Check for existing pages
     const pages = this.context!.pages();
-    
+
     // Try to find a page that matches the URL
     if (url) {
+      const hostname = new URL(url).hostname;
       for (const page of pages) {
-        if (page.url().includes(new URL(url).hostname)) {
+        if (page.url().includes(hostname)) {
           return page;
         }
       }

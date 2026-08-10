@@ -30,35 +30,54 @@ export class GeminiProvider implements Provider {
   private startTime: number = 0;
   private lastError: string | null = null;
 
-  // Selectors for Gemini UI
+  // Selectors for Gemini UI (updated for 2025-2026)
   private static readonly SELECTORS = {
     input: [
+      'rich-textarea .ql-editor[contenteditable="true"]',
+      'rich-textarea [contenteditable="true"]',
+      'div.ql-editor[contenteditable="true"]',
+      '.text-input-field [contenteditable="true"]',
       'textarea[aria-label*="prompt" i]',
       'textarea[aria-label*="Enter" i]',
       '[contenteditable="true"][role="textbox"]',
       '.ql-editor[contenteditable="true"]',
+      'div[contenteditable="true"]',
+      'textarea',
     ],
     sendButton: [
+      'button.send-button',
       'button[aria-label*="Send" i]',
       'button[aria-label*="Submit" i]',
+      'button[aria-label*="Submit prompt" i]',
       'button[data-testid="send-button"]',
       '.send-button',
+      'button[mat-icon-button] .send-icon',
+      'mat-icon[fonticon="send"]',
+      'button:has(mat-icon[fonticon="send"])',
+      'button:has(svg path[d*="M2.01 21"])',
     ],
     response: [
-      '[data-message-author-role="model"]',
+      '.response-container-content',
       '.model-response-text',
-      '.response-container',
+      '[data-message-author-role="model"]',
       '.message-content',
+      '.markdown-main-panel',
+      '.response-container',
+      'model-response .markdown',
+      'message-content .markdown',
     ],
     loading: [
-      '[aria-label*="Loading" i]',
       '.loading-indicator',
       '.thinking',
       '.generating',
+      '[aria-label*="Loading" i]',
+      'mat-progress-bar',
+      '.progress-bar',
     ],
     stopButton: [
       'button[aria-label*="Stop" i]',
       'button[aria-label*="Cancel" i]',
+      'button:has(mat-icon[fonticon="stop"])',
     ],
   };
 
@@ -228,12 +247,27 @@ export class GeminiProvider implements Provider {
       throw new Error('Page not available');
     }
 
+    // Wait a bit for the page to fully load
+    await this.page.waitForTimeout(1000);
+
     for (const selector of GeminiProvider.SELECTORS.input) {
       try {
         const element = await this.page.$(selector);
         if (element) {
+          // Check if element is visible
+          const isVisible = await element.isVisible();
+          if (!isVisible) continue;
+
           await element.click();
-          await this.page.keyboard.type(message, { delay: 10 });
+          await this.page.waitForTimeout(200);
+
+          // Clear existing content
+          await this.page.keyboard.press('Control+A');
+          await this.page.keyboard.press('Backspace');
+          await this.page.waitForTimeout(100);
+
+          // Type the message
+          await this.page.keyboard.type(message, { delay: 5 });
           return;
         }
       } catch {
@@ -252,16 +286,23 @@ export class GeminiProvider implements Provider {
       throw new Error('Page not available');
     }
 
-    for (const selector of GeminiProvider.SELECTORS.sendButton) {
-      try {
-        const element = await this.page.$(selector);
-        if (element) {
-          await element.click();
-          return;
+    // Wait a bit for button to become active
+    await this.page.waitForTimeout(500);
+
+    // Try to click using JavaScript directly (bypasses element interception)
+    const clicked = await this.page.evaluate((selectors: string[]) => {
+      for (const selector of selectors) {
+        const element = document.querySelector(selector);
+        if (element && !element.hasAttribute('disabled')) {
+          (element as HTMLElement).click();
+          return true;
         }
-      } catch {
-        // Try next selector
       }
+      return false;
+    }, GeminiProvider.SELECTORS.sendButton);
+
+    if (clicked) {
+      return;
     }
 
     // Fallback: press Enter

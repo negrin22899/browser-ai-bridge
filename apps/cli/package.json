@@ -3,7 +3,6 @@
   "version": "0.1.0",
   "description": "CLI for Browser AI Bridge",
   "main": "dist/index.js",
-  "type": "module",
   "bin": {
     "bab": "dist/index.js"
   },

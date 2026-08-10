@@ -17,10 +17,13 @@ export class GeminiAdapter implements SiteAdapter {
 
   async waitForReady(page: Page): Promise<void> {
     const selectors = [
+      'rich-textarea .ql-editor[contenteditable="true"]',
+      'rich-textarea [contenteditable="true"]',
+      'div.ql-editor[contenteditable="true"]',
+      '.text-input-field [contenteditable="true"]',
       'textarea[aria-label*="Enter a prompt" i]',
       'textarea[aria-label*="prompt" i]',
       'div[contenteditable="true"][role="textbox"]',
-      'textarea[aria-label*="message" i]',
       'div[contenteditable="true"]',
     ];
 
@@ -38,10 +41,13 @@ export class GeminiAdapter implements SiteAdapter {
 
   async fillInput(page: Page, message: string): Promise<void> {
     const selectors = [
+      'rich-textarea .ql-editor[contenteditable="true"]',
+      'rich-textarea [contenteditable="true"]',
+      'div.ql-editor[contenteditable="true"]',
+      '.text-input-field [contenteditable="true"]',
       'textarea[aria-label*="Enter a prompt" i]',
       'textarea[aria-label*="prompt" i]',
       'div[contenteditable="true"][role="textbox"]',
-      'textarea[aria-label*="message" i]',
       'div[contenteditable="true"]',
     ];
 
@@ -49,18 +55,19 @@ export class GeminiAdapter implements SiteAdapter {
       try {
         const input = await page.$(selector);
         if (input) {
+          const isVisible = await input.isVisible();
+          if (!isVisible) continue;
+
           await input.click();
+          await page.waitForTimeout(200);
+
+          // Clear existing content
+          await page.keyboard.press('Control+A');
+          await page.keyboard.press('Backspace');
           await page.waitForTimeout(100);
 
-          // Handle contenteditable divs
-          const tagName = await input.evaluate(el => el.tagName.toLowerCase());
-          const isContentEditable = await input.evaluate(el => el.getAttribute('contenteditable') === 'true');
-
-          if (tagName === 'div' || isContentEditable) {
-            await page.keyboard.type(message, { delay: 5 });
-          } else {
-            await input.fill(message);
-          }
+          // Type the message
+          await page.keyboard.type(message, { delay: 5 });
           return;
         }
       } catch {
@@ -73,25 +80,29 @@ export class GeminiAdapter implements SiteAdapter {
 
   async clickSend(page: Page): Promise<void> {
     const selectors = [
+      'button.send-button',
       'button[aria-label*="Send" i]',
       'button[aria-label*="Submit" i]',
+      'button[aria-label*="Submit prompt" i]',
       'button[data-testid="send-button"]',
-      'button:has(svg[data-icon="send"])',
+      '.send-button',
+      'button:has(mat-icon[fonticon="send"])',
     ];
 
-    for (const selector of selectors) {
-      try {
-        const button = await page.$(selector);
-        if (button) {
-          const isDisabled = await button.evaluate((el: any) => el.disabled);
-          if (!isDisabled) {
-            await button.click();
-            return;
-          }
+    // Try to click using JavaScript directly (bypasses element interception)
+    const clicked = await page.evaluate((sels: string[]) => {
+      for (const selector of sels) {
+        const element = document.querySelector(selector);
+        if (element && !element.hasAttribute('disabled')) {
+          (element as HTMLElement).click();
+          return true;
         }
-      } catch {
-        // Try next selector
       }
+      return false;
+    }, selectors);
+
+    if (clicked) {
+      return;
     }
 
     // Fallback: press Enter
@@ -100,11 +111,14 @@ export class GeminiAdapter implements SiteAdapter {
 
   async extractResponse(page: Page): Promise<string> {
     const selectors = [
-      '[data-message-author-role="model"]',
+      '.response-container-content',
       '.model-response-text',
+      '[data-message-author-role="model"]',
+      '.message-content',
+      '.markdown-main-panel',
       '.response-container',
-      'div[class*="response"]',
-      'div[class*="model"]',
+      'model-response .markdown',
+      'message-content .markdown',
     ];
 
     for (const selector of selectors) {
@@ -130,12 +144,19 @@ export class GeminiAdapter implements SiteAdapter {
     const stopSelectors = [
       'button[aria-label*="Stop" i]',
       'button[aria-label*="Cancel" i]',
+      'button:has(mat-icon[fonticon="stop"])',
+      '.loading-indicator',
+      '.thinking',
+      '.generating',
     ];
 
     for (const selector of stopSelectors) {
       const stopBtn = await page.$(selector);
       if (stopBtn) {
-        return false;
+        const isVisible = await stopBtn.isVisible();
+        if (isVisible) {
+          return false;
+        }
       }
     }
 

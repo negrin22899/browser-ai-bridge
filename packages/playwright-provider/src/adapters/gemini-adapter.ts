@@ -7,10 +7,10 @@ import { PlaywrightAdapter, type PlaywrightAdapterConfig } from '../playwright-a
  */
 const GEMINI_CONFIG: PlaywrightAdapterConfig = {
   selectors: {
-    input: 'textarea[aria-label*="Enter a prompt" i], textarea[aria-label*="prompt" i], div[contenteditable="true"][role="textbox"], textarea[aria-label*="message" i], div[contenteditable="true"]',
-    sendButton: 'button[aria-label*="Send" i], button[aria-label*="Submit" i], button[data-testid="send-button"]',
-    response: '[data-message-author-role="model"], .model-response-text, .response-container, div[class*="response"], div[class*="model"]',
-    loading: 'button[aria-label*="Stop" i], button[aria-label*="Cancel" i], [aria-label*="Loading" i], .loading-indicator, .thinking',
+    input: 'rich-textarea .ql-editor[contenteditable="true"], rich-textarea [contenteditable="true"], div.ql-editor[contenteditable="true"], .text-input-field [contenteditable="true"], textarea[aria-label*="prompt" i], div[contenteditable="true"][role="textbox"], div[contenteditable="true"], textarea',
+    sendButton: 'button.send-button, button[aria-label*="Send" i], button[aria-label*="Submit" i], button[aria-label*="Submit prompt" i], button[data-testid="send-button"], .send-button, button:has(mat-icon[fonticon="send"])',
+    response: '.response-container-content, .model-response-text, [data-message-author-role="model"], .message-content, .markdown-main-panel, .response-container, model-response .markdown, message-content .markdown',
+    loading: 'button[aria-label*="Stop" i], button[aria-label*="Cancel" i], .loading-indicator, .thinking, .generating, mat-progress-bar',
   },
   timeouts: {
     response: 120000,
@@ -27,10 +27,13 @@ export class GeminiPlaywrightAdapter extends PlaywrightAdapter {
 
   async waitForReady(session: any): Promise<void> {
     const selectors = [
+      'rich-textarea .ql-editor[contenteditable="true"]',
+      'rich-textarea [contenteditable="true"]',
+      'div.ql-editor[contenteditable="true"]',
+      '.text-input-field [contenteditable="true"]',
       'textarea[aria-label*="Enter a prompt" i]',
       'textarea[aria-label*="prompt" i]',
       'div[contenteditable="true"][role="textbox"]',
-      'textarea[aria-label*="message" i]',
       'div[contenteditable="true"]',
     ];
 
