@@ -10,6 +10,7 @@ import {
   Puzzle,
   Settings,
   Zap,
+  Link as LinkIcon,
 } from 'lucide-react';
 import { useTheme } from '../contexts/ThemeContext';
 import { useLanguage } from '../contexts/LanguageContext';
@@ -25,6 +26,7 @@ export default function Layout({ children }: LayoutProps) {
 
   const navigation = [
     { name: t('nav.dashboard'), href: '/', icon: LayoutDashboard },
+    { name: 'Connect', href: '/connect', icon: LinkIcon },
     { name: t('nav.providers'), href: '/providers', icon: Server },
     { name: t('nav.sessions'), href: '/sessions', icon: MessageSquare },
     { name: t('nav.runtime'), href: '/runtime', icon: Activity },

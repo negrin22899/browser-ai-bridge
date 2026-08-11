@@ -10,6 +10,7 @@ import RuntimeInspector from './pages/RuntimeInspector';
 import Logs from './pages/Logs';
 import Extensions from './pages/Extensions';
 import Settings from './pages/Settings';
+import ConnectionInfo from './pages/ConnectionInfo';
 
 function App() {
   return (
@@ -26,6 +27,7 @@ function App() {
               <Route path="/logs" element={<Logs />} />
               <Route path="/extensions" element={<Extensions />} />
               <Route path="/settings" element={<Settings />} />
+              <Route path="/connect" element={<ConnectionInfo />} />
             </Routes>
           </Layout>
         </Router>
