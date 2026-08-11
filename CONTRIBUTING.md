@@ -1,20 +1,20 @@
 # Contributing to Browser AI Bridge
 
-Thank you for your interest in contributing! This guide will help you get started.
+Thank you for your interest in contributing to Browser AI Bridge!
 
 ## Getting Started
 
-### Prerequisites
+1. Fork the repository
+2. Clone your fork
+3. Install dependencies: `npm install`
+4. Build the project: `npm run build`
+5. Run tests: `npm test`
 
-- Node.js >= 20.0.0
-- npm >= 9.0.0
-- Git
-
-### Setup
+## Development Setup
 
 ```bash
-# Clone the repository
-git clone https://github.com/your-org/browser-ai-bridge.git
+# Clone the repo
+git clone https://github.com/negrin22899/browser-ai-bridge.git
 cd browser-ai-bridge
 
 # Install dependencies
@@ -25,135 +25,113 @@ npm run build
 
 # Run tests
 npm test
+
+# Start development
+npm run dev
 ```
-
-## Development Workflow
-
-### 1. Find an Issue
-
-- Check [GitHub Issues](https://github.com/your-org/browser-ai-bridge/issues)
-- Look for `good first issue` or `help wanted` labels
-- Comment on the issue to claim it
-
-### 2. Create a Branch
-
-```bash
-git checkout -b feature/your-feature-name
-# or
-git checkout -b fix/your-bug-fix
-```
-
-### 3. Make Changes
-
-- Follow the coding style (TypeScript strict mode)
-- Write tests for new features
-- Update documentation if needed
-
-### 4. Run Tests
-
-```bash
-# Unit tests
-npm test -w packages/core
-npm test -w packages/runtime
-npm test -w packages/prompt-engine
-
-# Integration tests
-cd tests/integration && npx vitest run
-```
-
-### 5. Submit a Pull Request
-
-- Push your branch
-- Create a PR with clear description
-- Link the issue being fixed
-- Wait for review
-
-## Coding Standards
-
-### TypeScript
-
-- Use strict mode
-- Avoid `any` types (document if necessary)
-- Use explicit return types for functions
-- Use interfaces for object shapes
-
-### Testing
-
-- Write unit tests for all new code
-- Aim for 80%+ coverage
-- Use descriptive test names
-- Mock external dependencies
-
-### Documentation
-
-- Update README if adding features
-- Add JSDoc comments for public APIs
-- Include examples in documentation
 
 ## Project Structure
 
 ```
 browser-ai-bridge/
-├── apps/              # Runnable applications
-│   ├── cli/           # CLI interface
-│   ├── dashboard/     # Web dashboard
-│   └── desktop/       # Electron app
-├── packages/          # Shared libraries
-│   ├── core/          # Core services
-│   ├── protocol/      # Type definitions
-│   ├── runtime/       # Runtime engine
-│   └── ...
-├── plugins/           # Plugin implementations
-├── docs/              # Documentation
-└── tests/             # Integration tests
+├── apps/
+│   ├── cli/          # CLI tool
+│   ├── dashboard/    # Web dashboard
+│   └── desktop/      # Electron app
+├── packages/
+│   ├── api/          # API server
+│   ├── core/         # Core packages
+│   ├── protocol/     # Protocol types
+│   ├── runtime/      # Runtime engine
+│   ├── plugin-sdk/   # Plugin SDK
+│   ├── playwright-provider/  # Browser automation
+│   └── tools/        # Built-in tools
+├── plugins/          # Provider plugins
+└── tests/            # Integration tests
 ```
 
-## Architecture
+## How to Contribute
 
-See [ARCHITECTURE_DECISIONS.md](./ARCHITECTURE_DECISIONS.md) for key decisions.
+### Reporting Bugs
 
-**Core is frozen.** New features should be implemented as plugins.
+1. Check existing issues
+2. Create a new issue with:
+   - Clear description
+   - Steps to reproduce
+   - Expected behavior
+   - Actual behavior
+   - Environment details
+
+### Suggesting Features
+
+1. Create an issue with:
+   - Feature description
+   - Use case
+   - Proposed implementation (optional)
+
+### Submitting Code
+
+1. Create a feature branch: `git checkout -b feature/my-feature`
+2. Make your changes
+3. Add tests
+4. Run tests: `npm test`
+5. Commit with clear message
+6. Push to your fork
+7. Create a Pull Request
+
+### Code Style
+
+- TypeScript
+- ESLint configuration
+- Prettier formatting
+- Clear variable names
+- Comments for complex logic
+
+### Testing
+
+- Unit tests for new features
+- Integration tests for providers
+- Run all tests before submitting
+
+```bash
+# Run all tests
+npm test
+
+# Run specific tests
+npm test -- --grep "my test"
+```
+
+### Documentation
+
+- Update README if needed
+- Add JSDoc comments
+- Update API documentation
+
+## Architecture Decisions
+
+For major changes, create an ADR (Architecture Decision Record):
+
+1. Create `ARCHITECTURE_DECISIONS/ADR-XXX-title.md`
+2. Describe context, decision, and consequences
+3. Get approval before implementing
 
 ## Plugin Development
 
 See [Plugin SDK Guide](./docs/plugin-sdk.md) for creating plugins.
 
-### Creating a Provider
+## Provider Development
 
-See [Provider SDK Guide](./docs/provider-sdk.md).
+See [Provider SDK Guide](./docs/provider-sdk.md) for creating providers.
 
-### Creating a Tool
+## Code of Conduct
 
-See [Tool SDK Guide](./docs/tool-sdk.md).
-
-## Code Review
-
-All PRs require review before merging:
-
-1. **Functionality** - Does it work correctly?
-2. **Tests** - Are there adequate tests?
-3. **Documentation** - Is it documented?
-4. **Style** - Does it follow coding standards?
-5. **Security** - Are there security concerns?
-
-## Release Process
-
-1. Update version in package.json
-2. Update CHANGELOG.md
-3. Create git tag
-4. Create GitHub release
-5. Publish to npm (if applicable)
-
-## Getting Help
-
-- GitHub Issues: For bugs and feature requests
-- Discussions: For questions and ideas
-- Discord: [Link to Discord] (if available)
+Please read [CODE_OF_CONDUCT.md](./CODE_OF_CONDUCT.md).
 
 ## License
 
 By contributing, you agree that your contributions will be licensed under the MIT License.
 
-## Acknowledgments
+## Questions?
 
-Thank you to all contributors who help make Browser AI Bridge better!
+- GitHub Issues: https://github.com/negrin22899/browser-ai-bridge/issues
+- Discussions: https://github.com/negrin22899/browser-ai-bridge/discussions

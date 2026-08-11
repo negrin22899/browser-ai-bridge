@@ -1,6 +1,6 @@
 import type { Plugin, PluginContext } from '@bab/plugin-sdk';
 import { GeminiProvider } from './gemini-provider.js';
-import type { BrowserManagerOptions } from './browser-manager.js';
+import type { BrowserManagerOptions } from '@bab/playwright-provider';
 
 export interface GeminiPluginOptions extends BrowserManagerOptions {
   /** Plugin name */
@@ -16,7 +16,7 @@ export interface GeminiPluginOptions extends BrowserManagerOptions {
 const geminiPlugin: Plugin = {
   manifest: {
     name: 'provider-gemini',
-    version: '0.2.0',
+    version: '1.0.0',
     description: 'Google Gemini AI provider via browser automation',
     author: 'BAB Team',
     provides: {
@@ -39,15 +39,10 @@ const geminiPlugin: Plugin = {
   },
 
   async initialize(context: PluginContext): Promise<void> {
-    // Get config if available
     const options = context.getConfig<GeminiPluginOptions>('options') ?? {};
-
     const provider = new GeminiProvider(options);
     context.registerProvider(provider);
-
-    context.getLogger('gemini').info('Gemini provider registered', {
-      useExistingProfile: options.useExistingProfile ?? true,
-    });
+    context.getLogger('gemini').info('Gemini provider registered');
   },
 
   async shutdown(): Promise<void> {
@@ -61,5 +56,3 @@ const geminiPlugin: Plugin = {
 
 export default geminiPlugin;
 export { GeminiProvider } from './gemini-provider.js';
-export { BrowserManager } from './browser-manager.js';
-export type { BrowserManagerOptions } from './browser-manager.js';

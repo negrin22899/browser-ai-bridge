@@ -2,6 +2,10 @@
 export { PlaywrightProvider } from './playwright-provider.js';
 export type { PlaywrightProviderOptions } from './playwright-provider.js';
 
+// Browser management
+export { BrowserManager } from './browser-manager.js';
+export type { BrowserManagerOptions } from './browser-manager.js';
+
 // Adapter abstraction
 export { PlaywrightAdapter } from './playwright-adapter.js';
 export type { PlaywrightAdapterConfig } from './playwright-adapter.js';

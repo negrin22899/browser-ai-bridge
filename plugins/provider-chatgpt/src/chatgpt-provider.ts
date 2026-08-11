@@ -10,7 +10,7 @@ import type {
 } from '@bab/protocol';
 import { PROVIDER_CAPABILITIES } from '@bab/protocol';
 import type { Page } from 'playwright-core';
-import { BrowserManager, type BrowserManagerOptions } from './browser-manager.js';
+import { BrowserManager, type BrowserManagerOptions } from '@bab/playwright-provider';
 
 /**
  * ChatGPT Provider - real implementation using Playwright

@@ -80,6 +80,41 @@ export class MemoryOutput implements LogOutput {
 }
 
 /**
+ * File log output
+ */
+export class FileOutput implements LogOutput {
+  private filePath: string;
+  private fs: typeof import('node:fs') | null = null;
+
+  constructor(filePath: string) {
+    this.filePath = filePath;
+    // Lazy load fs to avoid issues in browser environment
+    try {
+      this.fs = require('node:fs');
+    } catch {
+      // fs not available
+    }
+  }
+
+  write(entry: LogEntry): void {
+    if (!this.fs) return;
+
+    try {
+      const timestamp = new Date(entry.timestamp).toISOString();
+      const level = LogLevel[entry.level].padEnd(5);
+      const context = entry.context ? `[${entry.context}]` : '';
+      const data = entry.data ? ` ${JSON.stringify(entry.data)}` : '';
+      const error = entry.error ? ` ${entry.error.message}` : '';
+      const line = `${timestamp} ${level} ${context} ${entry.message}${data}${error}\n`;
+
+      this.fs.appendFileSync(this.filePath, line);
+    } catch {
+      // Ignore write errors
+    }
+  }
+}
+
+/**
  * Logger - structured logging system
  */
 export class Logger {

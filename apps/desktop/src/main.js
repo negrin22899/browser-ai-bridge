@@ -331,6 +331,16 @@ app.whenReady().then(async () => {
   createWindow();
   createTray();
 
+  // Auto-start server after a short delay
+  setTimeout(async () => {
+    try {
+      await startServer();
+      console.log('Server auto-started');
+    } catch (error) {
+      console.error('Failed to auto-start server:', error);
+    }
+  }, 2000);
+
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) {
       createWindow();

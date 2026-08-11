@@ -5,6 +5,7 @@ import type { PromptEngine } from '@bab/prompt-engine';
 import type { ChatCompletionRequest } from '@bab/protocol';
 import { RateLimiter } from './rate-limiter.js';
 import { redactString } from './redaction.js';
+import { RequestValidator } from './validation.js';
 
 interface ServerDeps {
   providerManager: ProviderManager;
@@ -12,6 +13,7 @@ interface ServerDeps {
   logger: Logger;
   promptEngine: PromptEngine;
   rateLimiter?: RateLimiter;
+  validator?: RequestValidator;
 }
 
 /**
@@ -21,6 +23,7 @@ export function createServer(deps: ServerDeps): Hono {
   const app = new Hono();
   const { providerManager, sessionManager, logger, promptEngine } = deps;
   const rateLimiter = deps.rateLimiter ?? new RateLimiter();
+  const validator = deps.validator ?? new RequestValidator();
 
   app.use('*', cors());
 
@@ -86,19 +89,24 @@ export function createServer(deps: ServerDeps): Hono {
 
   // Chat completions
   app.post('/v1/chat/completions', async (c) => {
+    // Validate body size
+    const bodyText = await c.req.text();
+    const sizeValidation = validator.validateBodySize(bodyText);
+    if (!sizeValidation.valid) {
+      return c.json({ error: { message: sizeValidation.error } }, 400);
+    }
+
     let body: ChatCompletionRequest;
     try {
-      body = await c.req.json<ChatCompletionRequest>();
+      body = JSON.parse(bodyText);
     } catch {
       return c.json({ error: { message: 'Invalid JSON body' } }, 400);
     }
 
-    if (!body.messages || !Array.isArray(body.messages) || body.messages.length === 0) {
-      return c.json({ error: { message: 'messages array is required' } }, 400);
-    }
-
-    if (!body.model) {
-      return c.json({ error: { message: 'model is required' } }, 400);
+    // Validate request structure
+    const validation = validator.validateChatRequest(body);
+    if (!validation.valid) {
+      return c.json({ error: { message: validation.error } }, 400);
     }
 
     logger.info('Chat completion request', { model: body.model });
