@@ -16,6 +16,8 @@ import { ShellExecTool } from '@bab/tools-shell';
 import { serve } from '@hono/node-server';
 import { runDoctor, printDoctorResults } from './doctor.js';
 import { runDiagnose, saveDiagnostic, printDiagnosticSummary } from './diagnose.js';
+import { runSetup } from './setup.js';
+import { runSmokeTest } from './smoke-test.js';
 
 const program = new Command();
 
@@ -23,6 +25,14 @@ program
   .name('bab')
   .description('Browser AI Bridge - Use browser AI in your local environment')
   .version('1.0.0');
+
+// Setup command (first-run wizard)
+program
+  .command('setup')
+  .description('First-time setup wizard')
+  .action(async () => {
+    await runSetup();
+  });
 
 // Doctor command
 program
@@ -37,6 +47,16 @@ program
     if (hasErrors) {
       process.exit(1);
     }
+  });
+
+// Smoke test command
+program
+  .command('test')
+  .description('Run smoke test to verify everything works')
+  .option('--site <url>', 'AI site URL or provider name', 'gemini')
+  .action(async (options) => {
+    const success = await runSmokeTest(options.site);
+    process.exit(success ? 0 : 1);
   });
 
 // Diagnose command

@@ -43,5 +43,9 @@ export type { RetryConfig } from './retry-logic.js';
 export { ProfileManager } from './profile-manager.js';
 export type { BrowserProfile, ProfileManagerConfig } from './profile-manager.js';
 
+// Reliability layer
+export { ResilientFinder, HealthMonitor, SessionRecovery, SelectorDiscovery } from './reliability.js';
+export type { SelectorStrategy, HealthCheckResult, RecoveryAction } from './reliability.js';
+
 // CDP client
 export { CDPClient } from './cdp-client.js';
