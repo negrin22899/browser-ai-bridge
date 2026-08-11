@@ -51,6 +51,10 @@ export type { CapabilityContext, CapabilityRequirements, ResolvedCapabilities, C
 export { ProviderConformanceTester, testProviderConformance, printConformanceReport } from './conformance-test.js';
 export type { ConformanceTestResult, ConformanceReport } from './conformance-test.js';
 
+// Tool Negotiation
+export { ToolNegotiator, defaultToolNegotiator, resolveAvailableTools } from './tool-negotiation.js';
+export type { ToolNegotiationContext, NegotiationResult, NegotiationSummary, RuntimeCapabilities, UserPermissions, SessionInfo } from './tool-negotiation.js';
+
 // Bridge Protocol utilities
 export { createBridgeRequest, createBridgeResponse } from './types/bridge-protocol.js';
 

@@ -19,6 +19,17 @@ export type EventMap = {
   'session.created': { sessionId: string };
   'session.closed': { sessionId: string };
 
+  // Capability and Tool Negotiation events
+  'capability.detected': { providerId: string; capabilities: string[] };
+  'capability.granted': { capability: string; providerId: string };
+  'capability.revoked': { capability: string; providerId: string; reason: string };
+  'capability.changed': { providerId: string; added: string[]; removed: string[] };
+
+  'tool.available': { toolName: string; sessionId: string };
+  'tool.unavailable': { toolName: string; sessionId: string; reason: string };
+  'tool.denied': { toolName: string; sessionId: string; reason: string };
+  'tool.confirmation_required': { toolName: string; sessionId: string; reason: string };
+
   'recording.started': { sessionId: string };
   'recording.stopped': { sessionId: string };
 
