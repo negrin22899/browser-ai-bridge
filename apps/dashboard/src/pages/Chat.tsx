@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import {
   Send,
   Paperclip,
@@ -16,6 +16,7 @@ import {
 } from 'lucide-react';
 import { useTheme } from '../contexts/ThemeContext';
 import { useLanguage } from '../contexts/LanguageContext';
+import { api, type Provider } from '../lib/api';
 
 interface Message {
   id: string;
@@ -47,12 +48,51 @@ export default function Chat() {
   const [input, setInput] = useState('');
   const [selectedProvider, setSelectedProvider] = useState('gemini');
   const [isLoading, setIsLoading] = useState(false);
+  const [providers, setProviders] = useState<Provider[]>([]);
 
-  const aiProviders = [
-    { id: 'gemini', name: 'Gemini', icon: Globe, color: 'bg-blue-500' },
-    { id: 'chatgpt', name: 'ChatGPT', icon: Zap, color: 'bg-green-500' },
-    { id: 'claude', name: 'Claude', icon: MessageSquare, color: 'bg-orange-500' },
-  ];
+  // Load real providers from API
+  useEffect(() => {
+    async function loadProviders() {
+      try {
+        const health = await api.getHealth();
+        const providerList: Provider[] = Object.entries(health.providers).map(([id, data]) => ({
+          id,
+          name: id.charAt(0).toUpperCase() + id.slice(1),
+          status: data.healthy ? 'connected' : 'disconnected',
+        }));
+        setProviders(providerList);
+        if (providerList.length > 0 && !providerList.find(p => p.id === selectedProvider)) {
+          setSelectedProvider(providerList[0].id);
+        }
+      } catch {
+        // API not available, show default providers
+        setProviders([
+          { id: 'gemini', name: 'Gemini', status: 'unknown' },
+          { id: 'chatgpt', name: 'ChatGPT', status: 'unknown' },
+          { id: 'claude', name: 'Claude', status: 'unknown' },
+        ]);
+      }
+    }
+    loadProviders();
+  }, []);
+
+  const getProviderIcon = (id: string) => {
+    switch (id) {
+      case 'gemini': return Globe;
+      case 'chatgpt': return Zap;
+      case 'claude': return MessageSquare;
+      default: return Globe;
+    }
+  };
+
+  const getProviderColor = (id: string) => {
+    switch (id) {
+      case 'gemini': return 'bg-blue-500';
+      case 'chatgpt': return 'bg-green-500';
+      case 'claude': return 'bg-orange-500';
+      default: return 'bg-gray-500';
+    }
+  };
 
   const handleSend = async () => {
     if (!input.trim() || isLoading) return;
@@ -65,30 +105,39 @@ export default function Chat() {
     };
 
     setMessages((prev) => [...prev, userMessage]);
+    const userInput = input;
     setInput('');
     setIsLoading(true);
 
-    // Simulate AI response with tool calls
-    setTimeout(() => {
-      const toolCall: ToolCall = {
-        id: 'tc-' + Date.now(),
-        name: 'fs.read',
-        params: { path: input.includes('config') ? 'package.json' : 'README.md' },
-        status: 'success',
-        result: '{"name": "browser-ai-bridge", "version": "0.1.0"}',
-      };
+    try {
+      // Call real API
+      const response = await api.chat({
+        model: selectedProvider,
+        messages: [
+          { role: 'system', content: 'You are a helpful assistant. Be concise.' },
+          { role: 'user', content: userInput },
+        ],
+      });
 
       const assistantMessage: Message = {
         id: (Date.now() + 1).toString(),
         role: 'assistant',
-        content: `I'll read that file for you. Here's what I found:`,
+        content: response.choices[0]?.message?.content || 'No response',
         timestamp: new Date(),
-        toolCalls: [toolCall],
       };
 
       setMessages((prev) => [...prev, assistantMessage]);
+    } catch (error) {
+      const errorMessage: Message = {
+        id: (Date.now() + 1).toString(),
+        role: 'assistant',
+        content: `Error: ${error instanceof Error ? error.message : 'Failed to get response'}`,
+        timestamp: new Date(),
+      };
+      setMessages((prev) => [...prev, errorMessage]);
+    } finally {
       setIsLoading(false);
-    }, 1500);
+    }
   };
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
@@ -115,22 +164,28 @@ export default function Chat() {
 
       {/* Provider Selection */}
       <div className="flex gap-2 mb-4">
-        {aiProviders.map((provider) => (
-          <button
-            key={provider.id}
-            onClick={() => setSelectedProvider(provider.id)}
-            className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
-              selectedProvider === provider.id
-                ? 'bg-primary-500 text-white'
-                : theme === 'dark'
-                  ? 'bg-gray-700 text-gray-300 border border-gray-600 hover:bg-gray-600'
-                  : 'bg-white text-gray-700 border border-gray-200 hover:bg-gray-50'
-            }`}
-          >
-            <provider.icon className="w-4 h-4" />
-            {provider.name}
-          </button>
-        ))}
+        {providers.map((provider) => {
+          const Icon = getProviderIcon(provider.id);
+          return (
+            <button
+              key={provider.id}
+              onClick={() => setSelectedProvider(provider.id)}
+              className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
+                selectedProvider === provider.id
+                  ? 'bg-primary-500 text-white'
+                  : theme === 'dark'
+                    ? 'bg-gray-700 text-gray-300 border border-gray-600 hover:bg-gray-600'
+                    : 'bg-white text-gray-700 border border-gray-200 hover:bg-gray-50'
+              }`}
+            >
+              <Icon className="w-4 h-4" />
+              {provider.name}
+              {provider.status === 'connected' && (
+                <span className="w-2 h-2 bg-green-400 rounded-full"></span>
+              )}
+            </button>
+          );
+        })}
       </div>
 
       {/* Messages */}
@@ -165,7 +220,7 @@ export default function Chat() {
                       : theme === 'dark' ? 'bg-gray-700 text-white' : 'bg-gray-100 text-gray-900'
                 }`}
               >
-                <p className="text-sm">{message.content}</p>
+                <p className="text-sm whitespace-pre-wrap">{message.content}</p>
               </div>
 
               {/* Tool Calls */}

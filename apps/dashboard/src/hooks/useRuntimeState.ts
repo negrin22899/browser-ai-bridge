@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { api } from '../lib/api';
 
 export interface RuntimeState {
   provider: {
@@ -41,15 +42,12 @@ export interface RuntimeState {
 }
 
 /**
- * Hook to get real runtime state
- * 
- * In production, this would connect to the Runtime via WebSocket or polling.
- * For now, it returns initial state and simulates updates.
+ * Hook to get real runtime state from API
  */
 export function useRuntimeState(): RuntimeState {
   const [state, setState] = useState<RuntimeState>({
     provider: {
-      name: 'Gemini',
+      name: 'Not connected',
       status: 'disconnected',
       latency: 0,
     },
@@ -86,85 +84,82 @@ export function useRuntimeState(): RuntimeState {
     logs: [],
   });
 
-  // Fetch real state from API
   useEffect(() => {
-    const fetchState = async () => {
-      try {
-        // Fetch provider status
-        const providerRes = await fetch('/v1/models');
-        if (providerRes.ok) {
-          const providerData = await providerRes.json();
-          setState(prev => ({
-            ...prev,
-            provider: {
-              ...prev.provider,
-              name: providerData.data?.[0]?.id ?? 'Not connected',
-              status: providerData.data?.length > 0 ? 'connected' : 'disconnected',
-            },
-          }));
-        }
+    let mounted = true;
 
-        // Fetch health
-        const healthRes = await fetch('/health');
-        if (healthRes.ok) {
-          const healthData = await healthRes.json();
-          setState(prev => ({
-            ...prev,
-            provider: {
-              ...prev.provider,
-              latency: healthData.providers?.gemini?.latency ?? 0,
-            },
-            browser: {
-              connected: healthData.providers?.gemini?.healthy ?? false,
-              url: healthData.providers?.gemini?.details?.url ?? '',
-            },
-          }));
-        }
+    async function fetchState() {
+      try {
+        // Fetch health status
+        const health = await api.getHealth();
+        if (!mounted) return;
+
+        const providerIds = Object.keys(health.providers);
+        const connectedProviders = providerIds.filter(id => health.providers[id]?.healthy);
+        const firstProvider = providerIds[0];
+        const providerData = firstProvider ? health.providers[firstProvider] : null;
+
+        setState(prev => ({
+          ...prev,
+          provider: {
+            name: firstProvider ? firstProvider.charAt(0).toUpperCase() + firstProvider.slice(1) : 'Not connected',
+            status: providerData?.healthy ? 'connected' : 'disconnected',
+            latency: providerData?.latency ?? 0,
+          },
+          browser: {
+            connected: connectedProviders.length > 0,
+            url: providerData?.details?.url as string ?? '',
+          },
+          performance: {
+            providerLatency: providerData?.latency ?? 0,
+            runtimeLatency: 0,
+            toolLatency: 0,
+          },
+        }));
 
         // Fetch sessions
-        const sessionsRes = await fetch('/v1/sessions');
-        if (sessionsRes.ok) {
-          const sessionsData = await sessionsRes.json();
-          if (sessionsData.data?.length > 0) {
-            const lastSession = sessionsData.data[sessionsData.data.length - 1];
-            setState(prev => ({
-              ...prev,
-              session: {
-                id: lastSession.id,
-                messageCount: lastSession.messageCount ?? 0,
-              },
-            }));
-          }
+        const sessions = await api.getSessions();
+        if (!mounted) return;
+
+        if (sessions.data?.length > 0) {
+          const lastSession = sessions.data[sessions.data.length - 1];
+          setState(prev => ({
+            ...prev,
+            session: {
+              id: lastSession.id,
+              messageCount: lastSession.messages?.length ?? 0,
+            },
+          }));
         }
-      } catch (error) {
-        // API not available, use default state
-        console.debug('Could not fetch runtime state:', error);
+
+        // Fetch tools
+        try {
+          const tools = await api.getTools();
+          if (!mounted) return;
+
+          setState(prev => ({
+            ...prev,
+            permissions: tools.map(tool => ({
+              tool: tool.name,
+              mode: (tool.name.includes('read') || tool.name.includes('status') || tool.name.includes('diff'))
+                ? 'auto' as const
+                : 'confirm' as const,
+            })),
+          }));
+        } catch {
+          // Tools endpoint not available
+        }
+      } catch {
+        // API not available
       }
-    };
+    }
 
-    // Fetch immediately
     fetchState();
-
-    // Then poll every 5 seconds
     const interval = setInterval(fetchState, 5000);
 
-    return () => clearInterval(interval);
-  }, []);
-
-  // Simulate system metrics (would be real in production)
-  useEffect(() => {
-    const interval = setInterval(() => {
-      setState(prev => ({
-        ...prev,
-        system: {
-          cpu: Math.min(100, Math.max(0, prev.system.cpu + Math.random() * 10 - 5)),
-          memory: Math.min(100, Math.max(0, prev.system.memory + Math.random() * 5 - 2.5)),
-          uptime: prev.system.uptime + 1,
-        },
-      }));
-    }, 1000);
-
-    return () => clearInterval(interval);
+    return () => {
+      mounted = false;
+      clearInterval(interval);
+    };
   }, []);
 
   return state;

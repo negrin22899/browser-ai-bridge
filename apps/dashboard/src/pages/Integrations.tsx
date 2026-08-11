@@ -1,9 +1,8 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import {
   Globe,
-  Github,
-  MessageSquare,
   Zap,
+  MessageSquare,
   Search,
   ExternalLink,
   Check,
@@ -12,10 +11,10 @@ import {
   RefreshCw,
   Trash2,
   Clock,
-  Star,
 } from 'lucide-react';
 import { useTheme } from '../contexts/ThemeContext';
 import { useLanguage } from '../contexts/LanguageContext';
+import { api, type HealthStatus } from '../lib/api';
 
 interface Integration {
   id: string;
@@ -24,93 +23,90 @@ interface Integration {
   icon: any;
   color: string;
   status: 'connected' | 'disconnected' | 'error';
-  category: 'ai' | 'devtools' | 'productivity';
+  category: 'ai';
   features: string[];
-  connectedAt?: string;
-  lastUsed?: string;
+  siteUrl: string;
+  latency?: number;
 }
-
-const getIntegrations = (t: any): Integration[] => [
-  {
-    id: 'gemini',
-    name: 'Google Gemini',
-    description: 'Access Gemini AI for text generation, analysis, and code assistance',
-    icon: Globe,
-    color: 'bg-blue-500',
-    status: 'connected',
-    category: 'ai',
-    features: ['Text generation', 'Code analysis', 'Multi-modal', '1M context'],
-    connectedAt: '2024-01-15',
-    lastUsed: '2 minutes ago',
-  },
-  {
-    id: 'chatgpt',
-    name: 'ChatGPT',
-    description: 'OpenAI ChatGPT for conversational AI and code generation',
-    icon: Zap,
-    color: 'bg-green-500',
-    status: 'connected',
-    category: 'ai',
-    features: ['GPT-4o', 'Code interpreter', 'DALL-E', 'Web browsing'],
-    connectedAt: '2024-01-10',
-    lastUsed: '15 minutes ago',
-  },
-  {
-    id: 'claude',
-    name: 'Claude',
-    description: 'Anthropic Claude for thoughtful analysis and long-form content',
-    icon: MessageSquare,
-    color: 'bg-orange-500',
-    status: 'disconnected',
-    category: 'ai',
-    features: ['200K context', 'Code analysis', 'Artifacts', 'Projects'],
-  },
-  {
-    id: 'deepseek',
-    name: 'DeepSeek',
-    description: 'DeepSeek AI for coding and technical discussions',
-    icon: Zap,
-    color: 'bg-purple-500',
-    status: 'disconnected',
-    category: 'ai',
-    features: ['Code generation', 'Technical analysis', 'Math', 'Reasoning'],
-  },
-  {
-    id: 'github',
-    name: 'GitHub',
-    description: 'Manage repositories, pull requests, issues, and code reviews',
-    icon: Github,
-    color: 'bg-gray-800',
-    status: 'connected',
-    category: 'devtools',
-    features: ['Repositories', 'Pull requests', 'Issues', 'Actions', 'Code review'],
-    connectedAt: '2024-01-05',
-    lastUsed: '1 hour ago',
-  },
-  {
-    id: 'gitlab',
-    name: 'GitLab',
-    description: 'GitLab integration for CI/CD, repositories, and project management',
-    icon: Github,
-    color: 'bg-orange-600',
-    status: 'disconnected',
-    category: 'devtools',
-    features: ['Repositories', 'CI/CD', 'Issues', 'Merge requests'],
-  },
-];
 
 export default function Integrations() {
   const { theme } = useTheme();
   const { t } = useLanguage();
-  const [selectedCategory, setSelectedCategory] = useState('all');
+  const [selectedCategory] = useState('all');
   const [searchQuery, setSearchQuery] = useState('');
-  const [integrations, setIntegrations] = useState(getIntegrations(t));
+  const [integrations, setIntegrations] = useState<Integration[]>([]);
+  const [loading, setLoading] = useState(true);
 
-  const categories = [
-    { id: 'all', name: t('integrations.all') },
-    { id: 'ai', name: t('integrations.ai') },
-    { id: 'devtools', name: t('integrations.devtools') },
-  ];
+  async function loadIntegrations() {
+    setLoading(true);
+    try {
+      const health = await api.getHealth();
+      
+      const baseIntegrations: Omit<Integration, 'status' | 'latency'>[] = [
+        {
+          id: 'gemini',
+          name: 'Google Gemini',
+          description: 'Access Gemini AI for text generation, analysis, and code assistance',
+          icon: Globe,
+          color: 'bg-blue-500',
+          category: 'ai',
+          features: ['Text generation', 'Code analysis', 'Multi-modal', '1M context'],
+          siteUrl: 'https://gemini.google.com',
+        },
+        {
+          id: 'chatgpt',
+          name: 'ChatGPT',
+          description: 'OpenAI ChatGPT for conversational AI and code generation',
+          icon: Zap,
+          color: 'bg-green-500',
+          category: 'ai',
+          features: ['GPT-4o', 'Code interpreter', 'DALL-E', 'Web browsing'],
+          siteUrl: 'https://chatgpt.com',
+        },
+        {
+          id: 'claude',
+          name: 'Claude',
+          description: 'Anthropic Claude for thoughtful analysis and long-form content',
+          icon: MessageSquare,
+          color: 'bg-orange-500',
+          category: 'ai',
+          features: ['200K context', 'Code analysis', 'Artifacts', 'Projects'],
+          siteUrl: 'https://claude.ai',
+        },
+        {
+          id: 'deepseek',
+          name: 'DeepSeek',
+          description: 'DeepSeek AI for coding and technical discussions',
+          icon: Zap,
+          color: 'bg-purple-500',
+          category: 'ai',
+          features: ['Code generation', 'Technical analysis', 'Math', 'Reasoning'],
+          siteUrl: 'https://chat.deepseek.com',
+        },
+      ];
+
+      const integrationsWithStatus: Integration[] = baseIntegrations.map(base => {
+        const providerData = health.providers[base.id];
+        return {
+          ...base,
+          status: providerData?.healthy ? 'connected' : (providerData?.error ? 'error' : 'disconnected'),
+          latency: providerData?.latency,
+        };
+      });
+
+      setIntegrations(integrationsWithStatus);
+    } catch {
+      setIntegrations([]);
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  useEffect(() => {
+    loadIntegrations();
+    const interval = setInterval(loadIntegrations, 15000);
+    return () => clearInterval(interval);
+  }, []);
 
   const filteredIntegrations = integrations.filter((integration) => {
     const matchesCategory = selectedCategory === 'all' || integration.category === selectedCategory;
@@ -120,51 +116,41 @@ export default function Integrations() {
     return matchesCategory && matchesSearch;
   });
 
-  const handleConnect = (id: string) => {
-    setIntegrations((prev) =>
-      prev.map((integration) =>
-        integration.id === id
-          ? {
-              ...integration,
-              status: 'connected' as const,
-              connectedAt: new Date().toISOString().split('T')[0],
-              lastUsed: 'Just now',
-            }
-          : integration
-      )
-    );
-  };
-
-  const handleDisconnect = (id: string) => {
-    setIntegrations((prev) =>
-      prev.map((integration) =>
-        integration.id === id
-          ? {
-              ...integration,
-              status: 'disconnected' as const,
-              connectedAt: undefined,
-              lastUsed: undefined,
-            }
-          : integration
-      )
-    );
-  };
-
   const connectedCount = integrations.filter((i) => i.status === 'connected').length;
 
   const cardClass = `rounded-xl border ${
     theme === 'dark' ? 'bg-gray-800 border-gray-700' : 'bg-white border-gray-200'
   }`;
 
+  if (loading && integrations.length === 0) {
+    return (
+      <div className="flex items-center justify-center h-64">
+        <RefreshCw className="w-8 h-8 animate-spin text-primary-500" />
+      </div>
+    );
+  }
+
   return (
     <div>
-      <div className="mb-8">
-        <h1 className={`text-2xl font-bold ${theme === 'dark' ? 'text-white' : 'text-gray-900'}`}>
-          {t('integrations.title')}
-        </h1>
-        <p className={theme === 'dark' ? 'text-gray-400' : 'text-gray-600'}>
-          {t('integrations.subtitle')}
-        </p>
+      <div className="flex items-center justify-between mb-8">
+        <div>
+          <h1 className={`text-2xl font-bold ${theme === 'dark' ? 'text-white' : 'text-gray-900'}`}>
+            {t('integrations.title')}
+          </h1>
+          <p className={theme === 'dark' ? 'text-gray-400' : 'text-gray-600'}>
+            {t('integrations.subtitle')}
+          </p>
+        </div>
+        <button
+          onClick={loadIntegrations}
+          className={`p-2 rounded-lg transition-colors ${
+            theme === 'dark' ? 'hover:bg-gray-700' : 'hover:bg-gray-100'
+          }`}
+        >
+          <RefreshCw className={`w-5 h-5 ${loading ? 'animate-spin' : ''} ${
+            theme === 'dark' ? 'text-gray-400' : 'text-gray-600'
+          }`} />
+        </button>
       </div>
 
       {/* Stats */}
@@ -208,7 +194,7 @@ export default function Integrations() {
             <div className={`w-10 h-10 rounded-lg flex items-center justify-center ${
               theme === 'dark' ? 'bg-purple-900' : 'bg-purple-50'
             }`}>
-              <Star className={`w-5 h-5 ${theme === 'dark' ? 'text-purple-400' : 'text-purple-600'}`} />
+              <Globe className={`w-5 h-5 ${theme === 'dark' ? 'text-purple-400' : 'text-purple-600'}`} />
             </div>
             <div>
               <p className={`text-2xl font-bold ${theme === 'dark' ? 'text-white' : 'text-gray-900'}`}>
@@ -222,41 +208,22 @@ export default function Integrations() {
         </div>
       </div>
 
-      {/* Filters */}
-      <div className="flex flex-col sm:flex-row gap-4 mb-6">
-        <div className="relative flex-1">
-          <Search className={`absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 ${
-            theme === 'dark' ? 'text-gray-500' : 'text-gray-400'
-          }`} />
-          <input
-            type="text"
-            placeholder={t('integrations.search')}
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            className={`w-full pl-10 pr-4 py-2.5 border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500 ${
-              theme === 'dark'
-                ? 'bg-gray-700 border-gray-600 text-white placeholder-gray-400'
-                : 'bg-white border-gray-200 text-gray-900'
-            }`}
-          />
-        </div>
-        <div className="flex gap-2">
-          {categories.map((category) => (
-            <button
-              key={category.id}
-              onClick={() => setSelectedCategory(category.id)}
-              className={`px-4 py-2.5 rounded-lg text-sm font-medium transition-colors ${
-                selectedCategory === category.id
-                  ? 'bg-primary-500 text-white'
-                  : theme === 'dark'
-                    ? 'bg-gray-700 text-gray-300 border border-gray-600 hover:bg-gray-600'
-                    : 'bg-white text-gray-700 border border-gray-200 hover:bg-gray-50'
-              }`}
-            >
-              {category.name}
-            </button>
-          ))}
-        </div>
+      {/* Search */}
+      <div className="relative mb-6">
+        <Search className={`absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 ${
+          theme === 'dark' ? 'text-gray-500' : 'text-gray-400'
+        }`} />
+        <input
+          type="text"
+          placeholder={t('integrations.search')}
+          value={searchQuery}
+          onChange={(e) => setSearchQuery(e.target.value)}
+          className={`w-full pl-10 pr-4 py-2.5 border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500 ${
+            theme === 'dark'
+              ? 'bg-gray-700 border-gray-600 text-white placeholder-gray-400'
+              : 'bg-white border-gray-200 text-gray-900'
+          }`}
+        />
       </div>
 
       {/* Integration Grid */}
@@ -283,6 +250,11 @@ export default function Integrations() {
                         {t('integrations.connected')}
                       </span>
                     )}
+                    {integration.status === 'error' && (
+                      <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-red-50 text-red-700">
+                        Error
+                      </span>
+                    )}
                   </div>
                   <p className={`text-sm mt-1 ${theme === 'dark' ? 'text-gray-400' : 'text-gray-600'}`}>
                     {integration.description}
@@ -305,18 +277,18 @@ export default function Integrations() {
               </div>
 
               {/* Status Info */}
-              {integration.status === 'connected' && integration.connectedAt && (
+              {integration.status === 'connected' && (
                 <div className={`mt-4 flex items-center gap-4 text-xs ${
                   theme === 'dark' ? 'text-gray-500' : 'text-gray-500'
                 }`}>
                   <span className="flex items-center gap-1">
                     <Clock className="w-3.5 h-3.5" />
-                    {t('integrations.connected')} {integration.connectedAt}
+                    Connected
                   </span>
-                  {integration.lastUsed && (
+                  {integration.latency && (
                     <span className="flex items-center gap-1">
                       <RefreshCw className="w-3.5 h-3.5" />
-                      {integration.lastUsed}
+                      {integration.latency}ms
                     </span>
                   )}
                 </div>
@@ -324,40 +296,42 @@ export default function Integrations() {
 
               {/* Actions */}
               <div className="mt-4 flex items-center gap-2">
-                {integration.status === 'connected' ? (
-                  <>
-                    <button className={`flex-1 flex items-center justify-center gap-2 px-4 py-2.5 text-sm font-medium rounded-lg transition-colors ${
-                      theme === 'dark'
+                <a
+                  href={integration.siteUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className={`flex-1 flex items-center justify-center gap-2 px-4 py-2.5 text-sm font-medium rounded-lg transition-colors ${
+                    integration.status === 'connected'
+                      ? 'text-green-600 bg-green-50 hover:bg-green-100'
+                      : theme === 'dark'
                         ? 'text-gray-300 bg-gray-700 hover:bg-gray-600'
                         : 'text-gray-700 bg-gray-100 hover:bg-gray-200'
-                    }`}>
-                      <Settings className="w-4 h-4" />
-                      {t('integrations.configure')}
-                    </button>
-                    <button
-                      onClick={() => handleDisconnect(integration.id)}
-                      className="flex items-center justify-center gap-2 px-4 py-2.5 text-sm font-medium text-red-600 bg-red-50 rounded-lg hover:bg-red-100 transition-colors"
-                    >
-                      <Trash2 className="w-4 h-4" />
-                      {t('integrations.disconnect')}
-                    </button>
-                  </>
-                ) : (
-                  <button
-                    onClick={() => handleConnect(integration.id)}
-                    className="flex-1 flex items-center justify-center gap-2 px-4 py-2.5 text-sm font-medium text-white bg-primary-500 rounded-lg hover:bg-primary-600 transition-colors"
-                  >
-                    <Plus className="w-4 h-4" />
-                    {t('integrations.connect')}
-                  </button>
-                )}
-                <button className={`p-2.5 rounded-lg transition-colors ${
-                  theme === 'dark'
-                    ? 'text-gray-400 hover:text-gray-300 hover:bg-gray-700'
-                    : 'text-gray-400 hover:text-gray-600 hover:bg-gray-100'
-                }`}>
+                  }`}
+                >
+                  {integration.status === 'connected' ? (
+                    <>
+                      <Check className="w-4 h-4" />
+                      Connected
+                    </>
+                  ) : (
+                    <>
+                      <Plus className="w-4 h-4" />
+                      {t('integrations.connect')}
+                    </>
+                  )}
+                </a>
+                <a
+                  href={integration.siteUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className={`p-2.5 rounded-lg transition-colors ${
+                    theme === 'dark'
+                      ? 'text-gray-400 hover:text-gray-300 hover:bg-gray-700'
+                      : 'text-gray-400 hover:text-gray-600 hover:bg-gray-100'
+                  }`}
+                >
                   <ExternalLink className="w-4 h-4" />
-                </button>
+                </a>
               </div>
             </div>
           </div>

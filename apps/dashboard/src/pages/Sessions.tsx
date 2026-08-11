@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import {
   MessageSquare,
   Plus,
@@ -6,65 +6,39 @@ import {
   Server,
   Trash2,
   ArrowRight,
+  RefreshCw,
 } from 'lucide-react';
 import { useTheme } from '../contexts/ThemeContext';
 import { useLanguage } from '../contexts/LanguageContext';
-
-interface Session {
-  id: string;
-  providerId: string;
-  providerName: string;
-  messageCount: number;
-  createdAt: number;
-  updatedAt: number;
-  status: 'active' | 'closed';
-}
-
-const mockSessions: Session[] = [
-  {
-    id: '1',
-    providerId: 'gemini',
-    providerName: 'Gemini',
-    messageCount: 12,
-    createdAt: Date.now() - 3600000,
-    updatedAt: Date.now() - 300000,
-    status: 'active',
-  },
-  {
-    id: '2',
-    providerId: 'chatgpt',
-    providerName: 'ChatGPT',
-    messageCount: 8,
-    createdAt: Date.now() - 7200000,
-    updatedAt: Date.now() - 600000,
-    status: 'active',
-  },
-  {
-    id: '3',
-    providerId: 'claude',
-    providerName: 'Claude',
-    messageCount: 24,
-    createdAt: Date.now() - 86400000,
-    updatedAt: Date.now() - 3600000,
-    status: 'closed',
-  },
-];
+import { api, type Session } from '../lib/api';
 
 export default function Sessions() {
   const { theme } = useTheme();
   const { t } = useLanguage();
-  const [sessions] = useState(mockSessions);
+  const [sessions, setSessions] = useState<Session[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  async function loadSessions() {
+    setLoading(true);
+    setError(null);
+    try {
+      const data = await api.getSessions();
+      setSessions(data.data || []);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to load sessions');
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  useEffect(() => {
+    loadSessions();
+  }, []);
 
   const cardClass = `rounded-xl border ${
     theme === 'dark' ? 'bg-gray-800 border-gray-700' : 'bg-white border-gray-200'
   }`;
-
-  const activeSessions = sessions.filter(s => s.status === 'active');
-
-  const formatTime = (timestamp: number) => {
-    const date = new Date(timestamp);
-    return date.toLocaleString();
-  };
 
   const formatRelative = (timestamp: number) => {
     const diff = Date.now() - timestamp;
@@ -78,6 +52,14 @@ export default function Sessions() {
     return `${days}d ago`;
   };
 
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center h-64">
+        <RefreshCw className="w-8 h-8 animate-spin text-primary-500" />
+      </div>
+    );
+  }
+
   return (
     <div>
       <div className="flex items-center justify-between mb-8">
@@ -89,11 +71,27 @@ export default function Sessions() {
             {t('sessions.subtitle')}
           </p>
         </div>
-        <button className="flex items-center gap-2 px-4 py-2.5 bg-primary-500 text-white rounded-lg hover:bg-primary-600">
-          <Plus className="w-4 h-4" />
-          {t('sessions.new')}
-        </button>
+        <div className="flex gap-2">
+          <button
+            onClick={loadSessions}
+            className={`p-2 rounded-lg transition-colors ${
+              theme === 'dark' ? 'hover:bg-gray-700' : 'hover:bg-gray-100'
+            }`}
+          >
+            <RefreshCw className={`w-5 h-5 ${theme === 'dark' ? 'text-gray-400' : 'text-gray-600'}`} />
+          </button>
+          <button className="flex items-center gap-2 px-4 py-2.5 bg-primary-500 text-white rounded-lg hover:bg-primary-600">
+            <Plus className="w-4 h-4" />
+            {t('sessions.new')}
+          </button>
+        </div>
       </div>
+
+      {error && (
+        <div className="mb-4 p-4 bg-red-50 border border-red-200 rounded-lg text-red-700 text-sm">
+          {error}
+        </div>
+      )}
 
       {/* Stats */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
@@ -106,7 +104,7 @@ export default function Sessions() {
             </div>
             <div>
               <p className={`text-2xl font-bold ${theme === 'dark' ? 'text-white' : 'text-gray-900'}`}>
-                {activeSessions.length}
+                {sessions.length}
               </p>
               <p className={`text-sm ${theme === 'dark' ? 'text-gray-400' : 'text-gray-600'}`}>
                 {t('sessions.active')}
@@ -123,7 +121,7 @@ export default function Sessions() {
             </div>
             <div>
               <p className={`text-2xl font-bold ${theme === 'dark' ? 'text-white' : 'text-gray-900'}`}>
-                {sessions.reduce((sum, s) => sum + s.messageCount, 0)}
+                {sessions.reduce((sum, s) => sum + (s.messages?.length || 0), 0)}
               </p>
               <p className={`text-sm ${theme === 'dark' ? 'text-gray-400' : 'text-gray-600'}`}>
                 {t('sessions.messages')}
@@ -165,27 +163,19 @@ export default function Sessions() {
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-4">
                   <div className={`w-10 h-10 rounded-lg flex items-center justify-center ${
-                    session.status === 'active'
-                      ? theme === 'dark' ? 'bg-green-900' : 'bg-green-50'
-                      : theme === 'dark' ? 'bg-gray-700' : 'bg-gray-100'
+                    theme === 'dark' ? 'bg-green-900' : 'bg-green-50'
                   }`}>
                     <MessageSquare className={`w-5 h-5 ${
-                      session.status === 'active'
-                        ? theme === 'dark' ? 'text-green-400' : 'text-green-600'
-                        : theme === 'dark' ? 'text-gray-400' : 'text-gray-500'
+                      theme === 'dark' ? 'text-green-400' : 'text-green-600'
                     }`} />
                   </div>
                   <div>
                     <div className="flex items-center gap-2">
                       <h3 className={`font-medium ${theme === 'dark' ? 'text-white' : 'text-gray-900'}`}>
-                        {session.providerName}
+                        {session.providerId.charAt(0).toUpperCase() + session.providerId.slice(1)}
                       </h3>
-                      <span className={`text-xs px-2 py-0.5 rounded ${
-                        session.status === 'active'
-                          ? 'bg-green-50 text-green-700'
-                          : theme === 'dark' ? 'bg-gray-700 text-gray-400' : 'bg-gray-100 text-gray-500'
-                      }`}>
-                        {session.status === 'active' ? t('sessions.active') : t('sessions.closed')}
+                      <span className="text-xs px-2 py-0.5 rounded bg-green-50 text-green-700">
+                        {session.model}
                       </span>
                     </div>
                     <div className="flex items-center gap-4 mt-1">
@@ -193,13 +183,13 @@ export default function Sessions() {
                         theme === 'dark' ? 'text-gray-500' : 'text-gray-400'
                       }`}>
                         <MessageSquare className="w-3 h-3" />
-                        {session.messageCount} {t('sessions.messages')}
+                        {session.messages?.length || 0} {t('sessions.messages')}
                       </span>
                       <span className={`text-xs flex items-center gap-1 ${
                         theme === 'dark' ? 'text-gray-500' : 'text-gray-400'
                       }`}>
                         <Clock className="w-3 h-3" />
-                        {formatRelative(session.updatedAt)}
+                        {formatRelative(session.createdAt)}
                       </span>
                     </div>
                   </div>

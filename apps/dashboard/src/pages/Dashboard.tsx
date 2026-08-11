@@ -1,53 +1,106 @@
+import { useState, useEffect } from 'react';
 import {
   Activity,
   MessageSquare,
   Server,
   Clock,
   CheckCircle,
-  Terminal,
   Shield,
+  RefreshCw,
 } from 'lucide-react';
 import { useTheme } from '../contexts/ThemeContext';
 import { useLanguage } from '../contexts/LanguageContext';
+import { api, type HealthStatus, type Session } from '../lib/api';
 
 export default function Dashboard() {
   const { theme } = useTheme();
   const { t } = useLanguage();
+  const [health, setHealth] = useState<HealthStatus | null>(null);
+  const [sessions, setSessions] = useState<Session[]>([]);
+  const [providerCount, setProviderCount] = useState(0);
+  const [connectedCount, setConnectedCount] = useState(0);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  async function loadData() {
+    setLoading(true);
+    setError(null);
+    try {
+      const [healthData, sessionsData] = await Promise.all([
+        api.getHealth(),
+        api.getSessions(),
+      ]);
+      setHealth(healthData);
+      setSessions(sessionsData.data || []);
+      const providers = Object.keys(healthData.providers);
+      setProviderCount(providers.length);
+      setConnectedCount(providers.filter(p => healthData.providers[p]?.healthy).length);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to load data');
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  useEffect(() => {
+    loadData();
+    const interval = setInterval(loadData, 30000); // Refresh every 30s
+    return () => clearInterval(interval);
+  }, []);
 
   const stats = [
-    { name: t('dashboard.totalRequests'), value: '1,234', icon: Activity, change: '+12%' },
-    { name: t('dashboard.activeSessions'), value: '3', icon: MessageSquare, change: '+1' },
-    { name: t('dashboard.activeProviders'), value: '2', icon: Server, change: 'Online' },
-    { name: t('dashboard.uptime'), value: '2h 34m', icon: Clock, change: '99.9%' },
+    { name: t('dashboard.totalRequests'), value: sessions.length.toString(), icon: Activity, change: '' },
+    { name: t('dashboard.activeSessions'), value: sessions.length.toString(), icon: MessageSquare, change: '' },
+    { name: t('dashboard.activeProviders'), value: `${connectedCount}/${providerCount}`, icon: Server, change: connectedCount > 0 ? 'Online' : 'Offline' },
+    { name: t('dashboard.uptime'), value: health?.status === 'ok' ? 'Running' : 'Down', icon: Clock, change: health?.status || 'unknown' },
   ];
 
   const systemStatus = [
-    { name: t('dashboard.runtimeReady'), status: true },
-    { name: t('dashboard.toolsRegistered'), value: '9', status: true },
-    { name: t('dashboard.permissionsActive'), value: '5', status: true },
-  ];
-
-  const recentActivity = [
-    { id: 1, type: 'tool', tool: 'fs.read', result: 'allowed', time: '2 min ago' },
-    { id: 2, type: 'permission', tool: 'fs.write', result: 'denied', time: '5 min ago' },
-    { id: 3, type: 'tool', tool: 'git.status', result: 'allowed', time: '10 min ago' },
-    { id: 4, type: 'tool', tool: 'shell.exec', result: 'denied', time: '15 min ago' },
+    { name: t('dashboard.runtimeReady'), status: health?.status === 'ok' },
+    { name: t('dashboard.toolsRegistered'), value: '6', status: true },
+    { name: t('dashboard.permissionsActive'), value: 'scope', status: true },
   ];
 
   const cardClass = `rounded-xl border ${
     theme === 'dark' ? 'bg-gray-800 border-gray-700' : 'bg-white border-gray-200'
   }`;
 
+  if (loading && !health) {
+    return (
+      <div className="flex items-center justify-center h-64">
+        <RefreshCw className="w-8 h-8 animate-spin text-primary-500" />
+      </div>
+    );
+  }
+
   return (
     <div>
-      <div className="mb-8">
-        <h1 className={`text-2xl font-bold ${theme === 'dark' ? 'text-white' : 'text-gray-900'}`}>
-          {t('dashboard.title')}
-        </h1>
-        <p className={theme === 'dark' ? 'text-gray-400' : 'text-gray-600'}>
-          {t('dashboard.welcome')}
-        </p>
+      <div className="mb-8 flex items-center justify-between">
+        <div>
+          <h1 className={`text-2xl font-bold ${theme === 'dark' ? 'text-white' : 'text-gray-900'}`}>
+            {t('dashboard.title')}
+          </h1>
+          <p className={theme === 'dark' ? 'text-gray-400' : 'text-gray-600'}>
+            {t('dashboard.welcome')}
+          </p>
+        </div>
+        <button
+          onClick={loadData}
+          className={`p-2 rounded-lg transition-colors ${
+            theme === 'dark' ? 'hover:bg-gray-700' : 'hover:bg-gray-100'
+          }`}
+        >
+          <RefreshCw className={`w-5 h-5 ${loading ? 'animate-spin' : ''} ${
+            theme === 'dark' ? 'text-gray-400' : 'text-gray-600'
+          }`} />
+        </button>
       </div>
+
+      {error && (
+        <div className="mb-4 p-4 bg-red-50 border border-red-200 rounded-lg text-red-700 text-sm">
+          {error}
+        </div>
+      )}
 
       {/* Stats */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
@@ -59,9 +112,17 @@ export default function Dashboard() {
               }`}>
                 <stat.icon className={`w-6 h-6 ${theme === 'dark' ? 'text-primary-400' : 'text-primary-600'}`} />
               </div>
-              <span className="text-sm font-medium text-green-600 bg-green-50 px-2.5 py-1 rounded-full">
-                {stat.change}
-              </span>
+              {stat.change && (
+                <span className={`text-sm font-medium px-2.5 py-1 rounded-full ${
+                  stat.change === 'Online' || stat.change === 'ok'
+                    ? 'text-green-600 bg-green-50'
+                    : stat.change === 'Offline'
+                      ? 'text-red-600 bg-red-50'
+                      : 'text-gray-600 bg-gray-50'
+                }`}>
+                  {stat.change}
+                </span>
+              )}
             </div>
             <div className="mt-4">
               <p className={`text-3xl font-bold ${theme === 'dark' ? 'text-white' : 'text-gray-900'}`}>
@@ -102,52 +163,58 @@ export default function Dashboard() {
           </div>
         </div>
 
-        {/* Recent Activity */}
+        {/* Providers Status */}
         <div className={`lg:col-span-2 ${cardClass}`}>
           <div className={`px-6 py-4 border-b flex items-center justify-between ${
             theme === 'dark' ? 'border-gray-700' : 'border-gray-200'
           }`}>
             <h2 className={`text-lg font-semibold ${theme === 'dark' ? 'text-white' : 'text-gray-900'}`}>
-              {t('dashboard.recentActivity')}
+              Providers
             </h2>
-            <button className="text-sm text-primary-600 hover:text-primary-700 font-medium">
-              {t('status.viewAll')}
-            </button>
           </div>
           <div className={`divide-y ${theme === 'dark' ? 'divide-gray-700' : 'divide-gray-100'}`}>
-            {recentActivity.map((activity) => (
-              <div key={activity.id} className={`px-6 py-4 flex items-center justify-between ${
+            {health && Object.entries(health.providers).map(([id, provider]) => (
+              <div key={id} className={`px-6 py-4 flex items-center justify-between ${
                 theme === 'dark' ? 'hover:bg-gray-750' : 'hover:bg-gray-50'
               }`}>
                 <div className="flex items-center gap-3">
-                  {activity.result === 'allowed' ? (
+                  {provider.healthy ? (
                     <CheckCircle className="w-5 h-5 text-green-500" />
                   ) : (
                     <Shield className="w-5 h-5 text-red-500" />
                   )}
                   <div>
                     <p className={`font-medium ${theme === 'dark' ? 'text-white' : 'text-gray-900'}`}>
-                      {activity.tool}
+                      {id.charAt(0).toUpperCase() + id.slice(1)}
                     </p>
                     <p className={`text-xs ${theme === 'dark' ? 'text-gray-500' : 'text-gray-400'}`}>
-                      {activity.type}
+                      {provider.healthy ? 'Connected' : provider.error || 'Disconnected'}
                     </p>
                   </div>
                 </div>
                 <div className="flex items-center gap-3">
+                  {provider.latency && (
+                    <span className={`text-xs ${theme === 'dark' ? 'text-gray-500' : 'text-gray-400'}`}>
+                      {provider.latency}ms
+                    </span>
+                  )}
                   <span className={`text-xs px-2 py-0.5 rounded ${
-                    activity.result === 'allowed'
+                    provider.healthy
                       ? 'bg-green-50 text-green-700'
                       : 'bg-red-50 text-red-700'
                   }`}>
-                    {activity.result}
-                  </span>
-                  <span className={`text-xs ${theme === 'dark' ? 'text-gray-500' : 'text-gray-400'}`}>
-                    {activity.time}
+                    {provider.healthy ? 'Healthy' : 'Unhealthy'}
                   </span>
                 </div>
               </div>
             ))}
+            {health && Object.keys(health.providers).length === 0 && (
+              <div className="px-6 py-8 text-center">
+                <p className={`text-sm ${theme === 'dark' ? 'text-gray-400' : 'text-gray-500'}`}>
+                  No providers configured. Start the server with --site flag.
+                </p>
+              </div>
+            )}
           </div>
         </div>
       </div>

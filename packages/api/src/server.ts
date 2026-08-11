@@ -240,6 +240,31 @@ export function createServer(deps: ServerDeps): Hono {
     return c.json(session.toJSON());
   });
 
+  // Tools endpoint
+  app.get('/v1/tools', (c) => {
+    const provider = providerManager.getActive();
+    const tools = provider.getTools?.() ?? [];
+    return c.json(tools);
+  });
+
+  // Metrics endpoint
+  app.get('/metrics', (c) => {
+    const providers = providerManager.list();
+    const lines: string[] = [];
+
+    lines.push(`# HELP bab_providers_total Total number of providers`);
+    lines.push(`# TYPE bab_providers_total gauge`);
+    lines.push(`bab_providers_total ${providers.length}`);
+
+    for (const provider of providers) {
+      lines.push(`# HELP bab_provider_status Provider status (1=connected, 0=disconnected)`);
+      lines.push(`# TYPE bab_provider_status gauge`);
+      lines.push(`bab_provider_status{provider="${provider.id}"} ${provider.status === 'connected' ? 1 : 0}`);
+    }
+
+    return c.text(lines.join('\n'), 200, { 'Content-Type': 'text/plain' });
+  });
+
   return app;
 }
 

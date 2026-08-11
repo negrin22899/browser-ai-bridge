@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import {
   Activity,
   Play,
@@ -9,37 +9,57 @@ import {
   Terminal,
   FileText,
   GitBranch,
+  RefreshCw,
 } from 'lucide-react';
 import { useTheme } from '../contexts/ThemeContext';
 import { useLanguage } from '../contexts/LanguageContext';
+import { api } from '../lib/api';
 
 interface Tool {
   name: string;
   description: string;
-  permissionMode: 'auto' | 'confirm' | 'deny';
+  parameters: Record<string, unknown>;
 }
-
-const mockTools: Tool[] = [
-  { name: 'fs.read', description: 'Read file contents', permissionMode: 'auto' },
-  { name: 'fs.write', description: 'Write file contents', permissionMode: 'confirm' },
-  { name: 'fs.list', description: 'List directory', permissionMode: 'auto' },
-  { name: 'fs.delete', description: 'Delete file', permissionMode: 'confirm' },
-  { name: 'git.status', description: 'Git status', permissionMode: 'auto' },
-  { name: 'git.diff', description: 'Git diff', permissionMode: 'auto' },
-  { name: 'git.commit', description: 'Git commit', permissionMode: 'confirm' },
-  { name: 'git.push', description: 'Git push', permissionMode: 'confirm' },
-  { name: 'shell.exec', description: 'Execute shell command', permissionMode: 'confirm' },
-];
 
 export default function RuntimePage() {
   const { theme } = useTheme();
   const { t } = useLanguage();
-  const [isRunning, setIsRunning] = useState(true);
-  const [tools] = useState(mockTools);
+  const [isRunning, setIsRunning] = useState(false);
+  const [tools, setTools] = useState<Tool[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  async function loadTools() {
+    setLoading(true);
+    try {
+      const health = await api.getHealth();
+      setIsRunning(health.status === 'ok');
+      
+      const toolsList = await api.getTools();
+      setTools(toolsList || []);
+    } catch {
+      setIsRunning(false);
+      setTools([]);
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  useEffect(() => {
+    loadTools();
+  }, []);
 
   const cardClass = `rounded-xl border ${
     theme === 'dark' ? 'bg-gray-800 border-gray-700' : 'bg-white border-gray-200'
   }`;
+
+  const getPermissionMode = (name: string): 'auto' | 'confirm' => {
+    // Read-only operations are auto-approved
+    if (name.includes('read') || name.includes('status') || name.includes('diff') || name.includes('log') || name.includes('list')) {
+      return 'auto';
+    }
+    // Write operations need confirmation
+    return 'confirm';
+  };
 
   const getPermissionColor = (mode: string) => {
     switch (mode) {
@@ -66,6 +86,14 @@ export default function RuntimePage() {
     return <Activity className="w-5 h-5" />;
   };
 
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center h-64">
+        <RefreshCw className="w-8 h-8 animate-spin text-primary-500" />
+      </div>
+    );
+  }
+
   return (
     <div>
       <div className="flex items-center justify-between mb-8">
@@ -78,24 +106,12 @@ export default function RuntimePage() {
           </p>
         </div>
         <button
-          onClick={() => setIsRunning(!isRunning)}
-          className={`flex items-center gap-2 px-4 py-2.5 rounded-lg font-medium ${
-            isRunning
-              ? 'bg-red-500 text-white hover:bg-red-600'
-              : 'bg-green-500 text-white hover:bg-green-600'
+          onClick={loadTools}
+          className={`p-2 rounded-lg transition-colors ${
+            theme === 'dark' ? 'hover:bg-gray-700' : 'hover:bg-gray-100'
           }`}
         >
-          {isRunning ? (
-            <>
-              <Square className="w-4 h-4" />
-              {t('runtime.stop')}
-            </>
-          ) : (
-            <>
-              <Play className="w-4 h-4" />
-              {t('runtime.start')}
-            </>
-          )}
+          <RefreshCw className={`w-5 h-5 ${theme === 'dark' ? 'text-gray-400' : 'text-gray-600'}`} />
         </button>
       </div>
 
@@ -150,7 +166,7 @@ export default function RuntimePage() {
             </div>
             <div>
               <p className={`text-2xl font-bold ${theme === 'dark' ? 'text-white' : 'text-gray-900'}`}>
-                {tools.filter(t => t.permissionMode === 'confirm').length}
+                {tools.filter(t => getPermissionMode(t.name) === 'confirm').length}
               </p>
               <p className={`text-sm ${theme === 'dark' ? 'text-gray-400' : 'text-gray-600'}`}>
                 {t('runtime.permissions')}
@@ -161,38 +177,50 @@ export default function RuntimePage() {
       </div>
 
       {/* Tools List */}
-      <div className={`${cardClass}`}>
-        <div className={`px-6 py-4 border-b ${theme === 'dark' ? 'border-gray-700' : 'border-gray-200'}`}>
-          <h2 className={`text-lg font-semibold ${theme === 'dark' ? 'text-white' : 'text-gray-900'}`}>
-            {t('runtime.tools')}
-          </h2>
+      {tools.length === 0 ? (
+        <div className={`${cardClass} p-12 text-center`}>
+          <Terminal className={`w-12 h-12 mx-auto mb-4 ${theme === 'dark' ? 'text-gray-600' : 'text-gray-400'}`} />
+          <p className={theme === 'dark' ? 'text-gray-400' : 'text-gray-600'}>
+            No tools registered. Start the server with --site flag.
+          </p>
         </div>
-        <div className={`divide-y ${theme === 'dark' ? 'divide-gray-700' : 'divide-gray-100'}`}>
-          {tools.map((tool) => (
-            <div key={tool.name} className="px-6 py-4 flex items-center justify-between">
-              <div className="flex items-center gap-3">
-                <div className={`w-10 h-10 rounded-lg flex items-center justify-center ${
-                  theme === 'dark' ? 'bg-gray-700' : 'bg-gray-100'
-                }`}>
-                  {getToolIcon(tool.name)}
+      ) : (
+        <div className={`${cardClass}`}>
+          <div className={`px-6 py-4 border-b ${theme === 'dark' ? 'border-gray-700' : 'border-gray-200'}`}>
+            <h2 className={`text-lg font-semibold ${theme === 'dark' ? 'text-white' : 'text-gray-900'}`}>
+              {t('runtime.tools')}
+            </h2>
+          </div>
+          <div className={`divide-y ${theme === 'dark' ? 'divide-gray-700' : 'divide-gray-100'}`}>
+            {tools.map((tool) => {
+              const permMode = getPermissionMode(tool.name);
+              return (
+                <div key={tool.name} className="px-6 py-4 flex items-center justify-between">
+                  <div className="flex items-center gap-3">
+                    <div className={`w-10 h-10 rounded-lg flex items-center justify-center ${
+                      theme === 'dark' ? 'bg-gray-700' : 'bg-gray-100'
+                    }`}>
+                      {getToolIcon(tool.name)}
+                    </div>
+                    <div>
+                      <p className={`font-medium ${theme === 'dark' ? 'text-white' : 'text-gray-900'}`}>
+                        {tool.name}
+                      </p>
+                      <p className={`text-sm ${theme === 'dark' ? 'text-gray-400' : 'text-gray-600'}`}>
+                        {tool.description}
+                      </p>
+                    </div>
+                  </div>
+                  <span className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-sm font-medium ${getPermissionColor(permMode)}`}>
+                    {getPermissionIcon(permMode)}
+                    {t(`runtime.${permMode}`)}
+                  </span>
                 </div>
-                <div>
-                  <p className={`font-medium ${theme === 'dark' ? 'text-white' : 'text-gray-900'}`}>
-                    {tool.name}
-                  </p>
-                  <p className={`text-sm ${theme === 'dark' ? 'text-gray-400' : 'text-gray-600'}`}>
-                    {tool.description}
-                  </p>
-                </div>
-              </div>
-              <span className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-sm font-medium ${getPermissionColor(tool.permissionMode)}`}>
-                {getPermissionIcon(tool.permissionMode)}
-                {t(`runtime.${tool.permissionMode}`)}
-              </span>
-            </div>
-          ))}
+              );
+            })}
+          </div>
         </div>
-      </div>
+      )}
     </div>
   );
 }

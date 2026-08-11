@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import {
   FileText,
   Download,
@@ -6,10 +6,11 @@ import {
   CheckCircle,
   XCircle,
   Clock,
-  Filter,
+  RefreshCw,
 } from 'lucide-react';
 import { useTheme } from '../contexts/ThemeContext';
 import { useLanguage } from '../contexts/LanguageContext';
+import { api, type Session } from '../lib/api';
 
 interface LogEntry {
   id: string;
@@ -19,23 +20,61 @@ interface LogEntry {
   sessionId?: string;
   result: 'allowed' | 'denied' | 'error';
   reason?: string;
-  params?: Record<string, unknown>;
 }
-
-const mockLogs: LogEntry[] = [
-  { id: '1', timestamp: Date.now() - 60000, type: 'tool', toolName: 'fs.read', sessionId: 's1', result: 'allowed', params: { path: '/home/user/project/package.json' } },
-  { id: '2', timestamp: Date.now() - 120000, type: 'permission', toolName: 'fs.write', sessionId: 's1', result: 'denied', reason: 'not_granted' },
-  { id: '3', timestamp: Date.now() - 180000, type: 'tool', toolName: 'git.status', sessionId: 's1', result: 'allowed' },
-  { id: '4', timestamp: Date.now() - 240000, type: 'session', sessionId: 's1', result: 'allowed' },
-  { id: '5', timestamp: Date.now() - 300000, type: 'tool', toolName: 'shell.exec', sessionId: 's2', result: 'denied', reason: 'denied_by_rule', params: { command: 'sudo ls' } },
-  { id: '6', timestamp: Date.now() - 360000, type: 'tool', toolName: 'git.commit', sessionId: 's1', result: 'allowed', params: { message: 'feat: new feature' } },
-];
 
 export default function Logs() {
   const { theme } = useTheme();
   const { t } = useLanguage();
-  const [logs] = useState(mockLogs);
+  const [logs, setLogs] = useState<LogEntry[]>([]);
+  const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState<'all' | 'tool' | 'permission' | 'session'>('all');
+
+  async function loadLogs() {
+    setLoading(true);
+    try {
+      // Load sessions to show recent activity
+      const sessionsData = await api.getSessions();
+      const sessions = sessionsData.data || [];
+      
+      // Generate log entries from sessions
+      const logEntries: LogEntry[] = sessions.flatMap((session: Session) => {
+        const entries: LogEntry[] = [];
+        
+        // Add session creation log
+        entries.push({
+          id: `session-${session.id}`,
+          timestamp: session.createdAt,
+          type: 'session',
+          sessionId: session.id,
+          result: 'allowed',
+        });
+
+        // Add message logs
+        session.messages?.forEach((_, idx) => {
+          entries.push({
+            id: `msg-${session.id}-${idx}`,
+            timestamp: session.createdAt + (idx + 1) * 1000,
+            type: 'tool',
+            toolName: 'chat.message',
+            sessionId: session.id,
+            result: 'allowed',
+          });
+        });
+
+        return entries;
+      });
+
+      setLogs(logEntries.sort((a, b) => b.timestamp - a.timestamp));
+    } catch {
+      setLogs([]);
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  useEffect(() => {
+    loadLogs();
+  }, []);
 
   const cardClass = `rounded-xl border ${
     theme === 'dark' ? 'bg-gray-800 border-gray-700' : 'bg-white border-gray-200'
@@ -65,6 +104,14 @@ export default function Logs() {
     }
   };
 
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center h-64">
+        <RefreshCw className="w-8 h-8 animate-spin text-primary-500" />
+      </div>
+    );
+  }
+
   return (
     <div>
       <div className="flex items-center justify-between mb-8">
@@ -77,6 +124,16 @@ export default function Logs() {
           </p>
         </div>
         <div className="flex gap-2">
+          <button
+            onClick={loadLogs}
+            className={`p-2 rounded-lg transition-colors ${
+              theme === 'dark' ? 'hover:bg-gray-700' : 'hover:bg-gray-100'
+            }`}
+          >
+            <RefreshCw className={`w-5 h-5 ${loading ? 'animate-spin' : ''} ${
+              theme === 'dark' ? 'text-gray-400' : 'text-gray-600'
+            }`} />
+          </button>
           <button className={`flex items-center gap-2 px-4 py-2.5 rounded-lg ${
             theme === 'dark' ? 'bg-gray-700 text-gray-300 hover:bg-gray-600' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
           }`}>
@@ -116,6 +173,9 @@ export default function Logs() {
           <p className={theme === 'dark' ? 'text-gray-400' : 'text-gray-600'}>
             {t('logs.noLogs')}
           </p>
+          <p className={`text-sm mt-2 ${theme === 'dark' ? 'text-gray-500' : 'text-gray-400'}`}>
+            Logs will appear when you use the chat or run tools.
+          </p>
         </div>
       ) : (
         <div className={`${cardClass}`}>
@@ -137,18 +197,13 @@ export default function Logs() {
                         )}
                         {log.sessionId && (
                           <span className={`text-xs ${theme === 'dark' ? 'text-gray-500' : 'text-gray-400'}`}>
-                            Session: {log.sessionId}
+                            Session: {log.sessionId.slice(0, 8)}...
                           </span>
                         )}
                       </div>
                       {log.reason && (
                         <p className={`text-xs mt-1 ${theme === 'dark' ? 'text-gray-500' : 'text-gray-400'}`}>
                           Reason: {log.reason}
-                        </p>
-                      )}
-                      {log.params && (
-                        <p className={`text-xs mt-1 font-mono ${theme === 'dark' ? 'text-gray-500' : 'text-gray-400'}`}>
-                          {JSON.stringify(log.params)}
                         </p>
                       )}
                     </div>
