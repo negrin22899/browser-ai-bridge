@@ -9,6 +9,26 @@ export type * from './types/actions.js';
 export type * from './types/capabilities.js';
 export type * from './types/bridge-protocol.js';
 
+// Provider v2 types (new unified contract)
+export type {
+  ProviderMetadata,
+  ProviderTransport,
+  ProviderState,
+  ProviderStateInfo,
+  RecoveryInfo,
+  ProviderHealth,
+  ConnectionHealth,
+  BrowserHealth,
+  LatencyHealth,
+  RequestInfo,
+  RequestError,
+  CapabilitiesHealth,
+  CapabilityStatus,
+  ProviderErrorCode,
+  ProviderError,
+} from './types/provider-v2.js';
+export { createProviderError } from './types/provider-v2.js';
+
 // Adapters
 export { OpenAIAdapter } from './adapters/openai-adapter.js';
 export { AnthropicAdapter } from './adapters/anthropic-adapter.js';
@@ -22,6 +42,14 @@ export {
   getMissingCapabilities,
   mergeCapabilities
 } from './types/capabilities.js';
+
+// Capability Resolver
+export { CapabilityResolver, defaultCapabilityResolver } from './capability-resolver.js';
+export type { CapabilityContext, CapabilityRequirements, ResolvedCapabilities, CapabilityMismatch } from './capability-resolver.js';
+
+// Conformance Testing
+export { ProviderConformanceTester, testProviderConformance, printConformanceReport } from './conformance-test.js';
+export type { ConformanceTestResult, ConformanceReport } from './conformance-test.js';
 
 // Bridge Protocol utilities
 export { createBridgeRequest, createBridgeResponse } from './types/bridge-protocol.js';
