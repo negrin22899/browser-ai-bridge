@@ -4,6 +4,7 @@ import type { ProviderManager, SessionManager, Logger } from '@bab/core';
 import type { PromptEngine } from '@bab/prompt-engine';
 import type { ChatCompletionRequest } from '@bab/protocol';
 import { RateLimiter } from './rate-limiter.js';
+import { redactString } from './redaction.js';
 
 interface ServerDeps {
   providerManager: ProviderManager;
@@ -146,12 +147,13 @@ export function createServer(deps: ServerDeps): Hono {
 
       return c.json(response);
     } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : 'Internal server error';
       logger.error('Request failed', {
-        error: error instanceof Error ? error.message : String(error),
+        error: redactString(errorMessage),
       });
       return c.json({
         error: {
-          message: error instanceof Error ? error.message : 'Internal server error',
+          message: redactString(errorMessage),
           type: 'server_error',
         },
       }, 500);

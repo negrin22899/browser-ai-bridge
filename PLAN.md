@@ -303,4 +303,82 @@ Local LLM            Remote
 
 ---
 
-> Ожидаем дополнений от пользователя...
+## БЛОК 6: Безопасность, протокол, архитектура (9 пунктов)
+
+### 6.1 SECURITY THREAT MODEL
+- [ ] Создать `SECURITY_THREAT_MODEL.md`
+- [ ] Проанализировать цепочку: AI → Browser → Bridge Runtime → Local Machine
+- [ ] Не считать AI доверенным источником инструкций
+- [ ] Для каждого сценария определить: Threat → Attack Surface → Required Permission → Protection → Audit Event
+- [ ] Сценарии: Prompt Injection, вредоносный репозиторий, выход за workspace, опасные shell-команды, скомпрометированный Plugin, cross-session доступ, утечки секретов, SSRF, произвольный доступ к файлам
+- [ ] Не ломать существующий Permission Engine
+- [ ] Использовать существующую систему permissions/capabilities
+
+### 6.2 CREDENTIAL BOUNDARY
+- [ ] Определить границу: Browser Session (cookies, localStorage, auth) → Provider Runtime
+- [ ] Правило: BAB НЕ ХРАНИТ CREDENTIALS
+- [ ] Проверить: Logs, Recorder, Replay, Diagnose, Error messages, Runtime Inspector, Crash reports
+- [ ] Добавить redaction/sanitization перед записью чувствительных данных
+- [ ] Паттерн: `secret=abc123` → `secret=[REDACTED]`
+- [ ] Не создавать отдельную систему хранения credentials
+
+### 6.3 PROTOCOL VERSIONING
+- [ ] Формализовать versioning для Bridge Protocol
+- [ ] Определить правила: version negotiation, minimum/maximum supported version
+- [ ] Обработка неизвестных полей и версий
+- [ ] Правила deprecated fields и удаления полей
+- [ ] Совместимость: Provider Plugins, Tool Plugins, внешние API adapters
+- [ ] Создать `docs/protocol-versioning.md`
+- [ ] Не менять текущий Core без необходимости
+
+### 6.4 PLUGIN TRUST MODEL
+- [ ] Определить уровни: Untrusted → Sandboxed → Trusted
+- [ ] Для каждого уровня: доступные capabilities
+- [ ] Plugin объявляет capabilities → пользователь подтверждает → Permission Engine → Plugin Runtime
+- [ ] Определить: как Plugin ограничивается, как отзываются permissions, как логируются действия
+- [ ] Создать ADR для Plugin Trust Model
+- [ ] Не создавать полноценную sandboxing-систему без необходимости
+
+### 6.5 OBSERVABILITY
+- [ ] Определить систему: Logs → Metrics → Traces
+- [ ] Каждый request получает trace_id
+- [ ] trace_id передаётся между всеми компонентами
+- [ ] Logs содержат trace_id
+- [ ] Metrics измеряют latency каждого этапа
+- [ ] Traces показывают полный жизненный цикл запроса
+- [ ] Ошибки привязаны к trace_id
+- [ ] Recorder сохраняет trace_id
+- [ ] Replay воспроизводит конкретный trace
+- [ ] Использовать существующий Event Bus
+
+### 6.6 PERFORMANCE BUDGET
+- [ ] Определить метрики: API startup, Bridge overhead, Provider dispatch, Tool dispatch, Permission check, Memory baseline, CPU usage, Browser connection latency
+- [ ] Провести benchmark существующей реализации
+- [ ] Установить реальные baseline
+- [ ] Создать `docs/performance.md` и benchmark tests
+- [ ] Проверить: длинные Sessions, streaming, Recorder, Replay, много Events, несколько Providers
+- [ ] Не оптимизировать преждевременно
+
+### 6.7 FAKE / MOCK POLICY
+- [ ] Mocks допустимы: unit tests, isolated tests, deterministic tests, failure simulation
+- [ ] Mocks запрещены: production path, реальный Provider, реальный Runtime, E2E, production Dashboard
+- [ ] Проверить кодовую базу и классифицировать существующие mock/fake
+- [ ] Для каждого mock определить: TEST ONLY или PRODUCTION PROBLEM
+- [ ] Создать `docs/testing-strategy.md`
+
+### 6.8 ARCHITECTURE POLICY
+- [ ] Все крупные архитектурные изменения — через ADR/RFC
+- [ ] Перед изменением Core проверить: Plugin? Provider? Tool? Adapter? Event Bus? Capability System?
+- [ ] Если "да" — не менять Core
+- [ ] Core Feature Freeze остаётся действующим
+- [ ] Новые архитектурные изменения без ADR не принимать
+
+### 6.9 STRATEGIC ARCHITECTURE (будущие цели)
+- [ ] Зафиксировать порядок: Capability Negotiation → AI Debugger → MCP Adapter → Replaceable Browser Layer → Session Fabric → Runtime Providers
+- [ ] Каждую большую функцию — отдельный ADR/RFC перед реализацией
+- [ ] Не изменять Core ради поддержки будущих функций
+- [ ] Использовать существующие: Plugin SDK, Provider SDK, Tool SDK, Event Bus, Permission Engine, Bridge Protocol, Capability System
+
+---
+
+> План готов к выполнению...
