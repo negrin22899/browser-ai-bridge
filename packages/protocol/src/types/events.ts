@@ -17,6 +17,15 @@ export type EventMap = {
   'permission.denied': { toolName: string; sessionId: string };
 
   'session.created': { sessionId: string };
+  'session.initializing': { sessionId: string };
+  'session.ready': { sessionId: string };
+  'session.started': { sessionId: string };
+  'session.paused': { sessionId: string };
+  'session.resumed': { sessionId: string };
+  'session.degraded': { sessionId: string; error?: string };
+  'session.recovering': { sessionId: string };
+  'session.stopped': { sessionId: string };
+  'session.destroyed': { sessionId: string };
   'session.closed': { sessionId: string };
 
   // Capability and Tool Negotiation events
