@@ -47,5 +47,32 @@ export type { BrowserProfile, ProfileManagerConfig } from './profile-manager.js'
 export { ResilientFinder, HealthMonitor, SessionRecovery, SelectorDiscovery } from './reliability.js';
 export type { SelectorStrategy, HealthCheckResult, RecoveryAction } from './reliability.js';
 
+// Browser Runtime (Replaceable Browser Layer)
+export type {
+  BrowserRuntime,
+  BrowserAdapterMetadata,
+  BrowserState,
+  BrowserCapabilities,
+  BrowserConnectionState,
+  BrowserConnectOptions,
+  BrowserTab,
+  BrowserElement,
+  BrowserError,
+  BrowserHealthResult,
+  BrowserErrorCode,
+  BrowserAdapterType,
+  NavigationOptions,
+  FindOptions,
+  ClickOptions,
+  TypeOptions,
+  WaitOptions,
+  ScreenshotOptions,
+} from './browser-runtime.js';
+
+// Browser Adapters
+export { PlaywrightAdapter as PlaywrightAdapterV2 } from './playwright-adapter-v2.js';
+export { CDPAdapter } from './cdp-adapter.js';
+export { ExtensionAdapter } from './extension-adapter.js';
+
 // CDP client
 export { CDPClient } from './cdp-client.js';
