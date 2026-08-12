@@ -1,6 +1,6 @@
-# Session Fabric — Multi-Provider / Multi-Runtime Sessions
+# Session Fabric — Unified Session System
 
-> Version: 1.0.0  
+> Version: 2.0.0  
 > Date: 2026-08-11  
 > Status: Accepted
 
@@ -9,42 +9,50 @@
 ## Главный принцип
 
 ```
-Session — это граница изоляции.
+Session = изолированный execution context.
 ```
 
 Каждая Session имеет:
-- Свой Provider
-- Свой Browser Runtime
-- Свои Tools
-- Свои Permissions
-- Свои Capabilities
-- Свой Workspace
-- Свои Traces
+- AI Provider
+- Browser Session
+- Runtime Provider
+- Workspace
+- Capabilities
+- Permissions
+- Tools
+- Trace
 
-Состояния, permissions, capabilities, browser sessions и traces **не смешиваются**.
+**Sessions НИКОГДА не делят mutable state.**
 
 ---
 
 ## Архитектура
 
 ```
-                    SESSION FABRIC
-                          │
-          ┌───────────────┼───────────────┐
-          ▼               ▼               ▼
-       Session A       Session B       Session C
-          │               │               │
-       Provider        Provider        Provider
-          │               │               │
-       Runtime         Runtime         Runtime
-          │               │               │
-       Browser         Browser         Local
-          │               │               │
-       Tools           Tools           Tools
-          │               │               │
-    Permissions     Permissions     Permissions
-          │               │               │
-       Workspace       Workspace       Workspace
+SESSION FABRIC
+      │
+      ├── Session A
+      │     ├── Provider: Gemini
+      │     ├── Browser: Chrome Profile A
+      │     ├── Runtime: Local
+      │     ├── Workspace: /projects/app
+      │     ├── Tools: [git, filesystem]
+      │     └── Permissions: { fs.read: allow, ... }
+      │
+      ├── Session B
+      │     ├── Provider: Gemini
+      │     ├── Browser: Chrome Profile B
+      │     ├── Runtime: Docker
+      │     ├── Workspace: /projects/backend
+      │     ├── Tools: [filesystem, shell]
+      │     └── Permissions: { fs.read: allow, ... }
+      │
+      └── Session C
+            ├── Provider: ChatGPT
+            ├── Browser: Extension
+            ├── Runtime: SSH
+            ├── Workspace: /home/user/project
+            └── Tools: [git, filesystem]
 ```
 
 ---
@@ -53,30 +61,18 @@ Session — это граница изоляции.
 
 ```typescript
 interface SessionIdentity {
-  sessionId: string;        // Unique session ID
-  providerId: string;       // Provider ID
-  browserSessionId?: string; // Browser session ID
-  runtimeId: string;        // Runtime ID
-  workspaceId?: string;     // Workspace ID
-  createdAt: number;        // Creation time
+  sessionId: string;          // Unique session ID
+  providerId: string;         // AI Provider ID
+  browserSessionId?: string;  // Browser session ID
+  runtimeProviderId: string;  // Runtime Provider ID
+  workspaceId?: string;       // Workspace ID
+  createdAt: number;          // Creation time
 }
-```
-
-### Пример
-
-```
-session_id:        sess_123
-provider_id:       gemini
-browser_session_id: browser_456
-runtime_id:        local
-workspace_id:      workspace_789
 ```
 
 ---
 
-## Session State
-
-### Lifecycle
+## Session Lifecycle
 
 ```
 created
@@ -95,30 +91,12 @@ recovering
   ↓
 stopped
   ↓
-destroyed
-```
-
-### State Info
-
-```typescript
-interface SessionStateInfo {
-  state: SessionState;
-  timestamp: number;
-  duration: number;
-  error?: string;
-  recovery?: {
-    attempt: number;
-    maxAttempts: number;
-    nextRetryMs: number;
-  };
-}
+terminated
 ```
 
 ---
 
 ## Session Context
-
-Каждый Request выполняется внутри SessionContext:
 
 ```typescript
 interface SessionContext {
@@ -129,411 +107,230 @@ interface SessionContext {
   permissions: Record<string, string>;
   activeRequests: string[];
   messages: Array<{ role: string; content: string }>;
+  workspace?: string;
   metadata: Record<string, unknown>;
 }
 ```
 
-### Pipeline
-
-```
-Request
-  ↓
-SessionContext
-  ↓
-Capability Resolution
-  ↓
-Tool Negotiation
-  ↓
-Provider
-  ↓
-Runtime
-  ↓
-Response
-```
-
 ---
 
-## Session Isolation
+## Isolation Rules
 
 ### Правило
 
 ```
-Session A НЕ должна видеть:
-- tools Session B
-- permissions Session B
-- browser tabs Session B
+Session A НЕ может получить доступ к:
+- browser session Session B
 - workspace Session B
+- runtime Session B
 - credentials Session B
-- traces Session B
+- permissions Session B
+- tool state Session B
 ```
 
-### Изоляция компонентов
+### Проверка
 
-| Компонент | Изоляция |
-|-----------|----------|
-| Tool Registry | Session-scoped |
-| Capability Resolver | Session-scoped |
-| Permission Engine | Session-scoped |
-| Browser Runtime | Session-scoped |
-| Recorder | Session-scoped |
-| Debugger | Session-scoped |
+Все cross-session access попытки отклоняются.
 
 ---
 
-## Provider Binding
-
-Каждая Session имеет один активный Provider:
+## Session Fabric
 
 ```typescript
-Session A → Provider = Gemini
-Session B → Provider = ChatGPT
-Session C → Provider = Local Model
+class SessionFabric {
+  // Create session
+  create(config: SessionConfig): Session;
+  
+  // Get session
+  get(sessionId: string): Session | undefined;
+  
+  // List sessions
+  list(): Session[];
+  listByState(state: SessionState): Session[];
+  listByProvider(providerId: string): Session[];
+  
+  // Lifecycle
+  start(sessionId: string): void;
+  pause(sessionId: string): void;
+  resume(sessionId: string): void;
+  stop(sessionId: string): void;
+  terminate(sessionId: string): void;
+  
+  // Degraded/Recovery
+  degrade(sessionId: string, error: string): void;
+  recover(sessionId: string): void;
+  
+  // Debugging
+  getSnapshot(sessionId: string): SessionContext;
+  getAllSnapshots(): SessionContext[];
+}
 ```
-
-### Provider Change
-
-Если Provider меняется:
-- Capabilities пересчитываются
-- Tools renegotiate
-- Browser requirements проверяются
-- Trace фиксирует изменение
 
 ---
 
-## Runtime Binding
-
-Provider и Runtime — разные сущности:
-
-```
-Gemini → Browser Runtime → Chrome
-Local Model → Local Runtime
-Provider → Remote Runtime → SSH/Docker/WSL
-```
-
-Не связывать Session напрямую с Playwright.
-
----
-
-## Workspace Binding
-
-Session может быть привязана к workspace:
+## Session Locking
 
 ```typescript
-Session A → Workspace = project-a
-Session B → Workspace = project-b
-```
+const session = fabric.create({ providerId: 'gemini' });
 
-Tool execution проверяет workspace boundary:
-- filesystem
-- git
-- terminal
+// Acquire lock for exclusive operations
+if (session.acquireLock()) {
+  try {
+    // Do exclusive work
+  } finally {
+    session.releaseLock();
+  }
+}
+```
 
 ---
 
-## Session-Scoped Tools
+## Resource Ownership
 
-Tool availability вычисляется отдельно для каждой Session:
+| Component | Owner |
+|-----------|-------|
+| Session context | Session |
+| Provider instances | Provider Manager |
+| Browser sessions | Browser Manager |
+| Runtime instances | Runtime Manager |
+| Tools | Tool Registry |
+| Permissions | Permission Engine |
 
-```
-Session A:
-  read_file ✓
-  git_status ✓
-  git_push ⚠ confirmation
-
-Session B:
-  read_file ✓
-  git_status ✗
-  git_push ✗
-```
-
-Никогда не использовать глобальный resolved toolset.
+Session Fabric **координирует**, не заменяет.
 
 ---
 
-## Session-Scoped Capabilities
+## Resource Cleanup
 
-Capabilities вычисляются для конкретной Session:
+При `session.terminate()`:
 
 ```
-Provider + Runtime + Browser + Permissions + Workspace → Session Capability Set
+stop tools
+  ↓
+stop provider requests
+  ↓
+disconnect browser
+  ↓
+release runtime resources
+  ↓
+flush recorder
+  ↓
+complete traces
+  ↓
+release session context
 ```
 
-Если Browser отключился только в Session A:
-- Session A: browser = unavailable
-- Session B: browser = available
+Cleanup **idempotent** — повторный terminate не ломает систему.
 
 ---
 
-## Session-Scoped Permissions
+## Failure Isolation
 
-Permission Engine поддерживает Session scope:
+```
+Browser A crashes → Session A degraded
+                   → Session B unaffected
+
+Runtime A disconnects → Session A degraded
+                       → Session C unaffected
+
+Provider A error → Session A degraded
+                  → Session B unaffected
+```
+
+---
+
+## Session Events
+
+```typescript
+// Lifecycle
+'session.created'
+'session.initializing'
+'session.ready'
+'session.started'
+'session.paused'
+'session.resumed'
+'session.degraded'
+'session.recovering'
+'session.stopped'
+'session.terminated'
+
+// Changes
+'session.provider_changed'
+'session.runtime_changed'
+'session.browser_changed'
+'session.capabilities_changed'
+'session.tools_changed'
+```
+
+---
+
+## Session + Debugger
+
+```
+Trace → Session → Provider → Runtime → Browser → Tool
+
+Session → all traces
+```
+
+---
+
+## Session + Permissions
+
+Permissions принадлежат Session Context:
 
 ```
 Session A: git.push = confirm
 Session B: git.push = deny
 ```
 
-Не позволять permission из одной Session влиять на другую.
+Effective permissions вычисляются для Session.
 
 ---
 
-## Session Events
+## Session + Tools
 
-Используем существующий Event Bus:
-
-```typescript
-// Lifecycle events
-'session.created'
-'session.initializing'
-'session.ready'
-'session.started'
-'session.paused'
-'session.degraded'
-'session.recovering'
-'session.stopped'
-'session.destroyed'
-
-// Change events
-'session.provider.changed'
-'session.runtime.changed'
-'session.capabilities.changed'
-'session.tools.changed'
-```
-
----
-
-## Session Trace
-
-Каждый trace связан с:
+Tool availability вычисляется отдельно для каждой Session:
 
 ```
-session_id
-request_id
-provider_id
-runtime_id
-tool_call_id
+Session A: [git, filesystem, browser]
+Session B: [browser, web]
 ```
 
-Debugger позволяет:
-
-```
-Session → Traces → Requests → Tools → Browser actions
-```
-
----
-
-## Session Recovery
-
-Если Provider или Browser Runtime падает:
-
-```
-Session
-  ↓
-degraded
-  ↓
-Recovery
-  ↓
-Provider/Runtime reconnect
-  ↓
-Capabilities re-evaluate
-  ↓
-Tools renegotiate
-  ↓
-ready/running
-```
-
-Используем существующие:
-- HealthMonitor
-- SessionRecovery
-- Provider reliability
-- Browser reliability
-
----
-
-## Session Destroy
-
-При уничтожении Session:
-- Остановить active requests
-- Закрыть browser sessions
-- Освободить runtime resources
-- Очистить temporary state
-- Отписаться от events
-- Закрыть trace resources
-
-Не удалять историю/debug traces автоматически.
-
----
-
-## Concurrent Sessions
-
-```
-Session A ── request ── Provider A
-Session B ── request ── Provider B
-Session C ── request ── Provider C
-```
-
-Выполняются независимо.
-Один медленный Provider не блокирует остальные.
-
----
-
-## Resource Limits
-
-```typescript
-interface SessionFabricConfig {
-  maxSessions?: number;           // Default: 50
-  maxConcurrentRequests?: number; // Per session, default: 10
-  sessionTimeout?: number;        // Default: 5 minutes
-}
-```
-
-Если лимит превышен:
-- `SESSION_RESOURCE_LIMIT` ошибка
-
----
-
-## Request Routing
-
-```
-request → session_id → Session Fabric → correct Provider → correct Runtime → correct Toolset
-```
-
-Не выбирать Session по глобальному mutable state.
-
----
-
-## NO Global Current Session
-
-Не использовать:
-
-```typescript
-// BAD: global currentSession
-global.currentSession = session;
-```
-
-Вместо этого:
-
-```typescript
-// GOOD: explicit session context
-const context = session.getContext();
-```
-
----
-
-## Session Snapshot
-
-Для Debugger/diagnostics:
-
-```typescript
-const snapshot = sessionFabric.getSnapshot(sessionId);
-
-// Returns:
-{
-  identity: { sessionId, providerId, runtimeId, ... },
-  state: { state: 'running', timestamp: ..., duration: ... },
-  tools: ['fs.read', 'git.status', ...],
-  capabilities: ['streaming', 'files', ...],
-  permissions: { 'fs.read': 'allowed', ... },
-  activeRequests: ['req-1', 'req-2'],
-  messages: [...],
-  metadata: { ... },
-}
-```
-
----
-
-## Runtime Inspector
-
-```
-SESSIONS
-
-Session A
-  ├── Provider: Gemini
-  ├── Runtime: Local
-  ├── Browser: Chrome
-  ├── State: running
-  ├── Tools: 12
-  └── Active Requests: 1
-
-Session B
-  ├── Provider: ChatGPT
-  ├── Runtime: Local
-  ├── Browser: Chrome
-  ├── State: degraded
-  ├── Tools: 8
-  └── Active Requests: 0
-```
-
----
-
-## API
-
-```typescript
-// Create session
-const session = fabric.create({ providerId: 'gemini', model: 'gemini' });
-
-// Get session
-const session = fabric.get(sessionId);
-
-// List sessions
-const sessions = fabric.list();
-
-// Lifecycle
-fabric.start(sessionId);
-fabric.pause(sessionId);
-fabric.resume(sessionId);
-fabric.stop(sessionId);
-fabric.destroy(sessionId);
-```
-
----
-
-## CLI
-
-```bash
-bab session list
-bab session inspect <id>
-bab session stop <id>
-```
+Не использовать глобальный список.
 
 ---
 
 ## Tests
 
-- Create session
-- Destroy session
-- Provider binding
-- Runtime binding
-- Browser binding
-- Session isolation
-- Tool isolation
-- Capability isolation
-- Permission isolation
+- Session creation
+- Lifecycle
+- Multi-session
+- Provider isolation
+- Browser isolation
+- Runtime isolation
 - Workspace isolation
-- Concurrent requests
+- Permission isolation
+- Tool isolation
+- Capability recalculation
 - Provider failure
 - Browser failure
+- Runtime failure
 - Recovery
-- Session pause/resume
-- Resource limits
-- Request routing
-- Trace correlation
+- Cleanup
+- Idempotent terminate
+- Concurrency
+- Session locking
+- Cross-session access denial
 
 ---
 
-## Security
+## E2E
 
-Session Fabric не даёт дополнительный доступ.
-Организует существующие:
-- Provider
-- Runtime
-- Capabilities
-- Tools
-- Permissions
-
-Любой реальный доступ проходит:
 ```
-Tool → Permission Engine → Runtime → Execution
+Session A → Gemini → Chrome A → Local Runtime → Workspace A → Tools A
+Session B → Gemini → Chrome B → Docker Runtime → Workspace B → Tools B
+
+Действия Session A НЕ воздействуют на Session B.
 ```
 
 ---
@@ -542,7 +339,7 @@ Tool → Permission Engine → Runtime → Execution
 
 - [Session Fabric](../packages/core/src/session-fabric.ts)
 - [Session Manager](../packages/core/src/session-manager.ts)
-- [Event Bus](../packages/core/src/event-bus.ts)
 - [Provider Contract](./provider-contract.md)
 - [Browser Runtime](./browser-runtime.md)
+- [Runtime Providers](./runtime-providers.md)
 - [Capability Negotiation](./capability-negotiation.md)

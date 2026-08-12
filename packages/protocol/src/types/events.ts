@@ -26,6 +26,7 @@ export type EventMap = {
   'session.recovering': { sessionId: string };
   'session.stopped': { sessionId: string };
   'session.destroyed': { sessionId: string };
+  'session.terminated': { sessionId: string };
   'session.closed': { sessionId: string };
 
   // Capability and Tool Negotiation events

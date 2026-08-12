@@ -2,10 +2,12 @@ import { randomUUID } from 'node:crypto';
 import { EventBus } from './event-bus.js';
 
 /**
- * Session Fabric — Multi-Provider / Multi-Runtime Session Orchestration
+ * Session Fabric — Unified Session System
  * 
- * Session is the isolation boundary.
- * Each session has its own provider, runtime, tools, permissions, capabilities.
+ * Session = isolated execution context.
+ * Each session has its own provider, browser, runtime, workspace, tools, permissions, capabilities.
+ * 
+ * Sessions NEVER share mutable state.
  */
 
 // ============================================================================
@@ -16,14 +18,14 @@ export interface SessionIdentity {
   /** Unique session ID */
   sessionId: string;
   
-  /** Provider ID */
+  /** AI Provider ID */
   providerId: string;
   
   /** Browser session ID */
   browserSessionId?: string;
   
-  /** Runtime ID */
-  runtimeId: string;
+  /** Runtime Provider ID */
+  runtimeProviderId: string;
   
   /** Workspace ID */
   workspaceId?: string;
@@ -45,7 +47,7 @@ export type SessionState =
   | 'degraded'
   | 'recovering'
   | 'stopped'
-  | 'destroyed';
+  | 'terminated';
 
 export interface SessionStateInfo {
   /** Current state */
@@ -76,17 +78,20 @@ export interface SessionConfig {
   /** Session ID (auto-generated if not provided) */
   id?: string;
   
-  /** Provider ID */
+  /** AI Provider ID */
   providerId: string;
   
   /** Model name */
   model?: string;
   
-  /** Runtime ID */
-  runtimeId?: string;
+  /** Runtime Provider ID */
+  runtimeProviderId?: string;
   
-  /** Workspace ID */
-  workspaceId?: string;
+  /** Workspace path */
+  workspace?: string;
+  
+  /** Browser profile */
+  browserProfile?: string;
   
   /** Max concurrent requests */
   maxConcurrentRequests?: number;
@@ -124,6 +129,9 @@ export interface SessionContext {
   /** Messages history */
   messages: Array<{ role: string; content: string }>;
   
+  /** Workspace path */
+  workspace?: string;
+  
   /** Session metadata */
   metadata: Record<string, unknown>;
 }
@@ -134,13 +142,23 @@ export interface SessionContext {
 
 /**
  * Session - isolated execution context
+ * 
+ * Each session is a COMPLETELY ISOLATED context.
+ * Session A CANNOT access Session B's:
+ * - browser session
+ * - workspace
+ * - runtime
+ * - credentials
+ * - permissions
+ * - tool state
  */
 export class Session {
   readonly id: string;
   readonly providerId: string;
   readonly model?: string;
-  readonly runtimeId: string;
-  readonly workspaceId?: string;
+  readonly runtimeProviderId: string;
+  readonly browserSessionId?: string;
+  readonly workspace?: string;
   readonly createdAt: number;
   
   private _state: SessionStateInfo;
@@ -151,13 +169,14 @@ export class Session {
   private _activeRequests: Set<string> = new Set();
   private _metadata: Record<string, unknown>;
   private _maxConcurrentRequests: number;
+  private _lock: boolean = false;
 
   constructor(config: SessionConfig) {
     this.id = config.id ?? randomUUID();
     this.providerId = config.providerId;
     this.model = config.model;
-    this.runtimeId = config.runtimeId ?? 'local';
-    this.workspaceId = config.workspaceId;
+    this.runtimeProviderId = config.runtimeProviderId ?? 'local';
+    this.workspace = config.workspace;
     this.createdAt = Date.now();
     this._maxConcurrentRequests = config.maxConcurrentRequests ?? 10;
     this._metadata = config.metadata ?? {};
@@ -186,6 +205,25 @@ export class Session {
       duration: 0,
       error,
     };
+  }
+
+  // --- Locking ---
+
+  /** Acquire session lock */
+  acquireLock(): boolean {
+    if (this._lock) return false;
+    this._lock = true;
+    return true;
+  }
+
+  /** Release session lock */
+  releaseLock(): void {
+    this._lock = false;
+  }
+
+  /** Check if locked */
+  isLocked(): boolean {
+    return this._lock;
   }
 
   // --- Messages ---
@@ -272,15 +310,16 @@ export class Session {
     return this._metadata[key];
   }
 
-  // --- Snapshot ---
+  // --- Context Snapshot ---
 
   getContext(): SessionContext {
     return {
       identity: {
         sessionId: this.id,
         providerId: this.providerId,
-        runtimeId: this.runtimeId,
-        workspaceId: this.workspaceId,
+        runtimeProviderId: this.runtimeProviderId,
+        browserSessionId: this.browserSessionId,
+        workspaceId: this.workspace,
         createdAt: this.createdAt,
       },
       state: this.state,
@@ -289,6 +328,7 @@ export class Session {
       permissions: this.getPermissions(),
       activeRequests: this.getActiveRequests(),
       messages: this.getMessages(),
+      workspace: this.workspace,
       metadata: { ...this._metadata },
     };
   }
@@ -300,8 +340,9 @@ export class Session {
       id: this.id,
       providerId: this.providerId,
       model: this.model,
-      runtimeId: this.runtimeId,
-      workspaceId: this.workspaceId,
+      runtimeProviderId: this.runtimeProviderId,
+      browserSessionId: this.browserSessionId,
+      workspace: this.workspace,
       createdAt: this.createdAt,
       state: this._state,
       messageCount: this._messages.length,
@@ -316,7 +357,17 @@ export class Session {
 // ============================================================================
 
 /**
- * Session Fabric - orchestrates multiple sessions
+ * Session Fabric - orchestrates multiple isolated sessions
+ * 
+ * Session Fabric does NOT replace:
+ * - Provider Manager
+ * - Browser Manager
+ * - Runtime Manager
+ * - Tool Registry
+ * - Permission Engine
+ * - Capability Resolver
+ * 
+ * It COORDINATES them.
  */
 export class SessionFabric {
   private sessions: Map<string, Session> = new Map();
@@ -432,9 +483,9 @@ export class SessionFabric {
   }
 
   /**
-   * Destroy a session
+   * Terminate a session (cleanup all resources)
    */
-  destroy(sessionId: string): void {
+  terminate(sessionId: string): void {
     const session = this.get(sessionId);
     if (!session) return;
 
@@ -443,18 +494,25 @@ export class SessionFabric {
       this.stop(sessionId);
     }
 
-    session.transitionTo('destroyed');
+    // Cleanup sequence:
+    // 1. Stop active requests
+    for (const requestId of session.getActiveRequests()) {
+      session.removeRequest(requestId);
+    }
+
+    // 2. Transition to terminated
+    session.transitionTo('terminated');
     this.sessions.delete(sessionId);
-    this.eventBus.emit('session.destroyed', { sessionId });
+    this.eventBus.emit('session.terminated', { sessionId });
   }
 
   /**
-   * Destroy all sessions
+   * Terminate all sessions
    */
-  destroyAll(): void {
+  terminateAll(): void {
     const sessionIds = Array.from(this.sessions.keys());
     for (const id of sessionIds) {
-      this.destroy(id);
+      this.terminate(id);
     }
   }
 
@@ -500,5 +558,12 @@ export class SessionFabric {
   getSnapshot(sessionId: string): SessionContext | undefined {
     const session = this.get(sessionId);
     return session?.getContext();
+  }
+
+  /**
+   * Get all session snapshots
+   */
+  getAllSnapshots(): SessionContext[] {
+    return this.list().map(s => s.getContext());
   }
 }
