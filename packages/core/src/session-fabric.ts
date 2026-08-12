@@ -2,67 +2,69 @@ import { randomUUID } from 'node:crypto';
 import { EventBus } from './event-bus.js';
 
 /**
- * Session Fabric — Unified Session System
+ * Session Fabric v3 — Strict State Machine & Isolation
  * 
- * Session = isolated execution context.
- * Each session has its own provider, browser, runtime, workspace, tools, permissions, capabilities.
- * 
- * Sessions NEVER share mutable state.
+ * "Session is a Sandbox"
+ * If a session crashes, hangs, or is compromised,
+ * it must NOT affect the Core or other sessions.
  */
+
+// ============================================================================
+// SESSION STATE MACHINE
+// ============================================================================
+
+/**
+ * Strict session states:
+ * INITIALIZING → READY ↔ BUSY → DEGRADED → RECOVERING → TERMINATED / ERROR
+ * 
+ * - BUSY → BUSY is IMPOSSIBLE (race condition protection)
+ * - RECOVERING blocks all incoming API requests (503)
+ * - TERMINATED sessions must be fully destroyed in memory
+ */
+export type SessionState =
+  | 'INITIALIZING'
+  | 'READY'
+  | 'BUSY'
+  | 'DEGRADED'
+  | 'RECOVERING'
+  | 'TERMINATED'
+  | 'ERROR';
+
+/**
+ * Valid state transitions
+ */
+const VALID_TRANSITIONS: Record<SessionState, SessionState[]> = {
+  'INITIALIZING': ['READY', 'ERROR'],
+  'READY': ['BUSY', 'DEGRADED', 'TERMINATED'],
+  'BUSY': ['READY', 'DEGRADED', 'ERROR'],
+  'DEGRADED': ['RECOVERING', 'TERMINATED'],
+  'RECOVERING': ['READY', 'DEGRADED', 'ERROR'],
+  'TERMINATED': [],
+  'ERROR': ['TERMINATED'],
+};
 
 // ============================================================================
 // SESSION IDENTITY
 // ============================================================================
 
 export interface SessionIdentity {
-  /** Unique session ID */
   sessionId: string;
-  
-  /** AI Provider ID */
   providerId: string;
-  
-  /** Browser session ID */
   browserSessionId?: string;
-  
-  /** Runtime Provider ID */
   runtimeProviderId: string;
-  
-  /** Workspace ID */
   workspaceId?: string;
-  
-  /** Creation time */
   createdAt: number;
 }
 
 // ============================================================================
-// SESSION STATE
+// SESSION STATE INFO
 // ============================================================================
 
-export type SessionState = 
-  | 'created'
-  | 'initializing'
-  | 'ready'
-  | 'running'
-  | 'paused'
-  | 'degraded'
-  | 'recovering'
-  | 'stopped'
-  | 'terminated';
-
 export interface SessionStateInfo {
-  /** Current state */
   state: SessionState;
-  
-  /** State timestamp */
   timestamp: number;
-  
-  /** State duration */
   duration: number;
-  
-  /** Error if degraded/recovering */
   error?: string;
-  
-  /** Recovery info */
   recovery?: {
     attempt: number;
     maxAttempts: number;
@@ -75,31 +77,14 @@ export interface SessionStateInfo {
 // ============================================================================
 
 export interface SessionConfig {
-  /** Session ID (auto-generated if not provided) */
   id?: string;
-  
-  /** AI Provider ID */
   providerId: string;
-  
-  /** Model name */
   model?: string;
-  
-  /** Runtime Provider ID */
   runtimeProviderId?: string;
-  
-  /** Workspace path */
   workspace?: string;
-  
-  /** Browser profile */
   browserProfile?: string;
-  
-  /** Max concurrent requests */
   maxConcurrentRequests?: number;
-  
-  /** Session timeout in ms */
-  timeout?: number;
-  
-  /** Custom metadata */
+  timeout?: number;  // TTL for inactive sessions
   metadata?: Record<string, unknown>;
 }
 
@@ -108,31 +93,14 @@ export interface SessionConfig {
 // ============================================================================
 
 export interface SessionContext {
-  /** Session identity */
   identity: SessionIdentity;
-  
-  /** Session state */
   state: SessionStateInfo;
-  
-  /** Available tools for this session */
   tools: string[];
-  
-  /** Available capabilities */
   capabilities: string[];
-  
-  /** Permissions for this session */
   permissions: Record<string, string>;
-  
-  /** Active requests */
   activeRequests: string[];
-  
-  /** Messages history */
   messages: Array<{ role: string; content: string }>;
-  
-  /** Workspace path */
   workspace?: string;
-  
-  /** Session metadata */
   metadata: Record<string, unknown>;
 }
 
@@ -141,16 +109,7 @@ export interface SessionContext {
 // ============================================================================
 
 /**
- * Session - isolated execution context
- * 
- * Each session is a COMPLETELY ISOLATED context.
- * Session A CANNOT access Session B's:
- * - browser session
- * - workspace
- * - runtime
- * - credentials
- * - permissions
- * - tool state
+ * Session - isolated execution context with strict state machine
  */
 export class Session {
   readonly id: string;
@@ -160,7 +119,8 @@ export class Session {
   readonly browserSessionId?: string;
   readonly workspace?: string;
   readonly createdAt: number;
-  
+  readonly timeout: number;
+
   private _state: SessionStateInfo;
   private _messages: Array<{ role: string; content: string }> = [];
   private _tools: string[] = [];
@@ -169,7 +129,7 @@ export class Session {
   private _activeRequests: Set<string> = new Set();
   private _metadata: Record<string, unknown>;
   private _maxConcurrentRequests: number;
-  private _lock: boolean = false;
+  private _lastActivity: number;
 
   constructor(config: SessionConfig) {
     this.id = config.id ?? randomUUID();
@@ -178,17 +138,19 @@ export class Session {
     this.runtimeProviderId = config.runtimeProviderId ?? 'local';
     this.workspace = config.workspace;
     this.createdAt = Date.now();
+    this._lastActivity = Date.now();
     this._maxConcurrentRequests = config.maxConcurrentRequests ?? 10;
+    this.timeout = config.timeout ?? 300000; // 5 minutes default
     this._metadata = config.metadata ?? {};
-    
+
     this._state = {
-      state: 'created',
+      state: 'INITIALIZING',
       timestamp: Date.now(),
       duration: 0,
     };
   }
 
-  // --- State ---
+  // --- State Machine ---
 
   get state(): SessionStateInfo {
     return {
@@ -197,47 +159,71 @@ export class Session {
     };
   }
 
-  /** Transition to new state */
-  transitionTo(newState: SessionState, error?: string): void {
+  /**
+   * Transition to new state with validation
+   * Returns false if transition is invalid
+   */
+  transitionTo(newState: SessionState, error?: string): boolean {
+    const validTransitions = VALID_TRANSITIONS[this._state.state];
+
+    // BUSY → BUSY is IMPOSSIBLE (race condition protection)
+    if (this._state.state === 'BUSY' && newState === 'BUSY') {
+      return false;
+    }
+
+    if (!validTransitions.includes(newState)) {
+      return false;
+    }
+
     this._state = {
       state: newState,
       timestamp: Date.now(),
       duration: 0,
       error,
     };
-  }
 
-  // --- Locking ---
-
-  /** Acquire session lock */
-  acquireLock(): boolean {
-    if (this._lock) return false;
-    this._lock = true;
+    this._lastActivity = Date.now();
     return true;
   }
 
-  /** Release session lock */
-  releaseLock(): void {
-    this._lock = false;
+  /**
+   * Check if session accepts requests
+   * RECOVERING sessions return 503
+   */
+  acceptsRequests(): boolean {
+    return this._state.state === 'READY' || this._state.state === 'BUSY';
   }
 
-  /** Check if locked */
-  isLocked(): boolean {
-    return this._lock;
+  /**
+   * Check if session is active (not terminated/error)
+   */
+  isActive(): boolean {
+    return this._state.state !== 'TERMINATED' && this._state.state !== 'ERROR';
+  }
+
+  /**
+   * Check if session is expired (TTL)
+   */
+  isExpired(): boolean {
+    return Date.now() - this._lastActivity > this.timeout;
+  }
+
+  /**
+   * Update last activity timestamp
+   */
+  touch(): void {
+    this._lastActivity = Date.now();
   }
 
   // --- Messages ---
 
   addMessage(message: { role: string; content: string }): void {
     this._messages.push(message);
+    this.touch();
   }
 
   getMessages(): Array<{ role: string; content: string }> {
     return [...this._messages];
-  }
-
-  getLastMessage(): { role: string; content: string } | undefined {
-    return this._messages[this._messages.length - 1];
   }
 
   // --- Tools ---
@@ -289,6 +275,7 @@ export class Session {
       return false;
     }
     this._activeRequests.add(requestId);
+    this.touch();
     return true;
   }
 
@@ -333,6 +320,21 @@ export class Session {
     };
   }
 
+  // --- Cleanup ---
+
+  /**
+   * Cleanup all resources
+   * Must be idempotent
+   */
+  cleanup(): void {
+    this._activeRequests.clear();
+    this._messages = [];
+    this._tools = [];
+    this._capabilities = [];
+    this._permissions = {};
+    this._metadata = {};
+  }
+
   // --- Serialization ---
 
   toJSON(): Record<string, unknown> {
@@ -359,24 +361,28 @@ export class Session {
 /**
  * Session Fabric - orchestrates multiple isolated sessions
  * 
- * Session Fabric does NOT replace:
- * - Provider Manager
- * - Browser Manager
- * - Runtime Manager
- * - Tool Registry
- * - Permission Engine
- * - Capability Resolver
- * 
- * It COORDINATES them.
+ * Responsibilities:
+ * - Session lifecycle management
+ * - Session isolation enforcement
+ * - Message routing
+ * - Resource cleanup (garbage collection)
+ * - TTL enforcement
  */
 export class SessionFabric {
   private sessions: Map<string, Session> = new Map();
   private eventBus: EventBus;
   private maxSessions: number;
+  private cleanupInterval: NodeJS.Timeout | null = null;
 
-  constructor(eventBus: EventBus, options?: { maxSessions?: number }) {
+  constructor(eventBus: EventBus, options?: { maxSessions?: number; cleanupIntervalMs?: number }) {
     this.eventBus = eventBus;
     this.maxSessions = options?.maxSessions ?? 50;
+
+    // Start cleanup interval for expired sessions
+    const cleanupInterval = options?.cleanupIntervalMs ?? 60000; // 1 minute
+    this.cleanupInterval = setInterval(() => {
+      this.cleanupExpiredSessions();
+    }, cleanupInterval);
   }
 
   /**
@@ -390,15 +396,10 @@ export class SessionFabric {
     const session = new Session(config);
     this.sessions.set(session.id, session);
 
-    // Emit lifecycle event
     this.eventBus.emit('session.created', { sessionId: session.id });
 
-    // Transition to initializing
-    session.transitionTo('initializing');
-    this.eventBus.emit('session.initializing', { sessionId: session.id });
-
-    // Transition to ready
-    session.transitionTo('ready');
+    // Transition to READY
+    session.transitionTo('READY');
     this.eventBus.emit('session.ready', { sessionId: session.id });
 
     return session;
@@ -419,91 +420,77 @@ export class SessionFabric {
   }
 
   /**
-   * List sessions by state
+   * List active sessions
    */
-  listByState(state: SessionState): Session[] {
-    return this.list().filter(s => s.state.state === state);
+  listActive(): Session[] {
+    return this.list().filter(s => s.isActive());
   }
 
   /**
-   * List sessions by provider
+   * Start processing on a session (READY → BUSY)
    */
-  listByProvider(providerId: string): Session[] {
-    return this.list().filter(s => s.providerId === providerId);
-  }
-
-  /**
-   * Start a session (transition to running)
-   */
-  start(sessionId: string): void {
+  start(sessionId: string): boolean {
     const session = this.get(sessionId);
-    if (!session) {
-      throw new Error(`Session "${sessionId}" not found`);
+    if (!session) return false;
+
+    return session.transitionTo('BUSY');
+  }
+
+  /**
+   * Complete processing (BUSY → READY)
+   */
+  complete(sessionId: string): boolean {
+    const session = this.get(sessionId);
+    if (!session) return false;
+
+    return session.transitionTo('READY');
+  }
+
+  /**
+   * Degrade session
+   */
+  degrade(sessionId: string, error: string): boolean {
+    const session = this.get(sessionId);
+    if (!session) return false;
+
+    const success = session.transitionTo('DEGRADED', error);
+    if (success) {
+      this.eventBus.emit('session.degraded', { sessionId, error });
     }
-
-    session.transitionTo('running');
-    this.eventBus.emit('session.started', { sessionId });
+    return success;
   }
 
   /**
-   * Pause a session
+   * Start recovery
    */
-  pause(sessionId: string): void {
+  recover(sessionId: string): boolean {
     const session = this.get(sessionId);
-    if (!session) {
-      throw new Error(`Session "${sessionId}" not found`);
+    if (!session) return false;
+
+    const success = session.transitionTo('RECOVERING');
+    if (success) {
+      this.eventBus.emit('session.recovering', { sessionId });
     }
-
-    session.transitionTo('paused');
-    this.eventBus.emit('session.paused', { sessionId });
+    return success;
   }
 
   /**
-   * Resume a session
-   */
-  resume(sessionId: string): void {
-    const session = this.get(sessionId);
-    if (!session) {
-      throw new Error(`Session "${sessionId}" not found`);
-    }
-
-    session.transitionTo('running');
-    this.eventBus.emit('session.resumed', { sessionId });
-  }
-
-  /**
-   * Stop a session
-   */
-  stop(sessionId: string): void {
-    const session = this.get(sessionId);
-    if (!session) return;
-
-    session.transitionTo('stopped');
-    this.eventBus.emit('session.stopped', { sessionId });
-  }
-
-  /**
-   * Terminate a session (cleanup all resources)
+   * Terminate session (cleanup all resources)
+   * Must be idempotent
    */
   terminate(sessionId: string): void {
     const session = this.get(sessionId);
     if (!session) return;
 
-    // Stop if running
-    if (session.state.state === 'running' || session.state.state === 'paused') {
-      this.stop(sessionId);
-    }
+    // Cleanup resources
+    session.cleanup();
 
-    // Cleanup sequence:
-    // 1. Stop active requests
-    for (const requestId of session.getActiveRequests()) {
-      session.removeRequest(requestId);
-    }
-
-    // 2. Transition to terminated
-    session.transitionTo('terminated');
-    this.sessions.delete(sessionId);
+    // Transition to TERMINATED
+    session.transitionTo('TERMINATED');
     this.eventBus.emit('session.terminated', { sessionId });
+
+    // Remove from map
+    this.sessions.delete(sessionId);
   }
 
   /**
@@ -517,25 +504,15 @@ export class SessionFabric {
   }
 
   /**
-   * Mark session as degraded
+   * Cleanup expired sessions (garbage collector)
    */
-  degrade(sessionId: string, error: string): void {
-    const session = this.get(sessionId);
-    if (!session) return;
-
-    session.transitionTo('degraded', error);
-    this.eventBus.emit('session.degraded', { sessionId, error });
-  }
-
-  /**
-   * Mark session as recovering
-   */
-  recover(sessionId: string): void {
-    const session = this.get(sessionId);
-    if (!session) return;
-
-    session.transitionTo('recovering');
-    this.eventBus.emit('session.recovering', { sessionId });
+  private cleanupExpiredSessions(): void {
+    for (const [id, session] of this.sessions) {
+      if (session.isExpired() && session.isActive()) {
+        console.log(`Session ${id} expired, terminating...`);
+        this.terminate(id);
+      }
+    }
   }
 
   /**
@@ -565,5 +542,16 @@ export class SessionFabric {
    */
   getAllSnapshots(): SessionContext[] {
     return this.list().map(s => s.getContext());
+  }
+
+  /**
+   * Destroy fabric (cleanup interval)
+   */
+  destroy(): void {
+    if (this.cleanupInterval) {
+      clearInterval(this.cleanupInterval);
+      this.cleanupInterval = null;
+    }
+    this.terminateAll();
   }
 }
