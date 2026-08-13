@@ -18,6 +18,7 @@ import { runDoctor, printDoctorResults } from './doctor.js';
 import { runDiagnose, saveDiagnostic, printDiagnosticSummary } from './diagnose.js';
 import { runSetup } from './setup.js';
 import { runSmokeTest } from './smoke-test.js';
+import { runInit } from './init.js';
 
 const program = new Command();
 
@@ -32,6 +33,14 @@ program
   .description('First-time setup wizard')
   .action(async () => {
     await runSetup();
+  });
+
+// Init command (one-command setup for npx)
+program
+  .command('init')
+  .description('Quick setup - install, build, and start')
+  .action(async () => {
+    await runInit();
   });
 
 // Doctor command

@@ -4,6 +4,23 @@
 
 Browser AI Bridge lets you use Gemini, ChatGPT, Claude, and DeepSeek directly in your favorite code editor.
 
+## Quick Start (10 seconds)
+
+```bash
+npx browser-ai-bridge init
+```
+
+That's it! The command will:
+1. ✅ Check your system
+2. ✅ Install dependencies
+3. ✅ Build the project
+4. ✅ Show you the API URL for your IDE
+
+Then start the server:
+```bash
+bab serve --site gemini
+```
+
 ## Download
 
 ### Desktop App (Recommended for beginners)
@@ -16,16 +33,13 @@ Download and install - it's that simple!
 | macOS | [Download .dmg](https://github.com/negrin22899/browser-ai-bridge/releases/latest) |
 | Linux | [Download .AppImage](https://github.com/negrin22899/browser-ai-bridge/releases/latest) |
 
-**Installation:**
-1. Download the installer for your OS
-2. Run the installer
-3. Open Browser AI Bridge
-4. Sign in to your AI (Gemini, ChatGPT, Claude, or DeepSeek)
-5. Start coding!
-
 ### CLI (For developers)
 
 ```bash
+# Quick setup
+npx browser-ai-bridge init
+
+# Or clone and setup
 git clone https://github.com/negrin22899/browser-ai-bridge.git
 cd browser-ai-bridge
 npm run setup
