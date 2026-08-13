@@ -1,220 +1,116 @@
-# Browser AI Bridge
+# 🌉 Browser AI Bridge
 
-**Use AI in your code editor - no API keys needed!**
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+[![Node.js](https://img.shields.io/badge/Node.js-20+-green.svg)](https://nodejs.org/)
+[![TypeScript](https://img.shields.io/badge/TypeScript-5.6+-blue.svg)](https://www.typescriptlang.org/)
+[![GitHub Stars](https://img.shields.io/github/stars/negrin22899/browser-ai-bridge?style=social)](https://github.com/negrin22899/browser-ai-bridge)
+[![GitHub Issues](https://img.shields.io/github/issues/negrin22899/browser-ai-bridge)](https://github.com/negrin22899/browser-ai-bridge/issues)
 
-Browser AI Bridge lets you use Gemini, ChatGPT, Claude, and DeepSeek directly in your favorite code editor.
+**Use AI in your code editor — no API keys needed!**
 
-## Quick Start (10 seconds)
+[English](./docs/en/QUICK_START.md) | [Русский](./docs/ru/README.md)
+
+---
+
+## ✨ Features
+
+| Feature | Description |
+|---------|-------------|
+| 🔑 No API Keys | Uses your browser session |
+| 🆓 Free to Use | If you have free access to AI |
+| 🔌 OpenAI Compatible | Works with VS Code, Cursor, JetBrains |
+| 🤖 Multiple AI | Gemini, ChatGPT, Claude, DeepSeek |
+| 🖥️ Desktop App | Easy GUI for beginners |
+| ⌨️ CLI | For developers and automation |
+| 🔒 Secure | Local processing, no data sent to third parties |
+| 🔧 Extensible | Plugin system for custom providers |
+
+---
+
+## 🚀 Quick Start (10 seconds)
 
 ```bash
 npx browser-ai-bridge init
 ```
 
-That's it! The command will:
-1. ✅ Check your system
-2. ✅ Install dependencies
-3. ✅ Build the project
-4. ✅ Show you the API URL for your IDE
-
-Then start the server:
+That's it! Then:
 ```bash
 bab serve --site gemini
 ```
 
-## Download
+API ready at: `http://localhost:3000/v1/chat/completions`
 
-### Desktop App (Recommended for beginners)
+---
 
-Download and install - it's that simple!
+## 📥 Download
+
+### Desktop App
 
 | Platform | Download |
 |----------|----------|
-| Windows | [Download .exe](https://github.com/negrin22899/browser-ai-bridge/releases/latest) |
-| macOS | [Download .dmg](https://github.com/negrin22899/browser-ai-bridge/releases/latest) |
-| Linux | [Download .AppImage](https://github.com/negrin22899/browser-ai-bridge/releases/latest) |
+| 🪟 Windows | [Download .exe](https://github.com/negrin22899/browser-ai-bridge/releases/latest) |
+| 🍎 macOS | [Download .dmg](https://github.com/negrin22899/browser-ai-bridge/releases/latest) |
+| 🐧 Linux | [Download .AppImage](https://github.com/negrin22899/browser-ai-bridge/releases/latest) |
 
-### CLI (For developers)
+### CLI
 
 ```bash
-# Quick setup
 npx browser-ai-bridge init
-
-# Or clone and setup
-git clone https://github.com/negrin22899/browser-ai-bridge.git
-cd browser-ai-bridge
-npm run setup
 ```
 
 ---
 
-## Quick Start
+## 📖 Documentation
 
-### Step 1: Sign in to AI
-
-Open your browser and sign in to ONE of these:
-- **Gemini**: https://gemini.google.com (recommended)
-- **ChatGPT**: https://chatgpt.com
-- **Claude**: https://claude.ai
-- **DeepSeek**: https://chat.deepseek.com
-
-### Step 2: Start the server
-
-**Desktop App:**
-- Open Browser AI Bridge
-- Click "Start Server"
-
-**CLI:**
-```bash
-node apps/cli/dist/index.js serve --site gemini
-```
-
-### Step 3: Use in your IDE
-
-Configure your IDE to use:
-- **API URL**: `http://localhost:3000/v1/chat/completions`
-- **Model**: `gemini`
+| Language | Quick Start | Full Guide |
+|----------|-------------|------------|
+| 🇺🇸 English | [Quick Start](./docs/en/QUICK_START.md) | [User Guide](./USER_GUIDE.md) |
+| 🇷🇺 Русский | [Быстрый старт](./docs/ru/QUICK_START.md) | [Руководство](./docs/ru/ARCHITECTURE.md) |
 
 ---
 
-## Features
+## 🛠️ CLI Commands
 
-✔ **No API keys** - Uses your browser session  
-✔ **Free to use** - If you have free access to AI  
-✔ **OpenAI compatible** - Works with most AI extensions  
-✔ **Multiple AI providers** - Gemini, ChatGPT, Claude, DeepSeek  
-✔ **Desktop app** - Easy to use GUI  
-✔ **CLI** - For developers and automation  
+| Command | Description |
+|---------|-------------|
+| `bab init` | Quick setup |
+| `bab setup` | Detailed setup wizard |
+| `bab doctor` | Check system requirements |
+| `bab test` | Run smoke test |
+| `bab serve` | Start API server |
+| `bab chat` | Quick chat message |
+| `bab providers` | List available providers |
 
 ---
 
-## IDE Setup
+## 🤖 Supported AI Providers
 
-### VS Code
+| Provider | URL | Status |
+|----------|-----|--------|
+| 🟢 Gemini | gemini.google.com | ✅ Working |
+| 🟢 ChatGPT | chatgpt.com | ✅ Working |
+| 🟢 Claude | claude.ai | ✅ Working |
+| 🟢 DeepSeek | chat.deepseek.com | ✅ Working |
 
-1. Install an AI extension (Continue, Cody, etc.)
-2. Set API URL: `http://localhost:3000/v1/chat/completions`
-3. Set Model: `gemini`
+---
+
+## 💻 IDE Setup
 
 ### Cursor
+```
+Settings → AI → API
+API URL: http://localhost:3000/v1/chat/completions
+Model: gemini
+```
 
-1. Open Settings → AI → API
+### VS Code
+1. Install AI extension (Continue, Cody, etc.)
 2. Set API URL: `http://localhost:3000/v1/chat/completions`
 3. Set Model: `gemini`
 
-### Other IDEs
-
-Use the OpenAI-compatible API endpoint:
-- **URL**: `http://localhost:3000/v1/chat/completions`
-- **Model**: `gemini`, `chatgpt`, `claude`, or `deepseek`
-
 ---
 
-## How It Works
-
-```
-Your IDE → Browser AI Bridge → Your Browser → AI Service → Response
-```
-
-1. Your IDE sends a request to Browser AI Bridge
-2. Browser AI Bridge uses your browser to talk to the AI
-3. The AI responds through your browser
-4. The response goes back to your IDE
-
-**No API keys needed!** It uses your existing browser session.
-
----
-
-## Troubleshooting
-
-### "Chrome not found"
-Install Chrome: https://www.google.com/chrome/
-
-### "Not signed in"
-Open Chrome and sign in to your AI provider
-
-### "Connection refused"
-Make sure the server is running (port 3000)
-
-### "Rate limit exceeded"
-Wait a minute and try again
-
----
-
-## Documentation
-
-- [Quick Start Guide](./QUICK_START.md) - Get started in 5 minutes
-- [User Guide](./USER_GUIDE.md) - Complete documentation
-- [API Reference](./docs/api-reference.md) - API documentation
-
----
-
-## For Developers
-
-### CLI Commands
-
-```bash
-# Start server
-node apps/cli/dist/index.js serve --site gemini
-
-# Quick chat
-node apps/cli/dist/index.js chat "Hello!"
-
-# Check system
-node apps/cli/dist/index.js doctor
-
-# List providers
-node apps/cli/dist/index.js providers
-```
-
-### API Usage
-
-```bash
-curl http://localhost:3000/v1/chat/completions \
-  -H "Content-Type: application/json" \
-  -d '{
-    "model": "gemini",
-    "messages": [{"role": "user", "content": "Hello!"}]
-  }'
-```
-
-### Build Desktop App
-
-```bash
-# Windows
-scripts\build-win.bat
-
-# macOS
-scripts/build-mac.sh
-
-# Linux
-scripts/build-linux.sh
-```
-
----
-
-## Supported AI Services
-
-| Service | Status | Notes |
-|---------|--------|-------|
-| Gemini | ✅ Working | Recommended |
-| ChatGPT | ✅ Working | Popular |
-| Claude | ✅ Working | Good for code |
-| DeepSeek | ✅ Working | Free tier available |
-
----
-
-## System Requirements
-
-| Requirement | Minimum |
-|-------------|---------|
-| OS | Windows 10+, macOS 12+, Ubuntu 20.04+ |
-| Node.js | 20.0+ (for CLI) |
-| Chrome | Any version |
-| RAM | 4GB |
-
----
-
-## FAQ
+## ❓ FAQ
 
 **Q: Is it free?**
 A: Yes! You just need free access to the AI service.
@@ -225,22 +121,20 @@ A: No! It uses your browser session.
 **Q: Which AI should I use?**
 A: Try Gemini first - it's the most reliable.
 
-**Q: Can I use it offline?**
-A: No, you need internet for the AI services.
-
 **Q: Is my data safe?**
 A: Yes, everything stays on your computer.
 
 ---
 
-## Support
+## 📞 Support
 
-- **Issues**: https://github.com/negrin22899/browser-ai-bridge/issues
-- **Discussions**: https://github.com/negrin22899/browser-ai-bridge/discussions
+- 🐛 [Issues](https://github.com/negrin22899/browser-ai-bridge/issues)
+- 💬 [Discussions](https://github.com/negrin22899/browser-ai-bridge/discussions)
+- 📧 [Security](https://github.com/negrin22899/browser-ai-bridge/blob/master/SECURITY.md)
 
 ---
 
-## License
+## 📄 License
 
 MIT
 
