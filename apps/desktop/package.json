@@ -39,6 +39,11 @@
         "filter": ["**/*"]
       },
       {
+        "from": "../../apps/dashboard/dist",
+        "to": "dashboard",
+        "filter": ["**/*"]
+      },
+      {
         "from": "../../packages",
         "to": "packages",
         "filter": ["**/dist/**/*"]

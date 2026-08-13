@@ -90,6 +90,9 @@ function createWindow() {
     },
     show: false,
     backgroundColor: '#1a1a2e',
+    autoHideMenuBar: true,
+    frame: false,
+    titleBarStyle: 'hiddenInset',
   });
 
   // Load the dashboard
@@ -97,17 +100,76 @@ function createWindow() {
     mainWindow.loadURL('http://localhost:5173');
     mainWindow.webContents.openDevTools();
   } else {
-    const dashboardPath = path.join(process.resourcesPath, 'dashboard', 'index.html');
-    if (fs.existsSync(dashboardPath)) {
-      mainWindow.loadFile(dashboardPath);
-    } else {
-      // Fallback to local dashboard
-      const localDashboardPath = path.join(__dirname, '../../dashboard/dist/index.html');
-      if (fs.existsSync(localDashboardPath)) {
-        mainWindow.loadFile(localDashboardPath);
-      } else {
-        mainWindow.loadURL('data:text/html,<h1>Dashboard not found</h1>');
+    // Try multiple paths for dashboard
+    const possiblePaths = [
+      path.join(process.resourcesPath, 'dashboard', 'index.html'),
+      path.join(process.resourcesPath, 'app', 'dashboard', 'dist', 'index.html'),
+      path.join(__dirname, '..', 'dashboard', 'dist', 'index.html'),
+      path.join(__dirname, '..', '..', 'dashboard', 'dist', 'index.html'),
+      path.join(__dirname, '..', '..', 'apps', 'dashboard', 'dist', 'index.html'),
+    ];
+
+    let loaded = false;
+    for (const dashboardPath of possiblePaths) {
+      if (fs.existsSync(dashboardPath)) {
+        mainWindow.loadFile(dashboardPath);
+        loaded = true;
+        break;
       }
+    }
+
+    if (!loaded) {
+      // Create a simple dashboard HTML
+      mainWindow.loadURL(`data:text/html,
+        <!DOCTYPE html>
+        <html>
+        <head>
+          <title>Browser AI Bridge</title>
+          <style>
+            body { 
+              font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+              background: #1a1a2e; 
+              color: #eee; 
+              display: flex; 
+              justify-content: center; 
+              align-items: center; 
+              height: 100vh; 
+              margin: 0; 
+            }
+            .container { text-align: center; max-width: 500px; padding: 20px; }
+            h1 { color: #4fc3f7; margin-bottom: 20px; }
+            p { line-height: 1.6; }
+            .status { margin-top: 20px; padding: 15px; background: #16213e; border-radius: 8px; }
+            .btn { 
+              display: inline-block; 
+              margin-top: 15px; 
+              padding: 10px 20px; 
+              background: #4fc3f7; 
+              color: #000; 
+              border: none; 
+              border-radius: 6px; 
+              cursor: pointer; 
+              font-weight: bold;
+            }
+          </style>
+        </head>
+        <body>
+          <div class="container">
+            <h1>Browser AI Bridge</h1>
+            <p>Use AI in your code editor — no API keys needed!</p>
+            <div class="status">
+              <p><strong>API Endpoint:</strong></p>
+              <code>http://localhost:3000/v1/chat/completions</code>
+              <p style="margin-top: 10px;"><strong>Available Models:</strong></p>
+              <code>gemini, chatgpt, claude, deepseek</code>
+            </div>
+            <p style="margin-top: 20px; font-size: 14px; color: #888;">
+              To start: Open Chrome and sign in to your AI provider, then click Start Server.
+            </p>
+          </div>
+        </body>
+        </html>
+      `);
     }
   }
 
