@@ -1,0 +1,90 @@
+{
+  "timestamp": "2026-08-13T20:17:11.680Z",
+  "system": {
+    "platform": "win32",
+    "arch": "x64",
+    "release": "10.0.26100",
+    "hostname": "wanskiller-PC",
+    "uptime": 272017.656
+  },
+  "node": {
+    "version": "v22.22.2",
+    "platform": "win32",
+    "arch": "x64"
+  },
+  "npm": {
+    "version": "10.9.7"
+  },
+  "playwright": {
+    "version": "Version 1.62.1",
+    "browsers": [
+      "chromium-1234",
+      "chromium_headless_shell-1234",
+      "firefox-1538",
+      "webkit-2336",
+      "ffmpeg-1011",
+      "winldd-1007"
+    ]
+  },
+  "git": {
+    "version": "git version 2.54.0.windows.1",
+    "branch": "master",
+    "commit": "05c5642"
+  },
+  "project": {
+    "version": "1.0.0",
+    "packages": [
+      "apps/*",
+      "packages/*",
+      "packages/tools/*",
+      "examples/*",
+      "!apps/desktop"
+    ]
+  },
+  "doctor": [
+    {
+      "name": "Node.js",
+      "status": "ok",
+      "message": "v22.22.2"
+    },
+    {
+      "name": "Playwright",
+      "status": "ok",
+      "message": "Version 1.62.1"
+    },
+    {
+      "name": "Chrome",
+      "status": "ok",
+      "message": "Found",
+      "details": "C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe"
+    },
+    {
+      "name": "Browser Profile",
+      "status": "ok",
+      "message": "Found",
+      "details": "C:\\Users\\wanskiller\\AppData\\Local\\Google\\Chrome\\User Data"
+    },
+    {
+      "name": "Runtime",
+      "status": "ok",
+      "message": "Built"
+    },
+    {
+      "name": "Workspace",
+      "status": "ok",
+      "message": "5 workspaces"
+    },
+    {
+      "name": "Git",
+      "status": "ok",
+      "message": "git version 2.54.0.windows.1"
+    },
+    {
+      "name": "API",
+      "status": "ok",
+      "message": "Built"
+    }
+  ],
+  "logs": [],
+  "config": {}
+}

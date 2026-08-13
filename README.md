@@ -27,45 +27,75 @@
 
 ---
 
-## 🚀 Quick Start (10 seconds)
+## 📥 Download
+
+### For Beginners (Recommended)
+
+**Just download and install — no command line needed!**
+
+| Platform | Download |
+|----------|----------|
+| 🪟 Windows | [⬇️ Download Installer (.exe)](https://github.com/negrin22899/browser-ai-bridge/releases/download/v1.0.0/Browser.AI.Bridge.Setup.1.0.0.exe) |
+| 🍎 macOS | [⬇️ Download Installer (.dmg)](https://github.com/negrin22899/browser-ai-bridge/releases/latest) |
+| 🐧 Linux | [⬇️ Download Installer (.AppImage)](https://github.com/negrin22899/browser-ai-bridge/releases/latest) |
+
+**Installation:**
+1. Download the installer for your OS
+2. Run the installer
+3. Open Browser AI Bridge
+4. Sign in to your AI (Gemini, ChatGPT, Claude, or DeepSeek)
+5. Start coding!
+
+### For Developers
 
 ```bash
+# Quick setup
 npx browser-ai-bridge init
+
+# Or clone and setup
+git clone https://github.com/negrin22899/browser-ai-bridge.git
+cd browser-ai-bridge
+npm run setup
 ```
 
-That's it! Then:
+📖 [Developer Guide](./docs/en/QUICK_START.md)
+
+---
+
+## 🚀 Quick Start
+
+### Step 1: Sign in to AI Provider
+
+Open Chrome and sign in to ONE of these:
+- **Gemini**: https://gemini.google.com (recommended)
+- **ChatGPT**: https://chatgpt.com
+- **Claude**: https://claude.ai
+- **DeepSeek**: https://chat.deepseek.com
+
+### Step 2: Start the Server
+
+**Desktop App:**
+- Open Browser AI Bridge
+- Click "Start Server"
+
+**CLI:**
 ```bash
 bab serve --site gemini
 ```
 
-API ready at: `http://localhost:3000/v1/chat/completions`
+### Step 3: Configure Your IDE
 
----
-
-## 📥 Download
-
-### Desktop App
-
-| Platform | Download |
-|----------|----------|
-| 🪟 Windows | [Download .exe](https://github.com/negrin22899/browser-ai-bridge/releases/latest) |
-| 🍎 macOS | [Download .dmg](https://github.com/negrin22899/browser-ai-bridge/releases/latest) |
-| 🐧 Linux | [Download .AppImage](https://github.com/negrin22899/browser-ai-bridge/releases/latest) |
-
-### CLI
-
-```bash
-npx browser-ai-bridge init
+**Cursor:**
+```
+Settings → AI → API
+API URL: http://localhost:3000/v1/chat/completions
+Model: gemini
 ```
 
----
-
-## 📖 Documentation
-
-| Language | Quick Start | Full Guide |
-|----------|-------------|------------|
-| 🇺🇸 English | [Quick Start](./docs/en/QUICK_START.md) | [User Guide](./USER_GUIDE.md) |
-| 🇷🇺 Русский | [Быстрый старт](./docs/ru/QUICK_START.md) | [Руководство](./docs/ru/ARCHITECTURE.md) |
+**VS Code:**
+1. Install AI extension (Continue, Cody, etc.)
+2. Set API URL: `http://localhost:3000/v1/chat/completions`
+3. Set Model: `gemini`
 
 ---
 
@@ -94,19 +124,12 @@ npx browser-ai-bridge init
 
 ---
 
-## 💻 IDE Setup
+## 📖 Documentation
 
-### Cursor
-```
-Settings → AI → API
-API URL: http://localhost:3000/v1/chat/completions
-Model: gemini
-```
-
-### VS Code
-1. Install AI extension (Continue, Cody, etc.)
-2. Set API URL: `http://localhost:3000/v1/chat/completions`
-3. Set Model: `gemini`
+| Language | Quick Start | Full Guide |
+|----------|-------------|------------|
+| 🇺🇸 English | [Quick Start](./docs/en/QUICK_START.md) | [User Guide](./USER_GUIDE.md) |
+| 🇷🇺 Русский | [Быстрый старт](./docs/ru/QUICK_START.md) | [Руководство](./docs/ru/ARCHITECTURE.md) |
 
 ---
 
@@ -130,7 +153,6 @@ A: Yes, everything stays on your computer.
 
 - 🐛 [Issues](https://github.com/negrin22899/browser-ai-bridge/issues)
 - 💬 [Discussions](https://github.com/negrin22899/browser-ai-bridge/discussions)
-- 📧 [Security](https://github.com/negrin22899/browser-ai-bridge/blob/master/SECURITY.md)
 
 ---
 
