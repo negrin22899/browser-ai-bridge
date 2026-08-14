@@ -19,7 +19,6 @@ import { useState } from 'react';
 import { useTheme } from '../contexts/ThemeContext';
 import { useLanguage } from '../contexts/LanguageContext';
 import { useElectron } from '../hooks/useElectron';
-import TitleBar from './TitleBar';
 
 interface LayoutProps {
   children: ReactNode;
@@ -52,9 +51,6 @@ export default function Layout({ children }: LayoutProps) {
 
   return (
     <div className={`min-h-screen flex flex-col ${theme === 'dark' ? 'bg-gray-900' : 'bg-gray-50'}`}>
-      {/* Electron Title Bar */}
-      <TitleBar />
-
       <div className="flex flex-1">
         {/* Sidebar */}
         <aside className={`fixed inset-y-0 left-0 w-64 border-r flex flex-col ${

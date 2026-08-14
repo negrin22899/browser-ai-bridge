@@ -64,7 +64,10 @@ function getAppPath() {
 }
 
 function getCliPath() {
-  return path.join(getAppPath(), 'apps', 'cli', 'dist', 'index.js');
+  if (app.isPackaged) {
+    return path.join(process.resourcesPath, 'cli', 'dist', 'index.js');
+  }
+  return path.join(__dirname, '..', '..', 'apps', 'cli', 'dist', 'index.js');
 }
 
 // ─── Window ──────────────────────────────────────────────────────
@@ -395,15 +398,25 @@ async function startServer(port = 3000) {
       }
     }
 
+    console.log('[server] Starting CLI from:', cliPath);
+    console.log('[server] CLI exists:', fs.existsSync(cliPath));
+
+    if (!fs.existsSync(cliPath)) {
+      return { success: false, error: `CLI not found at: ${cliPath}` };
+    }
+
     serverProcess = spawn('node', [cliPath, 'serve', '--port', port.toString()], {
       cwd: getAppPath(),
       stdio: 'pipe',
+      env: { ...process.env, NODE_ENV: 'production' },
     });
+
+    let startupError = '';
 
     serverProcess.stdout.on('data', (data) => {
       const output = data.toString();
-      console.log(output);
-      if (output.includes('running at')) {
+      console.log('[server stdout]', output);
+      if (output.includes('running at') || output.includes('localhost')) {
         state.serverRunning = true;
         state.port = port;
         mainWindow?.webContents.send('server-status', { running: true, port });
@@ -412,25 +425,38 @@ async function startServer(port = 3000) {
     });
 
     serverProcess.stderr.on('data', (data) => {
-      console.error(data.toString());
+      const err = data.toString();
+      console.error('[server stderr]', err);
+      startupError += err;
     });
 
-    serverProcess.on('close', () => {
+    serverProcess.on('error', (err) => {
+      console.error('[server] Failed to start:', err);
+      startupError = err.message;
+    });
+
+    serverProcess.on('close', (code) => {
+      console.log('[server] Process exited with code:', code);
       state.serverRunning = false;
       serverProcess = null;
       mainWindow?.webContents.send('server-status', { running: false });
       updateTray();
     });
 
-    await new Promise((r) => setTimeout(r, 2000));
+    // Wait for server to start
+    await new Promise((r) => setTimeout(r, 3000));
 
-    state.serverRunning = true;
-    state.port = port;
-    mainWindow?.webContents.send('server-status', { running: true, port });
-    updateTray();
-
-    return { success: true };
+    if (serverProcess && !serverProcess.killed) {
+      state.serverRunning = true;
+      state.port = port;
+      mainWindow?.webContents.send('server-status', { running: true, port });
+      updateTray();
+      return { success: true };
+    } else {
+      return { success: false, error: startupError || 'Server failed to start' };
+    }
   } catch (error) {
+    console.error('[server] Exception:', error);
     return { success: false, error: error.message };
   }
 }
