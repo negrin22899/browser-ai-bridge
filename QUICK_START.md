@@ -1,8 +1,14 @@
-# Quick Start - Browser AI Bridge
+# Quick Start - CLI
 
-## 3 Steps to Start 🚀
+For developers who want to use Browser AI Bridge from the terminal.
 
-### 1. Install (2 min)
+## Install
+
+```bash
+npx browser-ai-bridge init
+```
+
+Or clone and build:
 
 ```bash
 git clone https://github.com/negrin22899/browser-ai-bridge.git
@@ -10,51 +16,47 @@ cd browser-ai-bridge
 npm run setup
 ```
 
-### 2. Sign in (1 min)
+## Sign in
 
-Open Chrome and go to ONE of:
+Open Chrome and sign in to one of:
 - https://gemini.google.com (recommended)
 - https://chatgpt.com
 - https://claude.ai
 - https://chat.deepseek.com
 
-Sign in with your account.
-
-### 3. Start (1 min)
+## Start
 
 ```bash
-node apps/cli/dist/index.js serve --site gemini
+bab serve --site gemini
 ```
 
-Done! Server running at http://localhost:3000
+Server runs at http://localhost:3000
 
----
+## Use in IDE
 
-## Use in Your IDE
-
-Add this to your AI extension settings:
+Configure your AI extension:
 - **API URL**: `http://localhost:3000/v1/chat/completions`
 - **Model**: `gemini`
 
----
+## Commands
 
-## Quick Commands
+| Command | Description |
+|---------|-------------|
+| `bab serve --site gemini` | Start server |
+| `bab chat "Hello"` | Quick chat |
+| `bab doctor` | Check system |
+| `bab providers` | List providers |
+| `bab diagnose` | Collect diagnostics |
+
+## Options
 
 ```bash
-# Start server
-node apps/cli/dist/index.js serve --site gemini
+# Custom port
+bab serve --site gemini --port 8080
 
-# Quick chat
-node apps/cli/dist/index.js chat "Hello!"
+# Show browser window
+bab serve --site gemini --no-headless
 
-# Check system
-node apps/cli/dist/index.js doctor
+# Use fresh browser profile
+bab serve --site gemini --no-profile
 ```
-
----
-
-## That's it! 
-
-You're ready to use AI in your code editor. 🎉
-
-Need more? See [USER_GUIDE.md](./USER_GUIDE.md)
