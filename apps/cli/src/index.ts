@@ -15,7 +15,7 @@ import { runDiagnose, saveDiagnostic, printDiagnosticSummary } from './diagnose.
 import { runSetup } from './setup.js';
 import { runSmokeTest } from './smoke-test.js';
 import { runInit } from './init.js';
-import { resolveProvider, resolveProviderId, listProviders } from './providers.js';
+import { resolveProvider, listProviders } from './providers.js';
 
 const program = new Command();
 
