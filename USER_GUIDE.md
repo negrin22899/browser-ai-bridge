@@ -4,11 +4,17 @@
 
 ### Step 1: Install
 
-Download the installer for your platform from [GitHub Releases](https://github.com/negrin22899/browser-ai-bridge/releases/latest):
+Download the installer for your platform:
 
-- **Windows**: Download `.exe` file, run it, follow the installer
-- **macOS**: Download `.dmg` file, drag to Applications
-- **Linux**: Download `.AppImage` file, make it executable, run it
+| Platform | Download |
+|----------|----------|
+| Windows | [Browser.AI.Bridge.Setup.1.0.0.exe](https://github.com/negrin22899/browser-ai-bridge/releases/download/v1.0.0/Browser.AI.Bridge.Setup.1.0.0.exe) |
+| macOS | [Browser.AI.Bridge-1.0.0.dmg](https://github.com/negrin22899/browser-ai-bridge/releases/download/v1.0.0/Browser.AI.Bridge-1.0.0.dmg) |
+| Linux | [Browser.AI.Bridge-1.0.0.AppImage](https://github.com/negrin22899/browser-ai-bridge/releases/download/v1.0.0/Browser.AI.Bridge-1.0.0.AppImage) |
+
+- **Windows**: Run the `.exe` file, follow the installer
+- **macOS**: Open the `.dmg` file, drag to Applications
+- **Linux**: Make the `.AppImage` file executable, run it
 
 ### Step 2: Sign in to AI
 

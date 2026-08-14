@@ -23,15 +23,13 @@ bab serve --site gemini
 
 ## Download
 
-### Desktop App (For Beginners)
-
-Download and install — it's easy!
-
 | Platform | Download |
 |----------|----------|
-| Windows | [Download .exe](https://github.com/negrin22899/browser-ai-bridge/releases/latest) |
-| macOS | [Download .dmg](https://github.com/negrin22899/browser-ai-bridge/releases/latest) |
-| Linux | [Download .AppImage](https://github.com/negrin22899/browser-ai-bridge/releases/latest) |
+| Windows | [Browser.AI.Bridge.Setup.1.0.0.exe](https://github.com/negrin22899/browser-ai-bridge/releases/download/v1.0.0/Browser.AI.Bridge.Setup.1.0.0.exe) |
+| macOS | [Browser.AI.Bridge-1.0.0.dmg](https://github.com/negrin22899/browser-ai-bridge/releases/download/v1.0.0/Browser.AI.Bridge-1.0.0.dmg) |
+| Linux | [Browser.AI.Bridge-1.0.0.AppImage](https://github.com/negrin22899/browser-ai-bridge/releases/download/v1.0.0/Browser.AI.Bridge-1.0.0.AppImage) |
+
+[All releases](https://github.com/negrin22899/browser-ai-bridge/releases)
 
 ### CLI (For Developers)
 

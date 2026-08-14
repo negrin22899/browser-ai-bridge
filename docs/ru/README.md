@@ -4,15 +4,15 @@
 
 ---
 
-## Для пользователей (Просто скачайте)
-
-**Скачайте, установите и начните использовать AI — без терминала.**
+## Скачать
 
 | Платформа | Скачать |
 |-----------|---------|
-| Windows | [Скачать .exe](https://github.com/negrin22899/browser-ai-bridge/releases/latest) |
-| macOS | [Скачать .dmg](https://github.com/negrin22899/browser-ai-bridge/releases/latest) |
-| Linux | [Скачать .AppImage](https://github.com/negrin22899/browser-ai-bridge/releases/latest) |
+| Windows | [Browser.AI.Bridge.Setup.1.0.0.exe](https://github.com/negrin22899/browser-ai-bridge/releases/download/v1.0.0/Browser.AI.Bridge.Setup.1.0.0.exe) |
+| macOS | [Browser.AI.Bridge-1.0.0.dmg](https://github.com/negrin22899/browser-ai-bridge/releases/download/v1.0.0/Browser.AI.Bridge-1.0.0.dmg) |
+| Linux | [Browser.AI.Bridge-1.0.0.AppImage](https://github.com/negrin22899/browser-ai-bridge/releases/download/v1.0.0/Browser.AI.Bridge-1.0.0.AppImage) |
+
+[Все релизы](https://github.com/negrin22899/browser-ai-bridge/releases)
 
 ### Как использовать:
 
