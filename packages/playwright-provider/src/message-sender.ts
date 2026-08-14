@@ -1,8 +1,5 @@
 import type { BrowserSession } from './browser-session.js';
 
-/**
- * Message Sender - sends messages to AI chat interface
- */
 export class MessageSender {
   private inputSelector: string;
   private sendButtonSelector: string;
@@ -16,28 +13,17 @@ export class MessageSender {
   }
 
   async send(session: BrowserSession, message: string): Promise<void> {
-    // Wait for input to be available
     await session.waitForSelector(this.inputSelector, 10000);
-
-    // Clear existing content and type message
-    await session.fill(this.inputSelector, message);
-
-    // Small delay to ensure input is registered
-    await new Promise(resolve => setTimeout(resolve, 100));
-
-    // Click send button
+    await session.typeInto(this.inputSelector, message);
+    await new Promise((resolve) => setTimeout(resolve, 100));
     await session.click(this.sendButtonSelector);
   }
 
   async sendWithEnter(session: BrowserSession, message: string): Promise<void> {
-    // Wait for input to be available
     await session.waitForSelector(this.inputSelector, 10000);
-
-    // Type message
-    await session.fill(this.inputSelector, message);
-
-    // Press Enter to send
-    await session.type(this.inputSelector, 'Enter');
+    await session.typeInto(this.inputSelector, message);
+    await new Promise((resolve) => setTimeout(resolve, 100));
+    await session.pressKey('Enter');
   }
 
   async isReady(session: BrowserSession): Promise<boolean> {

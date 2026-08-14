@@ -2,7 +2,7 @@ import { Hono } from 'hono';
 import { cors } from 'hono/cors';
 import type { ProviderManager, SessionManager, Logger } from '@bab/core';
 import type { PromptEngine } from '@bab/prompt-engine';
-import type { ChatCompletionRequest } from '@bab/protocol';
+import type { ChatCompletionRequest, Provider } from '@bab/protocol';
 import { RateLimiter } from './rate-limiter.js';
 import { redactString } from './redaction.js';
 import { RequestValidator } from './validation.js';
@@ -16,23 +16,20 @@ interface ServerDeps {
   validator?: RequestValidator;
 }
 
-/**
- * Create OpenAI-compatible API server
- */
 export function createServer(deps: ServerDeps): Hono {
   const app = new Hono();
   const { providerManager, sessionManager, logger, promptEngine } = deps;
   const rateLimiter = deps.rateLimiter ?? new RateLimiter();
   const validator = deps.validator ?? new RequestValidator();
 
-  // CORS - restrict to localhost for security
+  // CORS
   app.use('*', cors({
     origin: ['http://localhost', 'http://127.0.0.1', 'http://localhost:3000', 'http://localhost:5173'],
     allowMethods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
     allowHeaders: ['Content-Type', 'Authorization'],
   }));
 
-  // Rate limiting middleware
+  // Rate limiting
   app.use('*', async (c, next) => {
     const ip = c.req.header('x-forwarded-for') || c.req.header('x-real-ip') || 'unknown';
     const { allowed, info } = rateLimiter.check(ip);
@@ -42,21 +39,16 @@ export function createServer(deps: ServerDeps): Hono {
     c.header('X-RateLimit-Reset', info.reset.toString());
 
     if (!allowed) {
-      return c.json({
-        error: {
-          message: 'Rate limit exceeded',
-          type: 'rate_limit_error',
-        },
-      }, 429);
+      return c.json({ error: { message: 'Rate limit exceeded', type: 'rate_limit_error' } }, 429);
     }
-
     return next();
   });
 
-  // Health check
+  // ── Health ───────────────────────────────────────────────────
+
   app.get('/health', async (c) => {
     const healthResults = await providerManager.healthCheckAll();
-    const allHealthy = Array.from(healthResults.values()).every(r => r.healthy);
+    const allHealthy = Array.from(healthResults.values()).every((r) => r.healthy);
 
     return c.json({
       status: allHealthy ? 'ok' : 'degraded',
@@ -65,8 +57,9 @@ export function createServer(deps: ServerDeps): Hono {
     });
   });
 
-  // List models (providers)
-  app.get('/models', (c) => {
+  // ── Models ───────────────────────────────────────────────────
+
+  const listModels = (c: any) => {
     const providers = providerManager.list();
     return c.json({
       object: 'list',
@@ -77,24 +70,14 @@ export function createServer(deps: ServerDeps): Hono {
         owned_by: p.name,
       })),
     });
-  });
+  };
 
-  app.get('/v1/models', (c) => {
-    const providers = providerManager.list();
-    return c.json({
-      object: 'list',
-      data: providers.map((p) => ({
-        id: p.id,
-        object: 'model',
-        created: 0,
-        owned_by: p.name,
-      })),
-    });
-  });
+  app.get('/models', listModels);
+  app.get('/v1/models', listModels);
 
-  // Chat completions
+  // ── Chat Completions ─────────────────────────────────────────
+
   app.post('/v1/chat/completions', async (c) => {
-    // Validate body size
     const bodyText = await c.req.text();
     const sizeValidation = validator.validateBodySize(bodyText);
     if (!sizeValidation.valid) {
@@ -108,7 +91,6 @@ export function createServer(deps: ServerDeps): Hono {
       return c.json({ error: { message: 'Invalid JSON body' } }, 400);
     }
 
-    // Validate request structure
     const validation = validator.validateChatRequest(body);
     if (!validation.valid) {
       return c.json({ error: { message: validation.error } }, 400);
@@ -117,8 +99,7 @@ export function createServer(deps: ServerDeps): Hono {
     logger.info('Chat completion request', { model: body.model });
 
     try {
-      // Get provider by model name or use active
-      let provider;
+      let provider: Provider;
       try {
         provider = providerManager.get(body.model) ?? providerManager.getActive();
       } catch {
@@ -127,7 +108,7 @@ export function createServer(deps: ServerDeps): Hono {
 
       // Inject system prompt with tool negotiation if tools available
       const tools = provider.getTools?.() ?? [];
-      if (tools.length > 0 && !body.messages.some(m => m.role === 'system')) {
+      if (tools.length > 0 && !body.messages.some((m) => m.role === 'system')) {
         const systemPrompt = promptEngine.generateSystemPrompt(tools);
         body.messages.unshift({ role: 'system', content: systemPrompt });
       }
@@ -140,20 +121,17 @@ export function createServer(deps: ServerDeps): Hono {
         session = sessionManager.create(provider.id, body.model);
       }
 
-      // Add user message to session
       const userMessage = body.messages[body.messages.length - 1];
       if (userMessage) {
         session.addMessage(userMessage);
       }
 
-      // Send to provider
       if (body.stream) {
         return streamResponse(provider, body, logger);
       }
 
       const response = await provider.send(body);
 
-      // Add assistant message to session
       if (response.choices[0]?.message) {
         session.addMessage(response.choices[0].message);
       }
@@ -161,19 +139,13 @@ export function createServer(deps: ServerDeps): Hono {
       return c.json(response);
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : 'Internal server error';
-      logger.error('Request failed', {
-        error: redactString(errorMessage),
-      });
-      return c.json({
-        error: {
-          message: redactString(errorMessage),
-          type: 'server_error',
-        },
-      }, 500);
+      logger.error('Request failed', { error: redactString(errorMessage) });
+      return c.json({ error: { message: redactString(errorMessage), type: 'server_error' } }, 500);
     }
   });
 
-  // Responses endpoint
+  // ── Responses API ────────────────────────────────────────────
+
   app.post('/v1/responses', async (c) => {
     let body: { model: string; input: Array<{ role: string; content: string }> };
     try {
@@ -191,10 +163,13 @@ export function createServer(deps: ServerDeps): Hono {
     try {
       const request: ChatCompletionRequest = {
         model: body.model,
-        messages: body.input.map(m => ({ role: m.role as any, content: m.content })),
+        messages: body.input.map((m) => ({
+          role: m.role as 'system' | 'user' | 'assistant',
+          content: m.content,
+        })),
       };
 
-      let provider;
+      let provider: Provider;
       try {
         provider = providerManager.get(body.model) ?? providerManager.getActive();
       } catch {
@@ -212,10 +187,7 @@ export function createServer(deps: ServerDeps): Hono {
           id: `${response.id}-${i}`,
           type: 'message',
           role: 'assistant',
-          content: [{
-            type: 'output_text',
-            text: choice.message.content ?? '',
-          }],
+          content: [{ type: 'output_text', text: choice.message.content ?? '' }],
         })),
       });
     } catch (error) {
@@ -231,17 +203,18 @@ export function createServer(deps: ServerDeps): Hono {
     }
   });
 
-  // Sessions endpoints
+  // ── Sessions ─────────────────────────────────────────────────
+
   app.get('/v1/sessions', (c) => {
     const sessions = sessionManager.list();
-    return c.json({
-      object: 'list',
-      data: sessions.map(s => s.toJSON()),
-    });
+    return c.json({ object: 'list', data: sessions.map((s) => s.toJSON()) });
   });
 
   app.post('/v1/sessions', async (c) => {
     const body = await c.req.json();
+    if (!body.providerId) {
+      return c.json({ error: { message: 'providerId is required' } }, 400);
+    }
     const session = sessionManager.create(body.providerId, body.model);
     return c.json(session.toJSON());
   });
@@ -255,25 +228,31 @@ export function createServer(deps: ServerDeps): Hono {
     return c.json(session.toJSON());
   });
 
-  // Tools endpoint
+  // ── Tools ────────────────────────────────────────────────────
+
   app.get('/v1/tools', (c) => {
-    const provider = providerManager.getActive();
-    const tools = provider.getTools?.() ?? [];
-    return c.json(tools);
+    try {
+      const provider = providerManager.getActive();
+      const tools = provider.getTools?.() ?? [];
+      return c.json(tools);
+    } catch {
+      return c.json({ error: { message: 'No active provider' } }, 503);
+    }
   });
 
-  // Metrics endpoint
+  // ── Metrics ──────────────────────────────────────────────────
+
   app.get('/metrics', (c) => {
     const providers = providerManager.list();
     const lines: string[] = [];
 
-    lines.push(`# HELP bab_providers_total Total number of providers`);
-    lines.push(`# TYPE bab_providers_total gauge`);
+    lines.push('# HELP bab_providers_total Total number of providers');
+    lines.push('# TYPE bab_providers_total gauge');
     lines.push(`bab_providers_total ${providers.length}`);
 
     for (const provider of providers) {
-      lines.push(`# HELP bab_provider_status Provider status (1=connected, 0=disconnected)`);
-      lines.push(`# TYPE bab_provider_status gauge`);
+      lines.push('# HELP bab_provider_status Provider status (1=connected, 0=disconnected)');
+      lines.push('# TYPE bab_provider_status gauge');
       lines.push(`bab_provider_status{provider="${provider.id}"} ${provider.status === 'connected' ? 1 : 0}`);
     }
 
@@ -283,7 +262,9 @@ export function createServer(deps: ServerDeps): Hono {
   return app;
 }
 
-function streamResponse(provider: any, request: ChatCompletionRequest, logger: Logger): Response {
+// ── Streaming ──────────────────────────────────────────────────
+
+function streamResponse(provider: Provider, request: ChatCompletionRequest, logger: Logger): Response {
   const encoder = new TextEncoder();
 
   const stream = new ReadableStream({

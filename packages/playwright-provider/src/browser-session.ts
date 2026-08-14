@@ -95,6 +95,34 @@ export class BrowserSession {
     await this.page.type(selector, text);
   }
 
+  async typeInto(selector: string, text: string): Promise<void> {
+    if (!this.page) {
+      throw new Error('Session not attached to a page');
+    }
+    const el = await this.page.$(selector);
+    if (!el) throw new Error(`Element not found: ${selector}`);
+
+    const tagName = await el.evaluate((e) => e.tagName.toLowerCase());
+    const isContentEditable = await el.evaluate((e) => (e as HTMLElement).isContentEditable);
+
+    if (tagName === 'textarea' || tagName === 'input') {
+      await this.page.fill(selector, text);
+    } else if (isContentEditable) {
+      await el.click();
+      await this.page.keyboard.type(text);
+    } else {
+      await el.click();
+      await this.page.keyboard.type(text);
+    }
+  }
+
+  async pressKey(key: string): Promise<void> {
+    if (!this.page) {
+      throw new Error('Session not attached to a page');
+    }
+    await this.page.keyboard.press(key);
+  }
+
   async getText(selector: string): Promise<string> {
     if (!this.page) {
       throw new Error('Session not attached to a page');

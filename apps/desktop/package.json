@@ -15,7 +15,8 @@
     "pack": "electron-builder --dir"
   },
   "dependencies": {
-    "electron-store": "^8.0.0"
+    "electron-store": "^8.0.0",
+    "electron-updater": "^6.3.0"
   },
   "devDependencies": {
     "electron": "^30.0.0",
@@ -24,6 +25,13 @@
   "build": {
     "appId": "com.browseraibridge.desktop",
     "productName": "Browser AI Bridge",
+    "publish": [
+      {
+        "provider": "github",
+        "owner": "negrin22899",
+        "repo": "browser-ai-bridge"
+      }
+    ],
     "directories": {
       "output": "release"
     },

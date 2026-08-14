@@ -212,11 +212,31 @@ export class PlaywrightProvider implements Provider {
     this._status = 'busy';
 
     try {
-      // Get the last user message
-      const userMessage = request.messages[request.messages.length - 1]?.content ?? '';
+      // Build conversation context from all messages except the last user message
+      const lastUserIdx = request.messages.length - 1;
+      const contextMessages = request.messages.slice(0, lastUserIdx);
+      const userMessage = request.messages[lastUserIdx]?.content ?? '';
 
-      // Send message to AI
-      await this.adapter.sendMessage(this.session, userMessage);
+      // Build context string from system/assistant messages
+      let context: string | undefined;
+      if (contextMessages.length > 0) {
+        const parts: string[] = [];
+        for (const msg of contextMessages) {
+          if (msg.role === 'system') {
+            parts.push(`[System]: ${msg.content}`);
+          } else if (msg.role === 'assistant') {
+            parts.push(`[Assistant]: ${msg.content}`);
+          } else if (msg.role === 'user') {
+            parts.push(`[User]: ${msg.content}`);
+          }
+        }
+        if (parts.length > 0) {
+          context = parts.join('\n');
+        }
+      }
+
+      // Send message to AI with context
+      await this.adapter.sendMessage(this.session, userMessage, context);
 
       // Wait for and read response
       const responseText = await this.adapter.readResponse(this.session);
@@ -249,11 +269,24 @@ export class PlaywrightProvider implements Provider {
     const chunkId = `pw-${Date.now()}`;
 
     try {
-      // Get the last user message
-      const userMessage = request.messages[request.messages.length - 1]?.content ?? '';
+      // Build conversation context
+      const lastUserIdx = request.messages.length - 1;
+      const contextMessages = request.messages.slice(0, lastUserIdx);
+      const userMessage = request.messages[lastUserIdx]?.content ?? '';
 
-      // Send message to AI
-      await this.adapter.sendMessage(this.session, userMessage);
+      let context: string | undefined;
+      if (contextMessages.length > 0) {
+        const parts: string[] = [];
+        for (const msg of contextMessages) {
+          if (msg.role === 'system') parts.push(`[System]: ${msg.content}`);
+          else if (msg.role === 'assistant') parts.push(`[Assistant]: ${msg.content}`);
+          else if (msg.role === 'user') parts.push(`[User]: ${msg.content}`);
+        }
+        if (parts.length > 0) context = parts.join('\n');
+      }
+
+      // Send message to AI with context
+      await this.adapter.sendMessage(this.session, userMessage, context);
 
       // Stream response chunks
       for await (const chunk of this.adapter.streamResponse(this.session)) {

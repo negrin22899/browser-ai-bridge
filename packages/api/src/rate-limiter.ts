@@ -1,6 +1,7 @@
 export interface RateLimitConfig {
   windowMs: number;
   maxRequests: number;
+  cleanupIntervalMs?: number;
 }
 
 export interface RateLimitInfo {
@@ -9,50 +10,39 @@ export interface RateLimitInfo {
   reset: number;
 }
 
-/**
- * Rate Limiter - token bucket implementation
- */
 export class RateLimiter {
   private windowMs: number;
   private maxRequests: number;
   private requests: Map<string, { count: number; resetTime: number }> = new Map();
+  private cleanupTimer: ReturnType<typeof setInterval> | null = null;
 
   constructor(config?: Partial<RateLimitConfig>) {
-    this.windowMs = config?.windowMs ?? 60000; // 1 minute
-    this.maxRequests = config?.maxRequests ?? 60; // 60 requests per minute
+    this.windowMs = config?.windowMs ?? 60000;
+    this.maxRequests = config?.maxRequests ?? 60;
+
+    // Auto-cleanup expired entries every 2 minutes
+    const cleanupInterval = config?.cleanupIntervalMs ?? 120_000;
+    this.cleanupTimer = setInterval(() => this.cleanup(), cleanupInterval);
+    this.cleanupTimer.unref();
   }
 
-  /**
-   * Check if request is allowed
-   */
   check(key: string): { allowed: boolean; info: RateLimitInfo } {
     const now = Date.now();
     let entry = this.requests.get(key);
 
-    // Create new entry if doesn't exist or window expired
     if (!entry || now >= entry.resetTime) {
-      entry = {
-        count: 0,
-        resetTime: now + this.windowMs,
-      };
+      entry = { count: 0, resetTime: now + this.windowMs };
       this.requests.set(key, entry);
     }
 
-    // Check if limit exceeded
     if (entry.count >= this.maxRequests) {
       return {
         allowed: false,
-        info: {
-          total: this.maxRequests,
-          remaining: 0,
-          reset: entry.resetTime,
-        },
+        info: { total: this.maxRequests, remaining: 0, reset: entry.resetTime },
       };
     }
 
-    // Increment count
     entry.count++;
-
     return {
       allowed: true,
       info: {
@@ -63,19 +53,12 @@ export class RateLimiter {
     };
   }
 
-  /**
-   * Get rate limit info for a key
-   */
   getInfo(key: string): RateLimitInfo {
     const now = Date.now();
     const entry = this.requests.get(key);
 
     if (!entry || now >= entry.resetTime) {
-      return {
-        total: this.maxRequests,
-        remaining: this.maxRequests,
-        reset: now + this.windowMs,
-      };
+      return { total: this.maxRequests, remaining: this.maxRequests, reset: now + this.windowMs };
     }
 
     return {
@@ -85,23 +68,14 @@ export class RateLimiter {
     };
   }
 
-  /**
-   * Reset rate limit for a key
-   */
   reset(key: string): void {
     this.requests.delete(key);
   }
 
-  /**
-   * Clear all rate limits
-   */
   clearAll(): void {
     this.requests.clear();
   }
 
-  /**
-   * Clean up expired entries
-   */
   cleanup(): void {
     const now = Date.now();
     for (const [key, entry] of this.requests) {
@@ -109,5 +83,13 @@ export class RateLimiter {
         this.requests.delete(key);
       }
     }
+  }
+
+  destroy(): void {
+    if (this.cleanupTimer) {
+      clearInterval(this.cleanupTimer);
+      this.cleanupTimer = null;
+    }
+    this.requests.clear();
   }
 }

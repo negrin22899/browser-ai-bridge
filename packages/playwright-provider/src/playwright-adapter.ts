@@ -69,8 +69,9 @@ export class PlaywrightAdapter {
     await session.waitForSelector(this.config.selectors.input, 30000);
   }
 
-  async sendMessage(session: BrowserSession, message: string): Promise<void> {
-    await this.messageSender.send(session, message);
+  async sendMessage(session: BrowserSession, message: string, context?: string): Promise<void> {
+    const fullMessage = context ? `${context}\n\n${message}` : message;
+    await this.messageSender.send(session, fullMessage);
   }
 
   async readResponse(session: BrowserSession): Promise<string> {

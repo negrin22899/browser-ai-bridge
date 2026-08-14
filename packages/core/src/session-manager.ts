@@ -63,6 +63,11 @@ export class SessionManager {
     return session;
   }
 
+  getActiveOrNull(): Session | null {
+    if (!this.activeSessionId) return null;
+    return this.sessions.get(this.activeSessionId) ?? null;
+  }
+
   setActive(id: string): void {
     if (!this.sessions.has(id)) {
       throw new Error(`Session "${id}" not found`);

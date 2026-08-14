@@ -64,6 +64,11 @@ export class ProviderManager implements IProviderManager {
     return provider;
   }
 
+  getActiveOrNull(): Provider | null {
+    if (!this.activeProviderId) return null;
+    return this.providers.get(this.activeProviderId) ?? null;
+  }
+
   setActive(id: string): void {
     if (!this.providers.has(id)) {
       throw new Error(`Provider "${id}" not found`);

@@ -119,7 +119,11 @@ export function redact(value: unknown): unknown {
  * Check if a string contains sensitive data
  */
 export function containsSensitiveData(str: string): boolean {
-  return SENSITIVE_PATTERNS.some(pattern => pattern.test(str));
+  // Reset lastIndex for global regexes before testing
+  return SENSITIVE_PATTERNS.some((pattern) => {
+    pattern.lastIndex = 0;
+    return pattern.test(str);
+  });
 }
 
 /**

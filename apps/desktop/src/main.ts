@@ -1,46 +1,24 @@
-const { app, BrowserWindow, ipcMain, shell, Tray, Menu, nativeImage } = require('electron');
-const path = require('path');
-const fs = require('fs');
+import { app, BrowserWindow, ipcMain, shell, Tray, Menu, nativeImage, dialog, clipboard } from 'electron';
+import path from 'path';
+import fs from 'fs';
+import { execSync, spawn, ChildProcess } from 'child_process';
 
-let mainWindow: any = null;
-let tray: any = null;
-let server: any = null;
-let provider: any = null;
-let eventBus: any = null;
-let logger: any = null;
-let sessionManager: any = null;
-let router: any = null;
-let promptEngine: any = null;
-let toolDispatcher: any = null;
+let mainWindow: BrowserWindow | null = null;
+let tray: Tray | null = null;
+let serverProcess: ChildProcess | null = null;
+let isQuitting = false;
 
-// Initialize modules dynamically
-async function initializeModules() {
-  const core = await import('@bab/core');
-  const runtime = await import('@bab/runtime');
-  const promptEngineModule = await import('@bab/prompt-engine');
-  const toolsFs = await import('@bab/tools-fs');
-  const toolsGit = await import('@bab/tools-git');
-  const toolsShell = await import('@bab/tools-shell');
+// App state
+const state = {
+  serverRunning: false,
+  connected: false,
+  provider: null as any,
+  port: 3000,
+  site: null as string | null,
+};
 
-  eventBus = new core.EventBus();
-  logger = new core.Logger({ level: 'info', format: 'text', context: 'Desktop' });
-  sessionManager = new core.SessionManager(eventBus);
-  router = new core.Router(eventBus);
-  promptEngine = new promptEngineModule.PromptEngine();
-  toolDispatcher = new runtime.ToolDispatcher(eventBus);
+// ─── Platform helpers ────────────────────────────────────────────
 
-  // Register tools
-  toolDispatcher.register(new toolsFs.FsReadTool());
-  toolDispatcher.register(new toolsFs.FsWriteTool());
-  toolDispatcher.register(new toolsGit.GitStatusTool());
-  toolDispatcher.register(new toolsGit.GitDiffTool());
-  toolDispatcher.register(new toolsGit.GitCommitTool());
-  toolDispatcher.register(new toolsShell.ShellExecTool());
-
-  return { core, runtime, promptEngineModule, toolsFs, toolsGit, toolsShell };
-}
-
-// Get Chrome user data directory based on platform
 function getChromeUserDataDir(): string {
   switch (process.platform) {
     case 'win32':
@@ -54,7 +32,6 @@ function getChromeUserDataDir(): string {
   }
 }
 
-// Get default Chrome executable path
 function getChromeExecutablePath(): string {
   switch (process.platform) {
     case 'win32':
@@ -68,7 +45,31 @@ function getChromeExecutablePath(): string {
   }
 }
 
-function createWindow() {
+function isChromeInstalled(): boolean {
+  return fs.existsSync(getChromeExecutablePath());
+}
+
+function isNodeInstalled(): boolean {
+  try {
+    execSync('node --version', { stdio: 'ignore' });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function getAppPath(): string {
+  if (app.isPackaged) return process.resourcesPath;
+  return path.join(__dirname, '..');
+}
+
+function getCliPath(): string {
+  return path.join(getAppPath(), 'apps', 'cli', 'dist', 'index.js');
+}
+
+// ─── Window ──────────────────────────────────────────────────────
+
+function createWindow(): void {
   mainWindow = new BrowserWindow({
     width: 1280,
     height: 800,
@@ -82,195 +83,282 @@ function createWindow() {
       preload: path.join(__dirname, 'preload.js'),
     },
     show: false,
+    backgroundColor: '#1a1a2e',
+    frame: false,
+    titleBarStyle: 'hidden',
+    titleBarOverlay: false,
   });
 
-  // Load the dashboard
   if (process.env.NODE_ENV === 'development') {
     mainWindow.loadURL('http://localhost:5173');
     mainWindow.webContents.openDevTools();
   } else {
     const dashboardPath = path.join(process.resourcesPath, 'dashboard', 'index.html');
-    mainWindow.loadFile(dashboardPath);
+    if (fs.existsSync(dashboardPath)) {
+      mainWindow.loadFile(dashboardPath);
+    }
   }
 
-  // Show window when ready
-  mainWindow.once('ready-to-show', () => {
-    mainWindow?.show();
-  });
-
-  // Handle external links
-  mainWindow.webContents.setWindowOpenHandler(({ url }: { url: string }) => {
-    shell.openExternal(url);
-    return { action: 'deny' };
+  // Prevent close — minimize to tray instead
+  mainWindow.on('close', (e) => {
+    if (!isQuitting) {
+      e.preventDefault();
+      mainWindow?.hide();
+    }
   });
 
   mainWindow.on('closed', () => {
     mainWindow = null;
   });
+
+  mainWindow.once('ready-to-show', () => {
+    mainWindow?.show();
+    mainWindow?.webContents.send('app-status', {
+      chromeInstalled: isChromeInstalled(),
+      nodeInstalled: isNodeInstalled(),
+      serverRunning: state.serverRunning,
+      connected: state.connected,
+    });
+  });
+
+  mainWindow.webContents.setWindowOpenHandler(({ url }: { url: string }) => {
+    shell.openExternal(url);
+    return { action: 'deny' };
+  });
+
+  mainWindow.on('maximize', () => {
+    mainWindow?.webContents.send('window-maximized', true);
+  });
+  mainWindow.on('unmaximize', () => {
+    mainWindow?.webContents.send('window-maximized', false);
+  });
 }
 
-function createTray() {
-  const iconPath = path.join(__dirname, '../build/icon.png');
-  const icon = nativeImage.createFromPath(iconPath);
-  tray = new Tray(icon.resize({ width: 16, height: 16 }));
+// ─── Tray ────────────────────────────────────────────────────────
 
-  const contextMenu = Menu.buildFromTemplate([
+function buildTrayMenu(): Electron.Menu {
+  return Menu.buildFromTemplate([
+    { label: 'Show Window', click: () => mainWindow?.show() },
+    { type: 'separator' },
+    { label: state.serverRunning ? 'Server: Running' : 'Server: Stopped', enabled: false },
     {
-      label: 'Show Window',
-      click: () => {
-        mainWindow?.show();
-      },
+      label: state.serverRunning ? 'Stop Server' : 'Start Server',
+      click: () => (state.serverRunning ? stopServer() : startServer()),
     },
     { type: 'separator' },
     {
-      label: 'Start Server',
-      click: () => startServer(3000),
+      label: 'Copy API URL',
+      click: () => clipboard.writeText(`http://localhost:${state.port}/v1/chat/completions`),
     },
     {
-      label: 'Stop Server',
-      click: () => stopServer(),
+      label: 'Copy Models List',
+      click: () => clipboard.writeText('gemini, chatgpt, claude, deepseek'),
     },
     { type: 'separator' },
     {
       label: 'Quit',
-      click: () => {
-        app.quit();
-      },
+      click: () => { isQuitting = true; app.quit(); },
     },
   ]);
+}
 
-  tray.setToolTip('Browser AI Bridge');
-  tray.setContextMenu(contextMenu);
+function createTray(): void {
+  const iconPath = path.join(__dirname, '../build/icon.png');
+  if (!fs.existsSync(iconPath)) return;
 
+  const icon = nativeImage.createFromPath(iconPath);
+  tray = new Tray(icon.resize({ width: 16, height: 16 }));
+  tray.setToolTip('Browser AI Bridge — v1.0.0');
+  tray.setContextMenu(buildTrayMenu());
   tray.on('click', () => {
     mainWindow?.show();
+    mainWindow?.focus();
   });
 }
 
-async function startServer(port: number = 3000) {
-  if (server) {
-    logger?.warn('Server already running');
-    return;
-  }
-
-  const { createServer } = await import('@bab/api');
-  const { serve } = await import('@hono/node-server');
-
-  const app = createServer({ router, sessionManager, logger, promptEngine });
-
-  server = serve({ fetch: app.fetch, port }, () => {
-    logger?.info(`Server running on port ${port}`);
-    mainWindow?.webContents.send('server-status', { running: true, port });
-  });
+function updateTray(): void {
+  if (!tray) return;
+  tray.setContextMenu(buildTrayMenu());
 }
 
-function stopServer() {
-  if (server) {
-    server.close();
-    server = null;
-    logger?.info('Server stopped');
-    mainWindow?.webContents.send('server-status', { running: false });
-  }
-}
+// ─── Server ──────────────────────────────────────────────────────
 
-async function connectToSite(siteUrl: string, useExistingProfile: boolean = true) {
-  if (provider) {
-    await provider.shutdown();
-  }
+async function startServer(port = 3000): Promise<{ success: boolean; error?: string }> {
+  if (state.serverRunning) return { success: true };
 
-  const { PlaywrightProvider } = await import('@bab/playwright-provider');
-
-  const options: any = {
-    id: 'browser',
-    name: 'Browser AI',
-    siteUrl,
-    headless: false,
-  };
-
-  // Use existing Chrome profile
-  if (useExistingProfile) {
-    const userDataDir = getChromeUserDataDir();
-    const executablePath = getChromeExecutablePath();
-
-    if (fs.existsSync(userDataDir)) {
-      logger?.info(`Using existing Chrome profile: ${userDataDir}`);
-      // Playwright can connect to existing Chrome via CDP
-      // For now we use a new profile but with the same executable
-      options.executablePath = executablePath;
-    }
-  }
-
-  provider = new PlaywrightProvider(options);
-  provider.setTools(toolDispatcher.getDescriptions());
-
-  await provider.connect();
-  router.registerProvider(provider);
-  router.setActiveProvider('browser');
-
-  logger?.info(`Connected to ${siteUrl}`);
-  mainWindow?.webContents.send('connection-status', { connected: true, site: siteUrl });
-}
-
-// IPC Handlers
-ipcMain.handle('start-server', async (_event: any, port: number) => {
-  await startServer(port);
-  return { success: true };
-});
-
-ipcMain.handle('stop-server', async () => {
-  stopServer();
-  return { success: true };
-});
-
-ipcMain.handle('connect-site', async (_event: any, siteUrl: string, useExistingProfile: boolean) => {
   try {
-    await connectToSite(siteUrl, useExistingProfile);
+    const cliPath = getCliPath();
+    if (!fs.existsSync(cliPath)) {
+      try { execSync('npm run build', { cwd: getAppPath(), stdio: 'ignore' }); } catch {
+        return { success: false, error: 'CLI not found. Please build the project first.' };
+      }
+    }
+
+    serverProcess = spawn('node', [cliPath, 'serve', '--port', port.toString()], {
+      cwd: getAppPath(),
+      stdio: 'pipe',
+    });
+
+    serverProcess.stdout?.on('data', (data: Buffer) => {
+      const output = data.toString();
+      if (output.includes('running at')) {
+        state.serverRunning = true;
+        state.port = port;
+        mainWindow?.webContents.send('server-status', { running: true, port });
+        updateTray();
+      }
+    });
+
+    serverProcess.on('close', () => {
+      state.serverRunning = false;
+      serverProcess = null;
+      mainWindow?.webContents.send('server-status', { running: false });
+      updateTray();
+    });
+
+    await new Promise((r) => setTimeout(r, 2000));
+    state.serverRunning = true;
+    state.port = port;
+    mainWindow?.webContents.send('server-status', { running: true, port });
+    updateTray();
     return { success: true };
-  } catch (error) {
-    return { success: false, error: (error as Error).message };
+  } catch (error: any) {
+    return { success: false, error: error.message };
   }
-});
+}
 
-ipcMain.handle('disconnect-site', async () => {
-  if (provider) {
-    await provider.shutdown();
-    provider = null;
-    router.unregisterProvider('browser');
-    mainWindow?.webContents.send('connection-status', { connected: false });
-  }
+function stopServer(): { success: boolean } {
+  if (serverProcess) { serverProcess.kill(); serverProcess = null; }
+  state.serverRunning = false;
+  mainWindow?.webContents.send('server-status', { running: false });
+  updateTray();
   return { success: true };
+}
+
+// ─── IPC: Window Controls ────────────────────────────────────────
+
+ipcMain.on('window-minimize', () => mainWindow?.minimize());
+ipcMain.on('window-maximize', () => {
+  if (mainWindow?.isMaximized()) mainWindow.unmaximize();
+  else mainWindow?.maximize();
+});
+ipcMain.on('window-close', () => mainWindow?.close());
+ipcMain.handle('window-is-maximized', () => mainWindow?.isMaximized() ?? false);
+ipcMain.on('minimize-to-tray', () => mainWindow?.hide());
+
+// ─── IPC: Server ─────────────────────────────────────────────────
+
+ipcMain.handle('start-server', async (_e: any, port: number) => await startServer(port || 3000));
+ipcMain.handle('stop-server', async () => stopServer());
+ipcMain.handle('get-status', async () => ({
+  chromeInstalled: isChromeInstalled(),
+  nodeInstalled: isNodeInstalled(),
+  serverRunning: state.serverRunning,
+  connected: state.connected,
+  port: state.port,
+  site: state.site,
+  version: app.getVersion(),
+}));
+ipcMain.handle('open-chrome', async (_e: any, url: string) => {
+  try { shell.openExternal(url); return { success: true }; } catch (error: any) { return { success: false, error: error.message }; }
+});
+ipcMain.handle('open-external', async (_e: any, url: string) => {
+  try { shell.openExternal(url); return { success: true }; } catch (error: any) { return { success: false, error: error.message }; }
 });
 
-ipcMain.handle('get-status', async () => {
-  return {
-    serverRunning: !!server,
-    connected: !!provider,
-    tools: toolDispatcher?.getDescriptions() || [],
-  };
+// ─── Auto-Updater ────────────────────────────────────────────────
+
+let autoUpdater: any = null;
+
+async function setupAutoUpdater(): Promise<void> {
+  try {
+    const { autoUpdater: updater } = require('electron-updater');
+    autoUpdater = updater;
+    autoUpdater.autoDownload = false;
+    autoUpdater.autoInstallOnAppQuit = true;
+
+    autoUpdater.on('checking-for-update', () => {
+      mainWindow?.webContents.send('update-status', { status: 'checking' });
+    });
+
+    autoUpdater.on('update-available', (info: any) => {
+      mainWindow?.webContents.send('update-status', {
+        status: 'available', version: info.version,
+        releaseDate: info.releaseDate, releaseName: info.releaseName,
+      });
+      dialog.showMessageBox(mainWindow!, {
+        type: 'info', title: 'Update Available',
+        message: `A new version (${info.version}) is available.`,
+        detail: 'Would you like to download and install it?',
+        buttons: ['Update', 'Later'], defaultId: 0, cancelId: 1,
+      }).then(({ response }) => { if (response === 0) autoUpdater.downloadUpdate(); });
+    });
+
+    autoUpdater.on('update-not-available', () => {
+      mainWindow?.webContents.send('update-status', { status: 'not-available' });
+    });
+
+    autoUpdater.on('download-progress', (progress: any) => {
+      mainWindow?.webContents.send('update-status', {
+        status: 'downloading', percent: progress.percent,
+        bytesPerSecond: progress.bytesPerSecond,
+      });
+    });
+
+    autoUpdater.on('update-downloaded', () => {
+      mainWindow?.webContents.send('update-status', { status: 'downloaded' });
+      dialog.showMessageBox(mainWindow!, {
+        type: 'info', title: 'Update Ready',
+        message: 'Update downloaded. Restart to apply?',
+        buttons: ['Restart', 'Later'], defaultId: 0, cancelId: 1,
+      }).then(({ response }) => {
+        if (response === 0) { isQuitting = true; autoUpdater.quitAndInstall(); }
+      });
+    });
+
+    autoUpdater.on('error', (err: Error) => {
+      console.error('Auto-updater error:', err.message);
+      mainWindow?.webContents.send('update-status', { status: 'error', error: err.message });
+    });
+
+    setTimeout(() => { autoUpdater.checkForUpdates().catch(() => {}); }, 5000);
+  } catch {
+    console.log('electron-updater not available, skipping auto-update');
+  }
+}
+
+ipcMain.handle('check-for-updates', async () => {
+  if (!autoUpdater) return { status: 'unavailable' };
+  try {
+    const result = await autoUpdater.checkForUpdates();
+    return { status: 'checked', update: result?.updateInfo ?? null };
+  } catch (err: any) {
+    return { status: 'error', error: err.message };
+  }
 });
 
-// App lifecycle
+// ─── App lifecycle ───────────────────────────────────────────────
+
 app.whenReady().then(async () => {
-  await initializeModules();
   createWindow();
   createTray();
+  await setupAutoUpdater();
+
+  setTimeout(async () => {
+    try { await startServer(); } catch (err) { console.error('Failed to auto-start server:', err); }
+  }, 2000);
 
   app.on('activate', () => {
-    if (BrowserWindow.getAllWindows().length === 0) {
-      createWindow();
-    }
+    if (BrowserWindow.getAllWindows().length === 0) createWindow();
+    else mainWindow?.show();
   });
 });
 
 app.on('window-all-closed', () => {
-  if (process.platform !== 'darwin') {
-    app.quit();
-  }
+  // Stay in tray — don't quit
 });
 
-app.on('before-quit', async () => {
+app.on('before-quit', () => {
+  isQuitting = true;
   stopServer();
-  if (provider) {
-    await provider.shutdown();
-  }
 });
