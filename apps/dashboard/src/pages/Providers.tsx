@@ -8,11 +8,12 @@ import {
   Plus,
   RefreshCw,
   Activity,
-  MessageSquare,
+  ExternalLink,
 } from 'lucide-react';
 import { useTheme } from '../contexts/ThemeContext';
 import { useLanguage } from '../contexts/LanguageContext';
 import { api, type HealthStatus } from '../lib/api';
+import { useElectron } from '../hooks/useElectron';
 
 interface ProviderInfo {
   id: string;
@@ -34,9 +35,11 @@ const PROVIDER_META: Record<string, { name: string; type: 'browser' | 'api'; sit
 export default function Providers() {
   const { theme } = useTheme();
   const { t } = useLanguage();
+  const { isElectron, startServer } = useElectron();
   const [providers, setProviders] = useState<ProviderInfo[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [showAddModal, setShowAddModal] = useState(false);
 
   async function loadProviders() {
     setLoading(true);
@@ -63,7 +66,7 @@ export default function Providers() {
 
   useEffect(() => {
     loadProviders();
-    const interval = setInterval(loadProviders, 15000); // Refresh every 15s
+    const interval = setInterval(loadProviders, 15000);
     return () => clearInterval(interval);
   }, []);
 
@@ -72,6 +75,14 @@ export default function Providers() {
   }`;
 
   const connectedCount = providers.filter(p => p.status === 'connected').length;
+
+  const handleAddProvider = (providerId: string) => {
+    const meta = PROVIDER_META[providerId];
+    if (meta?.siteUrl) {
+      window.open(meta.siteUrl, '_blank');
+    }
+    setShowAddModal(false);
+  };
 
   if (loading && providers.length === 0) {
     return (
@@ -103,7 +114,10 @@ export default function Providers() {
               theme === 'dark' ? 'text-gray-400' : 'text-gray-600'
             }`} />
           </button>
-          <button className="flex items-center gap-2 px-4 py-2.5 bg-primary-500 text-white rounded-lg hover:bg-primary-600">
+          <button
+            onClick={() => setShowAddModal(true)}
+            className="flex items-center gap-2 px-4 py-2.5 bg-primary-500 text-white rounded-lg hover:bg-primary-600 transition-colors"
+          >
             <Plus className="w-4 h-4" />
             {t('providers.add')}
           </button>
@@ -111,7 +125,9 @@ export default function Providers() {
       </div>
 
       {error && (
-        <div className="mb-4 p-4 bg-red-50 border border-red-200 rounded-lg text-red-700 text-sm">
+        <div className={`mb-4 p-4 rounded-lg text-sm ${
+          theme === 'dark' ? 'bg-red-900/30 border border-red-800 text-red-400' : 'bg-red-50 border border-red-200 text-red-700'
+        }`}>
           {error}
         </div>
       )}
@@ -175,9 +191,15 @@ export default function Providers() {
       {providers.length === 0 && !loading ? (
         <div className={`${cardClass} p-12 text-center`}>
           <Server className={`w-12 h-12 mx-auto mb-4 ${theme === 'dark' ? 'text-gray-600' : 'text-gray-400'}`} />
-          <p className={theme === 'dark' ? 'text-gray-400' : 'text-gray-600'}>
-            No providers configured. Start the server with --site flag.
+          <p className={`mb-4 ${theme === 'dark' ? 'text-gray-400' : 'text-gray-600'}`}>
+            No providers configured yet
           </p>
+          <button
+            onClick={() => setShowAddModal(true)}
+            className="px-4 py-2 bg-primary-500 text-white rounded-lg hover:bg-primary-600 transition-colors"
+          >
+            Add Provider
+          </button>
         </div>
       ) : (
         <div className="space-y-4">
@@ -205,16 +227,23 @@ export default function Providers() {
                         {provider.type === 'browser' ? t('providers.browser') : t('providers.api')}
                       </span>
                       {PROVIDER_META[provider.id]?.siteUrl && (
-                        <span className={`text-xs ${theme === 'dark' ? 'text-gray-500' : 'text-gray-400'}`}>
+                        <a
+                          href={PROVIDER_META[provider.id].siteUrl}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className={`text-xs flex items-center gap-1 ${
+                            theme === 'dark' ? 'text-blue-400 hover:text-blue-300' : 'text-blue-600 hover:text-blue-700'
+                          }`}
+                        >
                           {PROVIDER_META[provider.id].siteUrl}
-                        </span>
+                          <ExternalLink className="w-3 h-3" />
+                        </a>
                       )}
                     </div>
                   </div>
                 </div>
 
                 <div className="flex items-center gap-3">
-                  {/* Status Badge */}
                   <span className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-sm font-medium ${
                     provider.status === 'connected'
                       ? 'bg-green-50 text-green-700'
@@ -228,7 +257,6 @@ export default function Providers() {
                     {t(`providers.${provider.status}`)}
                   </span>
 
-                  {/* Health Badge */}
                   {provider.status === 'connected' && (
                     <span className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-sm ${
                       provider.healthy
@@ -239,7 +267,6 @@ export default function Providers() {
                     </span>
                   )}
 
-                  {/* Latency */}
                   {provider.latency && (
                     <span className={`text-xs ${theme === 'dark' ? 'text-gray-500' : 'text-gray-400'}`}>
                       {provider.latency}ms
@@ -248,14 +275,61 @@ export default function Providers() {
                 </div>
               </div>
 
-              {/* Error message */}
               {provider.error && (
-                <div className="mt-3 p-3 bg-red-50 border border-red-200 rounded-lg text-red-700 text-sm">
+                <div className={`mt-3 p-3 rounded-lg text-sm ${
+                  theme === 'dark' ? 'bg-red-900/30 border border-red-800 text-red-400' : 'bg-red-50 border border-red-200 text-red-700'
+                }`}>
                   {provider.error}
                 </div>
               )}
             </div>
           ))}
+        </div>
+      )}
+
+      {/* Add Provider Modal */}
+      {showAddModal && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+          <div className={`${cardClass} p-6 max-w-md w-full mx-4`}>
+            <h2 className={`text-xl font-bold mb-4 ${theme === 'dark' ? 'text-white' : 'text-gray-900'}`}>
+              Add AI Provider
+            </h2>
+            <p className={`text-sm mb-4 ${theme === 'dark' ? 'text-gray-400' : 'text-gray-600'}`}>
+              Sign in to your AI provider in Chrome, then the provider will appear here automatically.
+            </p>
+            <div className="space-y-2">
+              {Object.entries(PROVIDER_META).map(([id, meta]) => (
+                <button
+                  key={id}
+                  onClick={() => handleAddProvider(id)}
+                  className={`w-full flex items-center gap-3 p-3 rounded-lg transition-colors ${
+                    theme === 'dark'
+                      ? 'bg-gray-700 hover:bg-gray-600 text-white'
+                      : 'bg-gray-50 hover:bg-gray-100 text-gray-900'
+                  }`}
+                >
+                  <Globe className="w-5 h-5 text-blue-500" />
+                  <div className="text-left">
+                    <p className="font-medium">{meta.name}</p>
+                    <p className={`text-xs ${theme === 'dark' ? 'text-gray-400' : 'text-gray-500'}`}>
+                      {meta.siteUrl}
+                    </p>
+                  </div>
+                  <ExternalLink className="w-4 h-4 ml-auto text-gray-400" />
+                </button>
+              ))}
+            </div>
+            <button
+              onClick={() => setShowAddModal(false)}
+              className={`w-full mt-4 py-2 rounded-lg transition-colors ${
+                theme === 'dark'
+                  ? 'bg-gray-700 hover:bg-gray-600 text-white'
+                  : 'bg-gray-100 hover:bg-gray-200 text-gray-900'
+              }`}
+            >
+              Close
+            </button>
+          </div>
         </div>
       )}
     </div>

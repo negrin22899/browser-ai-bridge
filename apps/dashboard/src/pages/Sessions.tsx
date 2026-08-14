@@ -18,6 +18,9 @@ export default function Sessions() {
   const [sessions, setSessions] = useState<Session[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [showNewModal, setShowNewModal] = useState(false);
+  const [newSessionProvider, setNewSessionProvider] = useState('gemini');
+  const [newSessionModel, setNewSessionModel] = useState('gemini');
 
   async function loadSessions() {
     setLoading(true);
@@ -34,6 +37,8 @@ export default function Sessions() {
 
   useEffect(() => {
     loadSessions();
+    const interval = setInterval(loadSessions, 15000);
+    return () => clearInterval(interval);
   }, []);
 
   const cardClass = `rounded-xl border ${
@@ -50,6 +55,21 @@ export default function Sessions() {
     if (minutes < 60) return `${minutes}m ago`;
     if (hours < 24) return `${hours}h ago`;
     return `${days}d ago`;
+  };
+
+  const handleCreateSession = async () => {
+    try {
+      await api.createSession(newSessionProvider, newSessionModel);
+      setShowNewModal(false);
+      loadSessions();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to create session');
+    }
+  };
+
+  const handleDeleteSession = async (sessionId: string) => {
+    // Note: API doesn't have delete endpoint yet, but button is wired
+    console.log('Delete session:', sessionId);
   };
 
   if (loading) {
@@ -80,7 +100,10 @@ export default function Sessions() {
           >
             <RefreshCw className={`w-5 h-5 ${theme === 'dark' ? 'text-gray-400' : 'text-gray-600'}`} />
           </button>
-          <button className="flex items-center gap-2 px-4 py-2.5 bg-primary-500 text-white rounded-lg hover:bg-primary-600">
+          <button
+            onClick={() => setShowNewModal(true)}
+            className="flex items-center gap-2 px-4 py-2.5 bg-primary-500 text-white rounded-lg hover:bg-primary-600 transition-colors"
+          >
             <Plus className="w-4 h-4" />
             {t('sessions.new')}
           </button>
@@ -88,7 +111,9 @@ export default function Sessions() {
       </div>
 
       {error && (
-        <div className="mb-4 p-4 bg-red-50 border border-red-200 rounded-lg text-red-700 text-sm">
+        <div className={`mb-4 p-4 rounded-lg text-sm ${
+          theme === 'dark' ? 'bg-red-900/30 border border-red-800 text-red-400' : 'bg-red-50 border border-red-200 text-red-700'
+        }`}>
           {error}
         </div>
       )}
@@ -152,9 +177,15 @@ export default function Sessions() {
       {sessions.length === 0 ? (
         <div className={`${cardClass} p-12 text-center`}>
           <MessageSquare className={`w-12 h-12 mx-auto mb-4 ${theme === 'dark' ? 'text-gray-600' : 'text-gray-400'}`} />
-          <p className={theme === 'dark' ? 'text-gray-400' : 'text-gray-600'}>
+          <p className={`mb-4 ${theme === 'dark' ? 'text-gray-400' : 'text-gray-600'}`}>
             {t('sessions.noSessions')}
           </p>
+          <button
+            onClick={() => setShowNewModal(true)}
+            className="px-4 py-2 bg-primary-500 text-white rounded-lg hover:bg-primary-600 transition-colors"
+          >
+            Create Session
+          </button>
         </div>
       ) : (
         <div className="space-y-3">
@@ -203,17 +234,88 @@ export default function Sessions() {
                   }`}>
                     <ArrowRight className="w-4 h-4" />
                   </button>
-                  <button className={`p-2 rounded-lg transition-colors ${
-                    theme === 'dark'
-                      ? 'text-gray-400 hover:text-red-400 hover:bg-gray-700'
-                      : 'text-gray-400 hover:text-red-600 hover:bg-gray-100'
-                  }`}>
+                  <button
+                    onClick={() => handleDeleteSession(session.id)}
+                    className={`p-2 rounded-lg transition-colors ${
+                      theme === 'dark'
+                        ? 'text-gray-400 hover:text-red-400 hover:bg-gray-700'
+                        : 'text-gray-400 hover:text-red-600 hover:bg-gray-100'
+                    }`}
+                  >
                     <Trash2 className="w-4 h-4" />
                   </button>
                 </div>
               </div>
             </div>
           ))}
+        </div>
+      )}
+
+      {/* New Session Modal */}
+      {showNewModal && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+          <div className={`${cardClass} p-6 max-w-md w-full mx-4`}>
+            <h2 className={`text-xl font-bold mb-4 ${theme === 'dark' ? 'text-white' : 'text-gray-900'}`}>
+              New Session
+            </h2>
+            <div className="space-y-4">
+              <div>
+                <label className={`block text-sm font-medium mb-2 ${theme === 'dark' ? 'text-gray-300' : 'text-gray-700'}`}>
+                  Provider
+                </label>
+                <select
+                  value={newSessionProvider}
+                  onChange={(e) => {
+                    setNewSessionProvider(e.target.value);
+                    setNewSessionModel(e.target.value);
+                  }}
+                  className={`w-full px-4 py-2.5 border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500 ${
+                    theme === 'dark'
+                      ? 'bg-gray-700 border-gray-600 text-white'
+                      : 'bg-white border-gray-200 text-gray-900'
+                  }`}
+                >
+                  <option value="gemini">Google Gemini</option>
+                  <option value="chatgpt">ChatGPT</option>
+                  <option value="claude">Claude</option>
+                  <option value="deepseek">DeepSeek</option>
+                </select>
+              </div>
+              <div>
+                <label className={`block text-sm font-medium mb-2 ${theme === 'dark' ? 'text-gray-300' : 'text-gray-700'}`}>
+                  Model
+                </label>
+                <input
+                  type="text"
+                  value={newSessionModel}
+                  onChange={(e) => setNewSessionModel(e.target.value)}
+                  className={`w-full px-4 py-2.5 border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500 ${
+                    theme === 'dark'
+                      ? 'bg-gray-700 border-gray-600 text-white'
+                      : 'bg-white border-gray-200 text-gray-900'
+                  }`}
+                />
+              </div>
+            </div>
+            <div className="flex gap-3 mt-6">
+              <button
+                onClick={() => setShowNewModal(false)}
+                className={`flex-1 py-2.5 rounded-lg transition-colors ${
+                  theme === 'dark'
+                    ? 'bg-gray-700 hover:bg-gray-600 text-white'
+                    : 'bg-gray-100 hover:bg-gray-200 text-gray-900'
+                }`}
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleCreateSession}
+                className="flex-1 py-2.5 bg-primary-500 text-white rounded-lg hover:bg-primary-600 transition-colors"
+              >
+                Create
+              </button>
+            </div>
+          </div>
         </div>
       )}
     </div>
