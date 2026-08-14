@@ -134,13 +134,29 @@ export default function Logs() {
               theme === 'dark' ? 'text-gray-400' : 'text-gray-600'
             }`} />
           </button>
-          <button className={`flex items-center gap-2 px-4 py-2.5 rounded-lg ${
-            theme === 'dark' ? 'bg-gray-700 text-gray-300 hover:bg-gray-600' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-          }`}>
+          <button
+            onClick={() => {
+              const blob = new Blob([JSON.stringify(logs, null, 2)], { type: 'application/json' });
+              const url = URL.createObjectURL(blob);
+              const a = document.createElement('a');
+              a.href = url;
+              a.download = `bab-logs-${new Date().toISOString().slice(0, 10)}.json`;
+              a.click();
+              URL.revokeObjectURL(url);
+            }}
+            className={`flex items-center gap-2 px-4 py-2.5 rounded-lg ${
+              theme === 'dark' ? 'bg-gray-700 text-gray-300 hover:bg-gray-600' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+            }`}
+          >
             <Download className="w-4 h-4" />
             {t('logs.export')}
           </button>
-          <button className="flex items-center gap-2 px-4 py-2.5 bg-red-500 text-white rounded-lg hover:bg-red-600">
+          <button
+            onClick={() => {
+              setLogs([]);
+            }}
+            className="flex items-center gap-2 px-4 py-2.5 bg-red-500 text-white rounded-lg hover:bg-red-600 transition-colors"
+          >
             <Trash2 className="w-4 h-4" />
             {t('logs.clear')}
           </button>
