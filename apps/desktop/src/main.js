@@ -382,29 +382,24 @@ function updateTray() {
 // ─── Server ──────────────────────────────────────────────────────
 
 async function startServer(port = 3000) {
+  console.log('[server] startServer called, port:', port);
+  console.log('[server] state.serverRunning:', state.serverRunning);
+
   if (state.serverRunning) {
     return { success: true, message: 'Server already running' };
   }
 
   try {
     const cliPath = getCliPath();
-
-    if (!fs.existsSync(cliPath)) {
-      const appPath = getAppPath();
-      try {
-        execSync('npm run build', { cwd: appPath, stdio: 'ignore' });
-      } catch {
-        return { success: false, error: 'CLI not found. Please build the project first.' };
-      }
-    }
-
-    console.log('[server] Starting CLI from:', cliPath);
+    console.log('[server] CLI path:', cliPath);
     console.log('[server] CLI exists:', fs.existsSync(cliPath));
 
     if (!fs.existsSync(cliPath)) {
+      console.error('[server] CLI not found at:', cliPath);
       return { success: false, error: `CLI not found at: ${cliPath}` };
     }
 
+    console.log('[server] Spawning node process...');
     serverProcess = spawn('node', [cliPath, 'serve', '--port', port.toString()], {
       cwd: getAppPath(),
       stdio: 'pipe',
@@ -632,10 +627,17 @@ app.whenReady().then(async () => {
 
   // Auto-start server
   setTimeout(async () => {
+    console.log('[auto-start] Attempting to start server...');
+    console.log('[auto-start] App packaged:', app.isPackaged);
+    console.log('[auto-start] Resources path:', process.resourcesPath);
+    console.log('[auto-start] CLI path:', getCliPath());
+    console.log('[auto-start] CLI exists:', fs.existsSync(getCliPath()));
+
     try {
-      await startServer();
+      const result = await startServer();
+      console.log('[auto-start] Result:', JSON.stringify(result));
     } catch (err) {
-      console.error('Failed to auto-start server:', err);
+      console.error('[auto-start] Failed:', err);
     }
   }, 2000);
 
