@@ -1,5 +1,7 @@
 const { contextBridge, ipcRenderer } = require('electron');
 
+console.log('[preload] Loading preload.js...');
+
 contextBridge.exposeInMainWorld('electronAPI', {
   // ── Window controls ──────────────────────────────────────────
   minimizeWindow: () => ipcRenderer.send('window-minimize'),
@@ -44,3 +46,5 @@ contextBridge.exposeInMainWorld('electronAPI', {
     ipcRenderer.removeAllListeners(channel);
   },
 });
+
+console.log('[preload] electronAPI exposed successfully');

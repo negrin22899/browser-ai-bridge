@@ -104,7 +104,9 @@ function createWindow() {
 
     let loaded = false;
     for (const dashboardPath of possiblePaths) {
+      console.log('[main] Checking dashboard path:', dashboardPath);
       if (fs.existsSync(dashboardPath)) {
+        console.log('[main] Loading dashboard from:', dashboardPath);
         mainWindow.loadFile(dashboardPath);
         loaded = true;
         break;
@@ -112,6 +114,7 @@ function createWindow() {
     }
 
     if (!loaded) {
+      console.log('[main] Dashboard not found, loading fallback HTML');
       mainWindow.loadURL(`data:text/html,
         <!DOCTYPE html>
         <html>
@@ -215,6 +218,61 @@ function createWindow() {
       `);
     }
   }
+
+  // Inject window controls after dashboard loads
+  mainWindow.webContents.on('did-finish-load', () => {
+    mainWindow.webContents.executeJavaScript(`
+      // Check if title bar already exists
+      if (!document.getElementById('electron-title-bar')) {
+        const titleBar = document.createElement('div');
+        titleBar.id = 'electron-title-bar';
+        titleBar.style.cssText = 'position:fixed;top:0;left:0;right:0;height:32px;background:#0f0f23;display:flex;align-items:center;justify-content:space-between;padding:0 8px;z-index:99999;-webkit-app-region:drag;user-select:none;';
+        
+        const title = document.createElement('span');
+        title.style.cssText = 'font-size:12px;color:#888;margin-left:8px;font-family:system-ui;';
+        title.textContent = 'Browser AI Bridge';
+        
+        const controls = document.createElement('div');
+        controls.style.cssText = 'display:flex;gap:2px;-webkit-app-region:no-drag;';
+        
+        const btnStyle = 'width:36px;height:28px;border:none;background:transparent;color:#aaa;font-size:14px;cursor:pointer;display:flex;align-items:center;justify-content:center;border-radius:4px;';
+        
+        const minBtn = document.createElement('button');
+        minBtn.innerHTML = '&#x2500;';
+        minBtn.style.cssText = btnStyle;
+        minBtn.title = 'Minimize';
+        minBtn.onmouseover = () => minBtn.style.background = '#333';
+        minBtn.onmouseout = () => minBtn.style.background = 'transparent';
+        minBtn.onclick = () => window.electronAPI?.minimizeWindow();
+        
+        const maxBtn = document.createElement('button');
+        maxBtn.innerHTML = '&#x25A1;';
+        maxBtn.style.cssText = btnStyle;
+        maxBtn.title = 'Maximize';
+        maxBtn.onmouseover = () => maxBtn.style.background = '#333';
+        maxBtn.onmouseout = () => maxBtn.style.background = 'transparent';
+        maxBtn.onclick = () => window.electronAPI?.maximizeWindow();
+        
+        const closeBtn = document.createElement('button');
+        closeBtn.innerHTML = '&#x2715;';
+        closeBtn.style.cssText = btnStyle;
+        closeBtn.title = 'Close';
+        closeBtn.onmouseover = () => { closeBtn.style.background = '#e81123'; closeBtn.style.color = '#fff'; };
+        closeBtn.onmouseout = () => { closeBtn.style.background = 'transparent'; closeBtn.style.color = '#aaa'; };
+        closeBtn.onclick = () => window.electronAPI?.closeWindow();
+        
+        controls.appendChild(minBtn);
+        controls.appendChild(maxBtn);
+        controls.appendChild(closeBtn);
+        titleBar.appendChild(title);
+        titleBar.appendChild(controls);
+        document.body.insertBefore(titleBar, document.body.firstChild);
+        
+        // Add padding to body so content isn't hidden behind title bar
+        document.body.style.paddingTop = '32px';
+      }
+    `).catch(() => {});
+  });
 
   // Prevent close — minimize to tray instead
   mainWindow.on('close', (e) => {
