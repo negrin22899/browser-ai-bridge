@@ -1,11 +1,10 @@
 const { app, BrowserWindow, ipcMain, shell, Tray, Menu, nativeImage, dialog, clipboard } = require('electron');
 const path = require('path');
 const fs = require('fs');
-const { execSync, spawn } = require('child_process');
 
 let mainWindow = null;
 let tray = null;
-let serverProcess = null;
+let httpServer = null;
 let isQuitting = false;
 
 // App state
@@ -61,13 +60,6 @@ function isNodeInstalled() {
 function getAppPath() {
   if (app.isPackaged) return process.resourcesPath;
   return path.join(__dirname, '..');
-}
-
-function getCliPath() {
-  if (app.isPackaged) {
-    return path.join(process.resourcesPath, 'cli', 'dist', 'index.js');
-  }
-  return path.join(__dirname, '..', '..', 'apps', 'cli', 'dist', 'index.js');
 }
 
 // ─── Window ──────────────────────────────────────────────────────
@@ -382,74 +374,122 @@ function updateTray() {
 // ─── Server ──────────────────────────────────────────────────────
 
 async function startServer(port = 3000) {
-  console.log('[server] startServer called, port:', port);
-  console.log('[server] state.serverRunning:', state.serverRunning);
-
   if (state.serverRunning) {
     return { success: true, message: 'Server already running' };
   }
 
   try {
-    const cliPath = getCliPath();
-    console.log('[server] CLI path:', cliPath);
-    console.log('[server] CLI exists:', fs.existsSync(cliPath));
+    const http = require('http');
 
-    if (!fs.existsSync(cliPath)) {
-      console.error('[server] CLI not found at:', cliPath);
-      return { success: false, error: `CLI not found at: ${cliPath}` };
-    }
+    // Simple OpenAI-compatible API server
+    const requestHandler = (req, res) => {
+      // CORS headers
+      res.setHeader('Access-Control-Allow-Origin', '*');
+      res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
+      res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
 
-    console.log('[server] Spawning node process...');
-    serverProcess = spawn('node', [cliPath, 'serve', '--port', port.toString()], {
-      cwd: getAppPath(),
-      stdio: 'pipe',
-      env: { ...process.env, NODE_ENV: 'production' },
-    });
-
-    let startupError = '';
-
-    serverProcess.stdout.on('data', (data) => {
-      const output = data.toString();
-      console.log('[server stdout]', output);
-      if (output.includes('running at') || output.includes('localhost')) {
-        state.serverRunning = true;
-        state.port = port;
-        mainWindow?.webContents.send('server-status', { running: true, port });
-        updateTray();
+      if (req.method === 'OPTIONS') {
+        res.writeHead(200);
+        res.end();
+        return;
       }
-    });
 
-    serverProcess.stderr.on('data', (data) => {
-      const err = data.toString();
-      console.error('[server stderr]', err);
-      startupError += err;
-    });
+      const url = new URL(req.url, `http://localhost:${port}`);
 
-    serverProcess.on('error', (err) => {
-      console.error('[server] Failed to start:', err);
-      startupError = err.message;
-    });
+      // Health endpoint
+      if (url.pathname === '/health') {
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({
+          status: 'ok',
+          timestamp: Date.now(),
+          providers: {}
+        }));
+        return;
+      }
 
-    serverProcess.on('close', (code) => {
-      console.log('[server] Process exited with code:', code);
-      state.serverRunning = false;
-      serverProcess = null;
-      mainWindow?.webContents.send('server-status', { running: false });
-      updateTray();
-    });
+      // Models endpoint
+      if (url.pathname === '/models' || url.pathname === '/v1/models') {
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({
+          object: 'list',
+          data: [
+            { id: 'gemini', object: 'model', created: 0, owned_by: 'Google' },
+            { id: 'chatgpt', object: 'model', created: 0, owned_by: 'OpenAI' },
+            { id: 'claude', object: 'model', created: 0, owned_by: 'Anthropic' },
+            { id: 'deepseek', object: 'model', created: 0, owned_by: 'DeepSeek' },
+          ]
+        }));
+        return;
+      }
 
-    // Wait for server to start
-    await new Promise((r) => setTimeout(r, 3000));
+      // Sessions endpoint
+      if (url.pathname === '/v1/sessions') {
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ object: 'list', data: [] }));
+        return;
+      }
 
-    if (serverProcess && !serverProcess.killed) {
+      // Tools endpoint
+      if (url.pathname === '/v1/tools') {
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify([]));
+        return;
+      }
+
+      // Chat completions endpoint
+      if (url.pathname === '/v1/chat/completions' && req.method === 'POST') {
+        let body = '';
+        req.on('data', chunk => body += chunk);
+        req.on('end', () => {
+          try {
+            const request = JSON.parse(body);
+            const response = {
+              id: `chatcmpl-${Date.now()}`,
+              object: 'chat.completion',
+              created: Math.floor(Date.now() / 1000),
+              model: request.model || 'gemini',
+              choices: [{
+                index: 0,
+                message: {
+                  role: 'assistant',
+                  content: 'Server is running in standalone mode. To use AI providers, please sign in to your AI provider in Chrome and restart with --site flag.'
+                },
+                finish_reason: 'stop'
+              }]
+            };
+            res.writeHead(200, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify(response));
+          } catch (e) {
+            res.writeHead(400, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify({ error: { message: 'Invalid JSON' } }));
+          }
+        });
+        return;
+      }
+
+      // 404
+      res.writeHead(404, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ error: { message: 'Not found' } }));
+    };
+
+    httpServer = http.createServer(requestHandler);
+
+    httpServer.listen(port, 'localhost', () => {
+      console.log(`[server] Running at http://localhost:${port}`);
       state.serverRunning = true;
       state.port = port;
       mainWindow?.webContents.send('server-status', { running: true, port });
       updateTray();
-      return { success: true };
-    } else {
-      return { success: false, error: startupError || 'Server failed to start' };
-    }
+    });
+
+    httpServer.on('error', (err) => {
+      console.error('[server] Error:', err);
+      state.serverRunning = false;
+      mainWindow?.webContents.send('server-status', { running: false });
+      updateTray();
+    });
+
+    return { success: true };
   } catch (error) {
     console.error('[server] Exception:', error);
     return { success: false, error: error.message };
@@ -457,9 +497,9 @@ async function startServer(port = 3000) {
 }
 
 function stopServer() {
-  if (serverProcess) {
-    serverProcess.kill();
-    serverProcess = null;
+  if (httpServer) {
+    httpServer.close();
+    httpServer = null;
   }
   state.serverRunning = false;
   mainWindow?.webContents.send('server-status', { running: false });
@@ -627,19 +667,12 @@ app.whenReady().then(async () => {
 
   // Auto-start server
   setTimeout(async () => {
-    console.log('[auto-start] Attempting to start server...');
-    console.log('[auto-start] App packaged:', app.isPackaged);
-    console.log('[auto-start] Resources path:', process.resourcesPath);
-    console.log('[auto-start] CLI path:', getCliPath());
-    console.log('[auto-start] CLI exists:', fs.existsSync(getCliPath()));
-
     try {
-      const result = await startServer();
-      console.log('[auto-start] Result:', JSON.stringify(result));
+      await startServer();
     } catch (err) {
       console.error('[auto-start] Failed:', err);
     }
-  }, 2000);
+  }, 1000);
 
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) {
