@@ -1,37 +1,52 @@
-# Browser AI Bridge
+# 🌉 Browser AI Bridge
+
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+[![Node.js](https://img.shields.io/badge/Node.js-20+-green.svg)](https://nodejs.org/)
+[![TypeScript](https://img.shields.io/badge/TypeScript-5.6+-blue.svg)](https://www.typescriptlang.org/)
+[![GitHub Stars](https://img.shields.io/github/stars/negrin22899/browser-ai-bridge?style=social)](https://github.com/negrin22899/browser-ai-bridge)
+[![GitHub Issues](https://img.shields.io/github/issues/negrin22899/browser-ai-bridge)](https://github.com/negrin22899/browser-ai-bridge/issues)
 
 **Use AI in your code editor — no API keys needed!**
 
-Browser AI Bridge lets you use Gemini, ChatGPT, Claude, and DeepSeek directly in your favorite code editor.
+[English](./README.md) | [Русский](./docs/ru/README.md)
 
-## Quick Start (10 seconds)
+---
 
-```bash
-npx browser-ai-bridge init
-```
+## ✨ Features
 
-Done! The command will:
-1. Check system requirements
-2. Install dependencies
-3. Build the project
-4. Show API URL for your IDE
+| Feature | Description |
+|---------|-------------|
+| 🔑 No API Keys | Uses your browser session |
+| 🆓 Free to Use | If you have free access to AI |
+| 🔌 OpenAI Compatible | Works with VS Code, Cursor, JetBrains |
+| 🤖 Multiple AI | Gemini, ChatGPT, Claude, DeepSeek |
+| 🖥️ Desktop App | Easy GUI for beginners |
+| ⌨️ CLI | For developers and automation |
+| 🔒 Secure | Local processing, no data sent to third parties |
+| 🔧 Extensible | Plugin system for custom providers |
 
-Then start the server:
-```bash
-bab serve --site gemini
-```
+---
 
-## Download
+## 📥 Download
+
+### For Beginners (Recommended)
+
+**Just download and install — no command line needed!**
 
 | Platform | Download |
 |----------|----------|
-| Windows | [Browser.AI.Bridge.Setup.1.0.0.exe](https://github.com/negrin22899/browser-ai-bridge/releases/download/v1.0.0/Browser.AI.Bridge.Setup.1.0.0.exe) |
-| macOS | [Browser.AI.Bridge-1.0.0.dmg](https://github.com/negrin22899/browser-ai-bridge/releases/download/v1.0.0/Browser.AI.Bridge-1.0.0.dmg) |
-| Linux | [Browser.AI.Bridge-1.0.0.AppImage](https://github.com/negrin22899/browser-ai-bridge/releases/download/v1.0.0/Browser.AI.Bridge-1.0.0.AppImage) |
+| 🪟 Windows | [⬇️ Download Installer (.exe)](https://github.com/negrin22899/browser-ai-bridge/releases/download/v1.0.0/Browser.AI.Bridge.Setup.1.0.0.exe) |
+| 🍎 macOS | [⬇️ Download Installer (.dmg)](https://github.com/negrin22899/browser-ai-bridge/releases/download/v1.0.0/Browser.AI.Bridge-1.0.0.dmg) |
+| 🐧 Linux | [⬇️ Download Installer (.AppImage)](https://github.com/negrin22899/browser-ai-bridge/releases/download/v1.0.0/Browser.AI.Bridge-1.0.0.AppImage) |
 
-[All releases](https://github.com/negrin22899/browser-ai-bridge/releases)
+**Installation:**
+1. Download the installer for your OS
+2. Run the installer
+3. Open Browser AI Bridge
+4. Sign in to your AI (Gemini, ChatGPT, Claude, or DeepSeek)
+5. Start coding!
 
-### CLI (For Developers)
+### For Developers
 
 ```bash
 # Quick setup
@@ -43,7 +58,11 @@ cd browser-ai-bridge
 npm run setup
 ```
 
-## Quick Start
+📖 [Developer Guide](./docs/en/QUICK_START.md)
+
+---
+
+## 🚀 Quick Start
 
 ### Step 1: Sign in to AI Provider
 
@@ -55,6 +74,11 @@ Open Chrome and sign in to ONE of these:
 
 ### Step 2: Start the Server
 
+**Desktop App:**
+- Open Browser AI Bridge
+- Click "Start Server"
+
+**CLI:**
 ```bash
 bab serve --site gemini
 ```
@@ -62,77 +86,80 @@ bab serve --site gemini
 ### Step 3: Configure Your IDE
 
 **Cursor:**
-1. Settings → AI → API
-2. API URL: `http://localhost:3000/v1/chat/completions`
-3. Model: `gemini`
+```
+Settings → AI → API
+API URL: http://localhost:3000/v1/chat/completions
+Model: gemini
+```
 
-**VS Code (with Continue/Cody extension):**
-1. Install AI extension
-2. API URL: `http://localhost:3000/v1/chat/completions`
-3. Model: `gemini`
+**VS Code:**
+1. Install AI extension (Continue, Cody, etc.)
+2. Set API URL: `http://localhost:3000/v1/chat/completions`
+3. Set Model: `gemini`
 
-## CLI Commands
+---
+
+## 🛠️ CLI Commands
 
 | Command | Description |
 |---------|-------------|
 | `bab init` | Quick setup |
-| `bab setup` | Setup wizard |
-| `bab doctor` | Check system |
-| `bab test` | Smoke test |
-| `bab serve` | Start server |
-| `bab chat` | Quick chat |
-| `bab providers` | List providers |
-| `bab diagnose` | Collect diagnostics |
+| `bab setup` | Detailed setup wizard |
+| `bab doctor` | Check system requirements |
+| `bab test` | Run smoke test |
+| `bab serve` | Start API server |
+| `bab chat` | Quick chat message |
+| `bab providers` | List available providers |
 
-## Supported Providers
+---
+
+## 🤖 Supported AI Providers
 
 | Provider | URL | Status |
 |----------|-----|--------|
-| Gemini | gemini.google.com | Working |
-| ChatGPT | chatgpt.com | Working |
-| Claude | claude.ai | Working |
-| DeepSeek | chat.deepseek.com | Working |
+| 🟢 Gemini | gemini.google.com | ✅ Working |
+| 🟢 ChatGPT | chatgpt.com | ✅ Working |
+| 🟢 Claude | claude.ai | ✅ Working |
+| 🟢 DeepSeek | chat.deepseek.com | ✅ Working |
 
-## API
+---
 
-### Chat Completion
+## 📖 Documentation
 
-```bash
-curl http://localhost:3000/v1/chat/completions \
-  -H "Content-Type: application/json" \
-  -d '{
-    "model": "gemini",
-    "messages": [{"role": "user", "content": "Hello!"}]
-  }'
-```
+| Language | Quick Start | Full Guide |
+|----------|-------------|------------|
+| 🇺🇸 English | [Quick Start](./docs/en/QUICK_START.md) | [User Guide](./USER_GUIDE.md) |
+| 🇷🇺 Русский | [Быстрый старт](./docs/ru/QUICK_START.md) | [Руководство](./docs/ru/ARCHITECTURE.md) |
 
-### List Models
+---
 
-```bash
-curl http://localhost:3000/v1/models
-```
+## ❓ FAQ
 
-### Health Check
+**Q: Is it free?**
+A: Yes! You just need free access to the AI service.
 
-```bash
-curl http://localhost:3000/health
-```
+**Q: Do I need API keys?**
+A: No! It uses your browser session.
 
-## Troubleshooting
+**Q: Which AI should I use?**
+A: Try Gemini first - it's the most reliable.
 
-| Problem | Solution |
-|---------|----------|
-| "Chrome not found" | Install Chrome from https://www.google.com/chrome/ |
-| "Not authorized" | Open Chrome and sign in to your AI provider |
-| "Connection refused" | Start the server: `bab serve --site gemini` |
-| "Rate limit exceeded" | Wait a minute and try again |
+**Q: Is my data safe?**
+A: Yes, everything stays on your computer.
 
-## Links
+---
 
-- **GitHub**: https://github.com/negrin22899/browser-ai-bridge
-- **Documentation**: https://github.com/negrin22899/browser-ai-bridge/tree/master/docs
-- **Issues**: https://github.com/negrin22899/browser-ai-bridge/issues
+## 📞 Support
 
-## License
+- 🐛 [Issues](https://github.com/negrin22899/browser-ai-bridge/issues)
+- 💬 [Discussions](https://github.com/negrin22899/browser-ai-bridge/discussions)
+
+---
+
+## 📄 License
 
 MIT
+
+---
+
+Made with ❤️ by Browser AI Bridge Team
