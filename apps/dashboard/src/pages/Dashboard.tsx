@@ -7,14 +7,17 @@ import {
   CheckCircle,
   Shield,
   RefreshCw,
+  Power,
 } from 'lucide-react';
 import { useTheme } from '../contexts/ThemeContext';
 import { useLanguage } from '../contexts/LanguageContext';
 import { api, type HealthStatus, type Session } from '../lib/api';
+import { useElectron } from '../hooks/useElectron';
 
 export default function Dashboard() {
   const { theme } = useTheme();
   const { t } = useLanguage();
+  const { isElectron, serverRunning, startServer, stopServer } = useElectron();
   const [health, setHealth] = useState<HealthStatus | null>(null);
   const [sessions, setSessions] = useState<Session[]>([]);
   const [providerCount, setProviderCount] = useState(0);
@@ -84,21 +87,49 @@ export default function Dashboard() {
             {t('dashboard.welcome')}
           </p>
         </div>
-        <button
-          onClick={loadData}
-          className={`p-2 rounded-lg transition-colors ${
-            theme === 'dark' ? 'hover:bg-gray-700' : 'hover:bg-gray-100'
-          }`}
-        >
-          <RefreshCw className={`w-5 h-5 ${loading ? 'animate-spin' : ''} ${
-            theme === 'dark' ? 'text-gray-400' : 'text-gray-600'
-          }`} />
-        </button>
+        <div className="flex items-center gap-2">
+          {/* Server Control (Electron only) */}
+          {isElectron && (
+            <button
+              onClick={() => serverRunning ? stopServer() : startServer()}
+              className={`flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-medium transition-colors ${
+                serverRunning
+                  ? 'bg-red-900/30 text-red-400 hover:bg-red-900/50'
+                  : 'bg-green-900/30 text-green-400 hover:bg-green-900/50'
+              }`}
+            >
+              <Power className="w-4 h-4" />
+              {serverRunning ? 'Stop' : 'Start'}
+            </button>
+          )}
+          <button
+            onClick={loadData}
+            className={`p-2 rounded-lg transition-colors ${
+              theme === 'dark' ? 'hover:bg-gray-700' : 'hover:bg-gray-100'
+            }`}
+          >
+            <RefreshCw className={`w-5 h-5 ${loading ? 'animate-spin' : ''} ${
+              theme === 'dark' ? 'text-gray-400' : 'text-gray-600'
+            }`} />
+          </button>
+        </div>
       </div>
 
       {error && (
-        <div className="mb-4 p-4 bg-red-50 border border-red-200 rounded-lg text-red-700 text-sm">
-          {error}
+        <div className={`mb-4 p-4 rounded-lg text-sm ${
+          theme === 'dark' ? 'bg-red-900/30 border border-red-800 text-red-400' : 'bg-red-50 border border-red-200 text-red-700'
+        }`}>
+          <div className="flex items-center justify-between">
+            <span>{error}</span>
+            {isElectron && !serverRunning && (
+              <button
+                onClick={() => startServer()}
+                className="px-3 py-1 rounded bg-green-600 text-white text-xs hover:bg-green-700 transition-colors"
+              >
+                Start Server
+              </button>
+            )}
+          </div>
         </div>
       )}
 
