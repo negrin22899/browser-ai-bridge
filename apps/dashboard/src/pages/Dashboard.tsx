@@ -8,6 +8,8 @@ import {
   Shield,
   RefreshCw,
   Power,
+  Wifi,
+  WifiOff,
 } from 'lucide-react';
 import { useTheme } from '../contexts/ThemeContext';
 import { useLanguage } from '../contexts/LanguageContext';
@@ -39,7 +41,8 @@ export default function Dashboard() {
       setProviderCount(providers.length);
       setConnectedCount(providers.filter(p => healthData.providers[p]?.healthy).length);
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to load data');
+      const msg = err instanceof Error ? err.message : 'Failed to load data';
+      setError(msg);
     } finally {
       setLoading(false);
     }
@@ -47,9 +50,63 @@ export default function Dashboard() {
 
   useEffect(() => {
     loadData();
-    const interval = setInterval(loadData, 30000); // Refresh every 30s
+    const interval = setInterval(loadData, 30000);
     return () => clearInterval(interval);
   }, []);
+
+  const cardClass = `rounded-xl border ${
+    theme === 'dark' ? 'bg-gray-800 border-gray-700' : 'bg-white border-gray-200'
+  }`;
+
+  // Server not running - show friendly screen
+  if (!loading && error && error.includes('Server not running')) {
+    return (
+      <div className="flex flex-col items-center justify-center min-h-[60vh]">
+        <div className={`w-20 h-20 rounded-full flex items-center justify-center mb-6 ${
+          theme === 'dark' ? 'bg-gray-800' : 'bg-gray-100'
+        }`}>
+          <WifiOff className={`w-10 h-10 ${theme === 'dark' ? 'text-gray-500' : 'text-gray-400'}`} />
+        </div>
+        <h2 className={`text-2xl font-bold mb-2 ${theme === 'dark' ? 'text-white' : 'text-gray-900'}`}>
+          Server Not Running
+        </h2>
+        <p className={`text-sm mb-6 ${theme === 'dark' ? 'text-gray-400' : 'text-gray-600'}`}>
+          Start the server to connect to your AI provider
+        </p>
+        <button
+          onClick={async () => {
+            if (isElectron) {
+              await startServer();
+              setTimeout(loadData, 3000);
+            } else {
+              // In browser, show instructions
+              alert('Run in terminal: bab serve --site gemini');
+            }
+          }}
+          className="flex items-center gap-2 px-6 py-3 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors font-medium"
+        >
+          <Power className="w-5 h-5" />
+          {isElectron ? 'Start Server' : 'How to Start'}
+        </button>
+        {!isElectron && (
+          <div className={`mt-6 p-4 rounded-lg ${theme === 'dark' ? 'bg-gray-800' : 'bg-gray-100'}`}>
+            <p className={`text-xs font-mono ${theme === 'dark' ? 'text-gray-400' : 'text-gray-600'}`}>
+              bab serve --site gemini
+            </p>
+          </div>
+        )}
+      </div>
+    );
+  }
+
+  // Loading
+  if (loading && !health) {
+    return (
+      <div className="flex items-center justify-center h-64">
+        <RefreshCw className="w-8 h-8 animate-spin text-primary-500" />
+      </div>
+    );
+  }
 
   const stats = [
     { name: t('dashboard.totalRequests'), value: sessions.length.toString(), icon: Activity, change: '' },
@@ -64,18 +121,6 @@ export default function Dashboard() {
     { name: t('dashboard.permissionsActive'), value: 'scope', status: true },
   ];
 
-  const cardClass = `rounded-xl border ${
-    theme === 'dark' ? 'bg-gray-800 border-gray-700' : 'bg-white border-gray-200'
-  }`;
-
-  if (loading && !health) {
-    return (
-      <div className="flex items-center justify-center h-64">
-        <RefreshCw className="w-8 h-8 animate-spin text-primary-500" />
-      </div>
-    );
-  }
-
   return (
     <div>
       <div className="mb-8 flex items-center justify-between">
@@ -88,7 +133,6 @@ export default function Dashboard() {
           </p>
         </div>
         <div className="flex items-center gap-2">
-          {/* Server Control (Electron only) */}
           {isElectron && (
             <button
               onClick={() => serverRunning ? stopServer() : startServer()}
@@ -114,24 +158,6 @@ export default function Dashboard() {
           </button>
         </div>
       </div>
-
-      {error && (
-        <div className={`mb-4 p-4 rounded-lg text-sm ${
-          theme === 'dark' ? 'bg-red-900/30 border border-red-800 text-red-400' : 'bg-red-50 border border-red-200 text-red-700'
-        }`}>
-          <div className="flex items-center justify-between">
-            <span>{error}</span>
-            {isElectron && !serverRunning && (
-              <button
-                onClick={() => startServer()}
-                className="px-3 py-1 rounded bg-green-600 text-white text-xs hover:bg-green-700 transition-colors"
-              >
-                Start Server
-              </button>
-            )}
-          </div>
-        </div>
-      )}
 
       {/* Stats */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
