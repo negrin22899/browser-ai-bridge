@@ -5,6 +5,8 @@
 
 **Use AI in your code editor — no API keys needed!**
 
+[English](./README.md) | [Русский](./docs/ru/README.md)
+
 ---
 
 ## For Users (Just Download)

@@ -2,30 +2,11 @@
 
 **Используйте AI в вашем редакторе кода — без API ключей!**
 
-Browser AI Bridge позволяет использовать Gemini, ChatGPT, Claude и DeepSeek прямо в вашем любимом редакторе кода.
+---
 
-## Быстрый старт (10 секунд)
+## Для пользователей (Просто скачайте)
 
-```bash
-npx browser-ai-bridge init
-```
-
-Всё готово! Команда:
-1. ✅ Проверит систему
-2. ✅ Установит зависимости
-3. ✅ Соберёт проект
-4. ✅ Покажет URL API для вашего IDE
-
-Затем запустите сервер:
-```bash
-bab serve --site gemini
-```
-
-## Скачать
-
-### Десктоп приложение (Для начинающих)
-
-Скачайте и установите — это просто!
+**Скачайте, установите и начните использовать AI — без терминала.**
 
 | Платформа | Скачать |
 |-----------|---------|
@@ -33,75 +14,114 @@ bab serve --site gemini
 | macOS | [Скачать .dmg](https://github.com/negrin22899/browser-ai-bridge/releases/latest) |
 | Linux | [Скачать .AppImage](https://github.com/negrin22899/browser-ai-bridge/releases/latest) |
 
-### CLI (Для разработчиков)
+### Как использовать:
+
+1. Скачайте и установите приложение
+2. Откройте Browser AI Bridge
+3. Войдите в Gemini/ChatGPT/Claude/DeepSeek в Chrome
+4. Сервер запускается автоматически
+5. Настройте ваш IDE:
+   - **URL API**: `http://localhost:3000/v1/chat/completions`
+   - **Модель**: `gemini`
+
+Готово! Без API ключей, без командной строки, без конфигурационных файлов.
+
+[Полное руководство пользователя →](./docs/ru/QUICK_START.md)
+
+---
+
+## Для разработчиков
+
+### Вариант 1: Использовать только CLI
 
 ```bash
-# Быстрая настройка
 npx browser-ai-bridge init
+```
 
-# Или клонирование и настройка
+### Вариант 2: Клонировать и собрать
+
+```bash
 git clone https://github.com/negrin22899/browser-ai-bridge.git
 cd browser-ai-bridge
 npm run setup
 ```
 
-## Быстрый старт
-
-### Шаг 1: Войдите в AI провайдер
-
-Откройте Chrome и войдите в ОДИН из сервисов:
-- **Gemini**: https://gemini.google.com (рекомендуется)
-- **ChatGPT**: https://chatgpt.com
-- **Claude**: https://claude.ai
-- **DeepSeek**: https://chat.deepseek.com
-
-### Шаг 2: Запустите сервер
+### Вариант 3: Полная настройка для разработки
 
 ```bash
-bab serve --site gemini
+git clone https://github.com/negrin22899/browser-ai-bridge.git
+cd browser-ai-bridge
+npm install
+npm run build
 ```
 
-### Шаг 3: Настройте ваш IDE
-
-**Cursor:**
-1. Настройки → AI → API
-2. URL API: `http://localhost:3000/v1/chat/completions`
-3. Модель: `gemini`
-
-## Команды CLI
+### Команды CLI
 
 | Команда | Описание |
 |---------|----------|
-| `bab init` | Быстрая настройка |
-| `bab setup` | Мастер настройки |
+| `bab serve --site gemini` | Запуск API сервера |
+| `bab chat "Привет"` | Быстрый чат |
 | `bab doctor` | Проверка системы |
-| `bab test` | Smoke тест |
-| `bab serve` | Запуск сервера |
-| `bab chat` | Быстрый чат |
 | `bab providers` | Список провайдеров |
 
-## Поддерживаемые провайдеры
+### Сборка десктоп установщика
 
-| Провайдер | URL | Статус |
-|-----------|-----|--------|
-| Gemini | gemini.google.com | ✅ Работает |
-| ChatGPT | chatgpt.com | ✅ Работает |
-| Claude | claude.ai | ✅ Работает |
-| DeepSeek | chat.deepseek.com | ✅ Работает |
+```bash
+# Windows
+scripts\build-win.bat
 
-## Решение проблем
+# macOS
+scripts/build-mac.sh
 
-| Проблема | Решение |
-|----------|---------|
-| "Chrome не найден" | Установите Chrome с https://www.google.com/chrome/ |
-| "Не авторизован" | Откройте Chrome и войдите в AI провайдер |
-| "Соединение отклонено" | Запустите сервер: `bab serve --site gemini` |
+# Linux
+scripts/build-linux.sh
+```
 
-## Ссылки
+Установщик будет в `apps/desktop/release/`.
 
-- **GitHub**: https://github.com/negrin22899/browser-ai-bridge
-- **Документация**: https://github.com/negrin22899/browser-ai-bridge/tree/master/docs
-- **Issues**: https://github.com/negrin22899/browser-ai-bridge/issues
+[Документация для разработчиков →](./CONTRIBUTING.md)
+
+---
+
+## Поддерживаемые AI провайдеры
+
+| Провайдер | Статус |
+|-----------|--------|
+| Gemini | Работает |
+| ChatGPT | Работает |
+| Claude | Работает |
+| DeepSeek | Работает |
+
+---
+
+## Как это работает
+
+Browser AI Bridge использует вашу сессию в браузере для общения с AI провайдерами. Вместо API ключей автоматизируется веб-интерфейс с помощью Playwright.
+
+```
+Ваш IDE → localhost:3000 → Browser AI Bridge → Chrome → AI провайдер
+```
+
+---
+
+## Документация
+
+| Документ | Описание |
+|----------|----------|
+| [Руководство пользователя](./USER_GUIDE.md) | Для пользователей десктоп приложения |
+| [Быстрый старт](./QUICK_START.md) | 3-шаговая настройка для CLI |
+| [Справочник API](./docs/api-reference.md) | API эндпоинты |
+| [Участие в разработке](./CONTRIBUTING.md) | Для разработчиков |
+| [Архитектура](./ARCHITECTURE_OVERVIEW.md) | Технический обзор |
+
+---
+
+## Поддержка
+
+- [Issues](https://github.com/negrin22899/browser-ai-bridge/issues)
+- [Discussions](https://github.com/negrin22899/browser-ai-bridge/discussions)
+
+---
 
 ## Лицензия
 

@@ -1,52 +1,49 @@
-# Browser AI Bridge — Quick Start
+# Browser AI Bridge
 
 **Use AI in your code editor — no API keys needed!**
 
----
+Browser AI Bridge lets you use Gemini, ChatGPT, Claude, and DeepSeek directly in your favorite code editor.
 
-## What is Browser AI Bridge?
-
-Browser AI Bridge (BAB) lets you use AI assistants (Gemini, ChatGPT, Claude, DeepSeek) directly in your code editor. Instead of API keys, it uses your existing browser sessions.
-
-**Key benefits:**
-- No API keys needed
-- Free (if you have free access to AI)
-- Works with VS Code, Cursor, JetBrains, and more
-- Supports 4 major AI providers
-- Open source
-
----
-
-## Installation (10 seconds)
-
-### Option 1: Quick Setup (Recommended)
+## Quick Start (10 seconds)
 
 ```bash
 npx browser-ai-bridge init
 ```
 
-This command will:
+Done! The command will:
 1. Check system requirements
 2. Install dependencies
 3. Build the project
 4. Show API URL for your IDE
 
-### Option 2: Clone and Setup
+Then start the server:
+```bash
+bab serve --site gemini
+```
+
+## Download
+
+### Desktop App (For Beginners)
+
+Download and install — it's easy!
+
+| Platform | Download |
+|----------|----------|
+| Windows | [Download .exe](https://github.com/negrin22899/browser-ai-bridge/releases/latest) |
+| macOS | [Download .dmg](https://github.com/negrin22899/browser-ai-bridge/releases/latest) |
+| Linux | [Download .AppImage](https://github.com/negrin22899/browser-ai-bridge/releases/latest) |
+
+### CLI (For Developers)
 
 ```bash
+# Quick setup
+npx browser-ai-bridge init
+
+# Or clone and setup
 git clone https://github.com/negrin22899/browser-ai-bridge.git
 cd browser-ai-bridge
 npm run setup
 ```
-
-### Option 3: Desktop App
-
-Download from [GitHub Releases](https://github.com/negrin22899/browser-ai-bridge/releases):
-- Windows: `.exe` installer
-- macOS: `.dmg` installer
-- Linux: `.AppImage`
-
----
 
 ## Quick Start
 
@@ -64,11 +61,6 @@ Open Chrome and sign in to ONE of these:
 bab serve --site gemini
 ```
 
-You will see:
-```
-Browser AI Bridge running at http://localhost:3000
-```
-
 ### Step 3: Configure Your IDE
 
 **Cursor:**
@@ -81,22 +73,27 @@ Browser AI Bridge running at http://localhost:3000
 2. API URL: `http://localhost:3000/v1/chat/completions`
 3. Model: `gemini`
 
----
-
 ## CLI Commands
 
 | Command | Description |
 |---------|-------------|
 | `bab init` | Quick setup |
 | `bab setup` | Setup wizard |
-| `bab doctor` | Check system requirements |
+| `bab doctor` | Check system |
 | `bab test` | Smoke test |
-| `bab serve` | Start API server |
+| `bab serve` | Start server |
 | `bab chat` | Quick chat |
 | `bab providers` | List providers |
 | `bab diagnose` | Collect diagnostics |
 
----
+## Supported Providers
+
+| Provider | URL | Status |
+|----------|-----|--------|
+| Gemini | gemini.google.com | Working |
+| ChatGPT | chatgpt.com | Working |
+| Claude | claude.ai | Working |
+| DeepSeek | chat.deepseek.com | Working |
 
 ## API
 
@@ -123,19 +120,6 @@ curl http://localhost:3000/v1/models
 curl http://localhost:3000/health
 ```
 
----
-
-## Supported Providers
-
-| Provider | URL | Status |
-|----------|-----|--------|
-| Gemini | gemini.google.com | Working |
-| ChatGPT | chatgpt.com | Working |
-| Claude | claude.ai | Working |
-| DeepSeek | chat.deepseek.com | Working |
-
----
-
 ## Troubleshooting
 
 | Problem | Solution |
@@ -145,15 +129,11 @@ curl http://localhost:3000/health
 | "Connection refused" | Start the server: `bab serve --site gemini` |
 | "Rate limit exceeded" | Wait a minute and try again |
 
----
-
 ## Links
 
 - **GitHub**: https://github.com/negrin22899/browser-ai-bridge
-- **Issues**: https://github.com/negrin22899/browser-ai-bridge/issues
 - **Documentation**: https://github.com/negrin22899/browser-ai-bridge/tree/master/docs
-
----
+- **Issues**: https://github.com/negrin22899/browser-ai-bridge/issues
 
 ## License
 

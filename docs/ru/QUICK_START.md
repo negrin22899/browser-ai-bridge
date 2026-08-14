@@ -9,17 +9,29 @@
 Browser AI Bridge (BAB) позволяет использовать AI ассистентов (Gemini, ChatGPT, Claude, DeepSeek) прямо в вашем редакторе кода. Вместо API ключей используются ваши существующие сессии в браузере.
 
 **Основные преимущества:**
-- ✅ Не нужны API ключи
-- ✅ Бесплатно (если у вас есть бесплатный доступ к AI)
-- ✅ Работает с VS Code, Cursor, JetBrains и другими
-- ✅ Поддерживает 4 основных AI провайдера
-- ✅ Открытый исходный код
+- Не нужны API ключи
+- Бесплатно (если у вас есть бесплатный доступ к AI)
+- Работает с VS Code, Cursor, JetBrains и другими
+- Поддерживает 4 основных AI провайдера
+- Открытый исходный код
 
 ---
 
-## Установка (10 секунд)
+## Установка
 
-### Вариант 1: Быстрая настройка (Рекомендуется)
+### Вариант 1: Десктоп приложение (Для начинающих)
+
+Скачайте с [GitHub Releases](https://github.com/negrin22899/browser-ai-bridge/releases):
+
+| Платформа | Скачать |
+|-----------|---------|
+| Windows | [Скачать .exe](https://github.com/negrin22899/browser-ai-bridge/releases/latest) |
+| macOS | [Скачать .dmg](https://github.com/negrin22899/browser-ai-bridge/releases/latest) |
+| Linux | [Скачать .AppImage](https://github.com/negrin22899/browser-ai-bridge/releases/latest) |
+
+Установите и откройте приложение. Готово!
+
+### Вариант 2: Быстрая настройка CLI
 
 ```bash
 npx browser-ai-bridge init
@@ -31,20 +43,13 @@ npx browser-ai-bridge init
 3. Соберёт проект
 4. Покажет URL API для вашего IDE
 
-### Вариант 2: Клонирование и настройка
+### Вариант 3: Клонирование и настройка
 
 ```bash
 git clone https://github.com/negrin22899/browser-ai-bridge.git
 cd browser-ai-bridge
 npm run setup
 ```
-
-### Вариант 3: Десктоп приложение
-
-Скачайте с [GitHub Releases](https://github.com/negrin22899/browser-ai-bridge/releases):
-- Windows: `.exe` установщик
-- macOS: `.dmg` установщик
-- Linux: `.AppImage`
 
 ---
 
@@ -60,6 +65,9 @@ npm run setup
 
 ### Шаг 2: Запустите сервер
 
+**Десктоп приложение:** Сервер запускается автоматически.
+
+**CLI:**
 ```bash
 bab serve --site gemini
 ```
@@ -129,10 +137,10 @@ curl http://localhost:3000/health
 
 | Провайдер | URL | Статус |
 |-----------|-----|--------|
-| Gemini | gemini.google.com | ✅ Работает |
-| ChatGPT | chatgpt.com | ✅ Работает |
-| Claude | claude.ai | ✅ Работает |
-| DeepSeek | chat.deepseek.com | ✅ Работает |
+| Gemini | gemini.google.com | Работает |
+| ChatGPT | chatgpt.com | Работает |
+| Claude | claude.ai | Работает |
+| DeepSeek | chat.deepseek.com | Работает |
 
 ---
 
