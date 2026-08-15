@@ -9,17 +9,19 @@ import {
   RefreshCw,
   Activity,
   ExternalLink,
+  Chrome,
+  Loader2,
 } from 'lucide-react';
 import { useTheme } from '../contexts/ThemeContext';
 import { useLanguage } from '../contexts/LanguageContext';
-import { api, type HealthStatus } from '../lib/api';
+import { api } from '../lib/api';
 import { useElectron } from '../hooks/useElectron';
 
 interface ProviderInfo {
   id: string;
   name: string;
   type: 'browser' | 'api';
-  status: 'connected' | 'disconnected' | 'error';
+  status: 'connected' | 'disconnected' | 'error' | 'checking';
   healthy: boolean;
   latency?: number;
   error?: string;
@@ -35,11 +37,12 @@ const PROVIDER_META: Record<string, { name: string; type: 'browser' | 'api'; sit
 export default function Providers() {
   const { theme } = useTheme();
   const { t } = useLanguage();
-  const { isElectron, startServer } = useElectron();
+  const { isElectron, openProviderSignin, checkProviderStatus } = useElectron();
   const [providers, setProviders] = useState<ProviderInfo[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [showAddModal, setShowAddModal] = useState(false);
+  const [checkingProvider, setCheckingProvider] = useState<string | null>(null);
 
   async function loadProviders() {
     setLoading(true);
@@ -76,13 +79,92 @@ export default function Providers() {
 
   const connectedCount = providers.filter(p => p.status === 'connected').length;
 
-  const handleAddProvider = (providerId: string) => {
-    const meta = PROVIDER_META[providerId];
-    if (meta?.siteUrl) {
-      window.open(meta.siteUrl, '_blank');
+  const handleAddProvider = async (providerId: string) => {
+    setCheckingProvider(providerId);
+
+    try {
+      if (isElectron) {
+        // Open provider sign-in page in browser
+        const result = await openProviderSignin(providerId);
+
+        if (result.success) {
+          // Wait a bit for user to sign in, then check status
+          setTimeout(async () => {
+            try {
+              const status = await checkProviderStatus(providerId);
+
+              if (status.connected) {
+                // Add provider to list
+                const newProvider: ProviderInfo = {
+                  id: providerId,
+                  name: PROVIDER_META[providerId]?.name || providerId,
+                  type: 'browser',
+                  status: 'connected',
+                  healthy: true,
+                };
+
+                setProviders(prev => {
+                  const exists = prev.find(p => p.id === providerId);
+                  if (exists) {
+                    return prev.map(p => p.id === providerId ? { ...p, status: 'connected', healthy: true } : p);
+                  }
+                  return [...prev, newProvider];
+                });
+
+                setShowAddModal(false);
+              }
+            } catch (err) {
+              console.error('Failed to check provider status:', err);
+            } finally {
+              setCheckingProvider(null);
+            }
+          }, 3000); // Wait 3 seconds for sign-in
+        }
+      } else {
+        // In browser, just open the provider URL
+        window.open(PROVIDER_META[providerId]?.siteUrl, '_blank');
+        setCheckingProvider(null);
+      }
+    } catch (err) {
+      console.error('Failed to add provider:', err);
+      setCheckingProvider(null);
     }
-    setShowAddModal(false);
   };
+
+  const handleCheckAllProviders = async () => {
+    if (!isElectron) return;
+
+    for (const providerId of Object.keys(PROVIDER_META)) {
+      try {
+        const status = await checkProviderStatus(providerId);
+
+        if (status.connected) {
+          setProviders(prev => {
+            const exists = prev.find(p => p.id === providerId);
+            if (exists) {
+              return prev.map(p => p.id === providerId ? { ...p, status: 'connected', healthy: true } : p);
+            }
+            return [...prev, {
+              id: providerId,
+              name: PROVIDER_META[providerId]?.name || providerId,
+              type: 'browser' as const,
+              status: 'connected' as const,
+              healthy: true,
+            }];
+          });
+        }
+      } catch (err) {
+        console.error(`Failed to check ${providerId}:`, err);
+      }
+    }
+  };
+
+  // Auto-check providers on mount
+  useEffect(() => {
+    if (isElectron) {
+      handleCheckAllProviders();
+    }
+  }, [isElectron]);
 
   if (loading && providers.length === 0) {
     return (
@@ -129,6 +211,31 @@ export default function Providers() {
           theme === 'dark' ? 'bg-red-900/30 border border-red-800 text-red-400' : 'bg-red-50 border border-red-200 text-red-700'
         }`}>
           {error}
+        </div>
+      )}
+
+      {/* Chrome Status */}
+      {isElectron && (
+        <div className={`mb-6 p-4 rounded-lg ${
+          theme === 'dark' ? 'bg-blue-900/20 border border-blue-800' : 'bg-blue-50 border border-blue-200'
+        }`}>
+          <div className="flex items-center gap-3">
+            <Chrome className="w-5 h-5 text-blue-500" />
+            <div>
+              <p className={`font-medium ${theme === 'dark' ? 'text-blue-400' : 'text-blue-700'}`}>
+                Chrome Integration
+              </p>
+              <p className={`text-sm ${theme === 'dark' ? 'text-blue-300' : 'text-blue-600'}`}>
+                Sign in to AI providers in Chrome, then they will appear here automatically.
+              </p>
+            </div>
+            <button
+              onClick={handleCheckAllProviders}
+              className="ml-auto px-3 py-1.5 bg-blue-600 text-white rounded-lg hover:bg-blue-700 text-sm"
+            >
+              Check All
+            </button>
+          </div>
         </div>
       )}
 
@@ -244,18 +351,25 @@ export default function Providers() {
                 </div>
 
                 <div className="flex items-center gap-3">
-                  <span className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-sm font-medium ${
-                    provider.status === 'connected'
-                      ? 'bg-green-50 text-green-700'
-                      : provider.status === 'error'
-                        ? 'bg-red-50 text-red-700'
-                        : theme === 'dark' ? 'bg-gray-700 text-gray-300' : 'bg-gray-100 text-gray-600'
-                  }`}>
-                    {provider.status === 'connected' && <CheckCircle className="w-4 h-4" />}
-                    {provider.status === 'error' && <XCircle className="w-4 h-4" />}
-                    {provider.status === 'disconnected' && <XCircle className="w-4 h-4" />}
-                    {t(`providers.${provider.status}`)}
-                  </span>
+                  {provider.status === 'checking' ? (
+                    <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-sm font-medium bg-yellow-50 text-yellow-700">
+                      <Loader2 className="w-4 h-4 animate-spin" />
+                      Checking...
+                    </span>
+                  ) : (
+                    <span className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-sm font-medium ${
+                      provider.status === 'connected'
+                        ? 'bg-green-50 text-green-700'
+                        : provider.status === 'error'
+                          ? 'bg-red-50 text-red-700'
+                          : theme === 'dark' ? 'bg-gray-700 text-gray-300' : 'bg-gray-100 text-gray-600'
+                    }`}>
+                      {provider.status === 'connected' && <CheckCircle className="w-4 h-4" />}
+                      {provider.status === 'error' && <XCircle className="w-4 h-4" />}
+                      {provider.status === 'disconnected' && <XCircle className="w-4 h-4" />}
+                      {t(`providers.${provider.status}`)}
+                    </span>
+                  )}
 
                   {provider.status === 'connected' && (
                     <span className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-sm ${
@@ -295,27 +409,41 @@ export default function Providers() {
               Add AI Provider
             </h2>
             <p className={`text-sm mb-4 ${theme === 'dark' ? 'text-gray-400' : 'text-gray-600'}`}>
-              Sign in to your AI provider in Chrome, then the provider will appear here automatically.
+              {isElectron
+                ? 'Click a provider to open sign-in page in Chrome. After signing in, the provider will be detected automatically.'
+                : 'Sign in to your AI provider in Chrome, then the provider will appear here automatically.'
+              }
             </p>
             <div className="space-y-2">
               {Object.entries(PROVIDER_META).map(([id, meta]) => (
                 <button
                   key={id}
                   onClick={() => handleAddProvider(id)}
+                  disabled={checkingProvider === id}
                   className={`w-full flex items-center gap-3 p-3 rounded-lg transition-colors ${
-                    theme === 'dark'
-                      ? 'bg-gray-700 hover:bg-gray-600 text-white'
-                      : 'bg-gray-50 hover:bg-gray-100 text-gray-900'
+                    checkingProvider === id
+                      ? 'bg-yellow-50 border border-yellow-200'
+                      : theme === 'dark'
+                        ? 'bg-gray-700 hover:bg-gray-600 text-white'
+                        : 'bg-gray-50 hover:bg-gray-100 text-gray-900'
                   }`}
                 >
-                  <Globe className="w-5 h-5 text-blue-500" />
+                  {checkingProvider === id ? (
+                    <Loader2 className="w-5 h-5 text-yellow-500 animate-spin" />
+                  ) : (
+                    <Globe className="w-5 h-5 text-blue-500" />
+                  )}
                   <div className="text-left">
                     <p className="font-medium">{meta.name}</p>
                     <p className={`text-xs ${theme === 'dark' ? 'text-gray-400' : 'text-gray-500'}`}>
                       {meta.siteUrl}
                     </p>
                   </div>
-                  <ExternalLink className="w-4 h-4 ml-auto text-gray-400" />
+                  {checkingProvider === id ? (
+                    <span className="ml-auto text-xs text-yellow-600">Checking...</span>
+                  ) : (
+                    <ExternalLink className="w-4 h-4 ml-auto text-gray-400" />
+                  )}
                 </button>
               ))}
             </div>

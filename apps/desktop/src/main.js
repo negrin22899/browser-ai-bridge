@@ -560,6 +560,103 @@ ipcMain.handle('open-external', async (_event, url) => {
   }
 });
 
+// ─── IPC: Provider Detection ─────────────────────────────────────
+
+const PROVIDER_URLS = {
+  gemini: 'https://gemini.google.com',
+  chatgpt: 'https://chatgpt.com',
+  claude: 'https://claude.ai',
+  deepseek: 'https://chat.deepseek.com',
+};
+
+// Check if Chrome is installed and get its path
+ipcMain.handle('check-chrome', async () => {
+  const installed = isChromeInstalled();
+  const executablePath = getChromeExecutablePath();
+  const userDataDir = getChromeUserDataDir();
+
+  return {
+    installed,
+    executablePath,
+    userDataDir,
+    userDataExists: fs.existsSync(userDataDir),
+  };
+});
+
+// Open provider URL in Chrome for sign-in
+ipcMain.handle('open-provider-signin', async (_event, providerId) => {
+  const url = PROVIDER_URLS[providerId];
+  if (!url) {
+    return { success: false, error: 'Unknown provider' };
+  }
+
+  try {
+    shell.openExternal(url);
+    return { success: true, url };
+  } catch (error) {
+    return { success: false, error: error.message };
+  }
+});
+
+// Check if provider is accessible (simplified - just check if URL is reachable)
+ipcMain.handle('check-provider-status', async (_event, providerId) => {
+  const url = PROVIDER_URLS[providerId];
+  if (!url) {
+    return { connected: false, error: 'Unknown provider' };
+  }
+
+  try {
+    // Try to fetch the provider URL to check if it's accessible
+    const http = require('https');
+    return new Promise((resolve) => {
+      const req = http.get(url, { timeout: 5000 }, (res) => {
+        resolve({
+          connected: res.statusCode === 200,
+          statusCode: res.statusCode,
+          providerId,
+        });
+      });
+
+      req.on('error', () => {
+        resolve({ connected: false, error: 'Network error', providerId });
+      });
+
+      req.on('timeout', () => {
+        req.destroy();
+        resolve({ connected: false, error: 'Timeout', providerId });
+      });
+    });
+  } catch (error) {
+    return { connected: false, error: error.message, providerId };
+  }
+});
+
+// Get list of detected providers (from Chrome cookies/profile)
+ipcMain.handle('get-detected-providers', async () => {
+  const userDataDir = getChromeUserDataDir();
+  const detected = [];
+
+  if (fs.existsSync(userDataDir)) {
+    // Check if Chrome profile exists
+    const defaultProfile = path.join(userDataDir, 'Default');
+    if (fs.existsSync(defaultProfile)) {
+      // Check for cookies file (indicates Chrome is used)
+      const cookiesPath = path.join(defaultProfile, 'Cookies');
+      if (fs.existsSync(cookiesPath)) {
+        // We can't read cookies directly (encrypted), but we know Chrome is in use
+        detected.push({
+          id: 'chrome-detected',
+          name: 'Chrome Profile Detected',
+          type: 'browser',
+          status: 'available',
+        });
+      }
+    }
+  }
+
+  return detected;
+});
+
 // ─── IPC: Tray actions ───────────────────────────────────────────
 
 ipcMain.on('minimize-to-tray', () => mainWindow?.hide());

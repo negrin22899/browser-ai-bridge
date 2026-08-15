@@ -18,6 +18,15 @@ interface ElectronAPI {
     version: string;
   }>;
   checkForUpdates: () => Promise<{ status: string }>;
+  checkChrome: () => Promise<{
+    installed: boolean;
+    executablePath: string;
+    userDataDir: string;
+    userDataExists: boolean;
+  }>;
+  openProviderSignin: (providerId: string) => Promise<{ success: boolean; url?: string; error?: string }>;
+  checkProviderStatus: (providerId: string) => Promise<{ connected: boolean; statusCode?: number; error?: string }>;
+  getDetectedProviders: () => Promise<Array<{ id: string; name: string; type: string; status: string }>>;
   onServerStatus: (callback: (status: { running: boolean; port?: number }) => void) => void;
   onAppStatus: (callback: (status: any) => void) => void;
   onWindowMaximized: (callback: (maximized: boolean) => void) => void;
