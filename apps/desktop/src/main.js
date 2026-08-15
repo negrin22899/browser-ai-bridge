@@ -583,15 +583,10 @@ ipcMain.handle('check-chrome', async () => {
   };
 });
 
-// Open provider URL in Chrome for sign-in
-ipcMain.handle('open-provider-signin', async (_event, providerId) => {
-  const url = PROVIDER_URLS[providerId];
-  if (!url) {
-    return { success: false, error: 'Unknown provider' };
-  }
-
+// Open URL in default browser
+ipcMain.handle('open-provider-signin', async (_event, url) => {
   try {
-    shell.openExternal(url);
+    await shell.openExternal(url);
     return { success: true, url };
   } catch (error) {
     return { success: false, error: error.message };

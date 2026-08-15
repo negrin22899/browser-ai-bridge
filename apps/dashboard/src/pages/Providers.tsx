@@ -11,67 +11,56 @@ import {
   ExternalLink,
   Chrome,
   Loader2,
+  Wifi,
+  WifiOff,
 } from 'lucide-react';
 import { useTheme } from '../contexts/ThemeContext';
 import { useLanguage } from '../contexts/LanguageContext';
-import { api } from '../lib/api';
 import { useElectron } from '../hooks/useElectron';
 
 interface ProviderInfo {
   id: string;
   name: string;
-  type: 'browser' | 'api';
-  status: 'connected' | 'disconnected' | 'error' | 'checking';
-  healthy: boolean;
-  latency?: number;
-  error?: string;
+  siteUrl: string;
+  status: 'connected' | 'available' | 'checking';
+  icon: typeof Globe;
 }
 
-const PROVIDER_META: Record<string, { name: string; type: 'browser' | 'api'; siteUrl: string }> = {
-  gemini: { name: 'Google Gemini', type: 'browser', siteUrl: 'https://gemini.google.com' },
-  chatgpt: { name: 'ChatGPT', type: 'browser', siteUrl: 'https://chatgpt.com' },
-  claude: { name: 'Claude', type: 'browser', siteUrl: 'https://claude.ai' },
-  deepseek: { name: 'DeepSeek', type: 'browser', siteUrl: 'https://chat.deepseek.com' },
-};
+const PROVIDERS: ProviderInfo[] = [
+  { id: 'gemini', name: 'Google Gemini', siteUrl: 'https://gemini.google.com', status: 'available', icon: Globe },
+  { id: 'chatgpt', name: 'ChatGPT', siteUrl: 'https://chatgpt.com', status: 'available', icon: Zap },
+  { id: 'claude', name: 'Claude', siteUrl: 'https://claude.ai', status: 'available', icon: Globe },
+  { id: 'deepseek', name: 'DeepSeek', siteUrl: 'https://chat.deepseek.com', status: 'available', icon: Globe },
+];
 
 export default function Providers() {
   const { theme } = useTheme();
   const { t } = useLanguage();
-  const { isElectron, openProviderSignin, checkProviderStatus } = useElectron();
-  const [providers, setProviders] = useState<ProviderInfo[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  const { isElectron, openProviderSignin, checkChrome } = useElectron();
+  const [providers, setProviders] = useState<ProviderInfo[]>(PROVIDERS);
+  const [chromeStatus, setChromeStatus] = useState<{ installed: boolean; userDataExists: boolean } | null>(null);
   const [showAddModal, setShowAddModal] = useState(false);
-  const [checkingProvider, setCheckingProvider] = useState<string | null>(null);
-
-  async function loadProviders() {
-    setLoading(true);
-    setError(null);
-    try {
-      const health = await api.getHealth();
-      const providerList: ProviderInfo[] = Object.entries(health.providers).map(([id, data]) => ({
-        id,
-        name: PROVIDER_META[id]?.name || id.charAt(0).toUpperCase() + id.slice(1),
-        type: PROVIDER_META[id]?.type || 'browser',
-        status: data.healthy ? 'connected' : (data.error ? 'error' : 'disconnected'),
-        healthy: data.healthy,
-        latency: data.latency,
-        error: data.error,
-      }));
-      setProviders(providerList);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to load providers');
-      setProviders([]);
-    } finally {
-      setLoading(false);
-    }
-  }
+  const [connectingProvider, setConnectingProvider] = useState<string | null>(null);
 
   useEffect(() => {
-    loadProviders();
-    const interval = setInterval(loadProviders, 15000);
-    return () => clearInterval(interval);
-  }, []);
+    if (isElectron) {
+      checkChrome().then(status => {
+        setChromeStatus(status);
+      });
+    }
+
+    // Load saved providers from localStorage
+    const saved = localStorage.getItem('bab-connected-providers');
+    if (saved) {
+      try {
+        const connectedIds = JSON.parse(saved) as string[];
+        setProviders(prev => prev.map(p => ({
+          ...p,
+          status: connectedIds.includes(p.id) ? 'connected' : 'available',
+        })));
+      } catch {}
+    }
+  }, [isElectron]);
 
   const cardClass = `rounded-xl border ${
     theme === 'dark' ? 'bg-gray-800 border-gray-700' : 'bg-white border-gray-200'
@@ -79,100 +68,47 @@ export default function Providers() {
 
   const connectedCount = providers.filter(p => p.status === 'connected').length;
 
-  const handleAddProvider = async (providerId: string) => {
-    setCheckingProvider(providerId);
+  const handleConnect = async (providerId: string) => {
+    setConnectingProvider(providerId);
 
-    try {
-      if (isElectron) {
-        // Open provider sign-in page in browser
-        const result = await openProviderSignin(providerId);
+    const provider = providers.find(p => p.id === providerId);
+    if (!provider) return;
 
-        if (result.success) {
-          // Wait a bit for user to sign in, then check status
-          setTimeout(async () => {
-            try {
-              const status = await checkProviderStatus(providerId);
-
-              if (status.connected) {
-                // Add provider to list
-                const newProvider: ProviderInfo = {
-                  id: providerId,
-                  name: PROVIDER_META[providerId]?.name || providerId,
-                  type: 'browser',
-                  status: 'connected',
-                  healthy: true,
-                };
-
-                setProviders(prev => {
-                  const exists = prev.find(p => p.id === providerId);
-                  if (exists) {
-                    return prev.map(p => p.id === providerId ? { ...p, status: 'connected', healthy: true } : p);
-                  }
-                  return [...prev, newProvider];
-                });
-
-                setShowAddModal(false);
-              }
-            } catch (err) {
-              console.error('Failed to check provider status:', err);
-            } finally {
-              setCheckingProvider(null);
-            }
-          }, 3000); // Wait 3 seconds for sign-in
-        }
-      } else {
-        // In browser, just open the provider URL
-        window.open(PROVIDER_META[providerId]?.siteUrl, '_blank');
-        setCheckingProvider(null);
-      }
-    } catch (err) {
-      console.error('Failed to add provider:', err);
-      setCheckingProvider(null);
-    }
-  };
-
-  const handleCheckAllProviders = async () => {
-    if (!isElectron) return;
-
-    for (const providerId of Object.keys(PROVIDER_META)) {
-      try {
-        const status = await checkProviderStatus(providerId);
-
-        if (status.connected) {
-          setProviders(prev => {
-            const exists = prev.find(p => p.id === providerId);
-            if (exists) {
-              return prev.map(p => p.id === providerId ? { ...p, status: 'connected', healthy: true } : p);
-            }
-            return [...prev, {
-              id: providerId,
-              name: PROVIDER_META[providerId]?.name || providerId,
-              type: 'browser' as const,
-              status: 'connected' as const,
-              healthy: true,
-            }];
-          });
-        }
-      } catch (err) {
-        console.error(`Failed to check ${providerId}:`, err);
-      }
-    }
-  };
-
-  // Auto-check providers on mount
-  useEffect(() => {
     if (isElectron) {
-      handleCheckAllProviders();
+      // Open in default browser
+      const result = await openProviderSignin(provider.siteUrl);
+      if (!result.success) {
+        console.error('Failed to open URL:', result.error);
+      }
+    } else {
+      window.open(provider.siteUrl, '_blank');
     }
-  }, [isElectron]);
+  };
 
-  if (loading && providers.length === 0) {
-    return (
-      <div className="flex items-center justify-center h-64">
-        <RefreshCw className="w-8 h-8 animate-spin text-primary-500" />
-      </div>
-    );
-  }
+  const handleMarkConnected = (providerId: string) => {
+    setProviders(prev => prev.map(p =>
+      p.id === providerId ? { ...p, status: 'connected' } : p
+    ));
+
+    // Save to localStorage
+    const connected = providers
+      .filter(p => p.status === 'connected' || p.id === providerId)
+      .map(p => p.id);
+    localStorage.setItem('bab-connected-providers', JSON.stringify(connected));
+
+    setConnectingProvider(null);
+  };
+
+  const handleDisconnect = (providerId: string) => {
+    setProviders(prev => prev.map(p =>
+      p.id === providerId ? { ...p, status: 'available' } : p
+    ));
+
+    const connected = providers
+      .filter(p => p.status === 'connected' && p.id !== providerId)
+      .map(p => p.id);
+    localStorage.setItem('bab-connected-providers', JSON.stringify(connected));
+  };
 
   return (
     <div>
@@ -187,16 +123,6 @@ export default function Providers() {
         </div>
         <div className="flex gap-2">
           <button
-            onClick={loadProviders}
-            className={`p-2 rounded-lg transition-colors ${
-              theme === 'dark' ? 'hover:bg-gray-700' : 'hover:bg-gray-100'
-            }`}
-          >
-            <RefreshCw className={`w-5 h-5 ${loading ? 'animate-spin' : ''} ${
-              theme === 'dark' ? 'text-gray-400' : 'text-gray-600'
-            }`} />
-          </button>
-          <button
             onClick={() => setShowAddModal(true)}
             className="flex items-center gap-2 px-4 py-2.5 bg-primary-500 text-white rounded-lg hover:bg-primary-600 transition-colors"
           >
@@ -206,35 +132,26 @@ export default function Providers() {
         </div>
       </div>
 
-      {error && (
-        <div className={`mb-4 p-4 rounded-lg text-sm ${
-          theme === 'dark' ? 'bg-red-900/30 border border-red-800 text-red-400' : 'bg-red-50 border border-red-200 text-red-700'
-        }`}>
-          {error}
-        </div>
-      )}
-
       {/* Chrome Status */}
-      {isElectron && (
+      {isElectron && chromeStatus && (
         <div className={`mb-6 p-4 rounded-lg ${
-          theme === 'dark' ? 'bg-blue-900/20 border border-blue-800' : 'bg-blue-50 border border-blue-200'
+          chromeStatus.installed
+            ? theme === 'dark' ? 'bg-green-900/20 border border-green-800' : 'bg-green-50 border border-green-200'
+            : theme === 'dark' ? 'bg-yellow-900/20 border border-yellow-800' : 'bg-yellow-50 border border-yellow-200'
         }`}>
           <div className="flex items-center gap-3">
-            <Chrome className="w-5 h-5 text-blue-500" />
+            <Chrome className={`w-5 h-5 ${chromeStatus.installed ? 'text-green-500' : 'text-yellow-500'}`} />
             <div>
-              <p className={`font-medium ${theme === 'dark' ? 'text-blue-400' : 'text-blue-700'}`}>
-                Chrome Integration
+              <p className={`font-medium ${theme === 'dark' ? 'text-white' : 'text-gray-900'}`}>
+                {chromeStatus.installed ? 'Chrome Detected' : 'Chrome Not Found'}
               </p>
-              <p className={`text-sm ${theme === 'dark' ? 'text-blue-300' : 'text-blue-600'}`}>
-                Sign in to AI providers in Chrome, then they will appear here automatically.
+              <p className={`text-sm ${theme === 'dark' ? 'text-gray-400' : 'text-gray-600'}`}>
+                {chromeStatus.installed
+                  ? 'Chrome is installed. Sign in to AI providers to connect them.'
+                  : 'Please install Google Chrome to use browser-based AI providers.'
+                }
               </p>
             </div>
-            <button
-              onClick={handleCheckAllProviders}
-              className="ml-auto px-3 py-1.5 bg-blue-600 text-white rounded-lg hover:bg-blue-700 text-sm"
-            >
-              Check All
-            </button>
           </div>
         </div>
       )}
@@ -253,7 +170,7 @@ export default function Providers() {
                 {connectedCount}
               </p>
               <p className={`text-sm ${theme === 'dark' ? 'text-gray-400' : 'text-gray-600'}`}>
-                {t('providers.connected')}
+                Connected
               </p>
             </div>
           </div>
@@ -270,7 +187,7 @@ export default function Providers() {
                 {providers.length}
               </p>
               <p className={`text-sm ${theme === 'dark' ? 'text-gray-400' : 'text-gray-600'}`}>
-                {t('providers.available')}
+                Available
               </p>
             </div>
           </div>
@@ -280,14 +197,14 @@ export default function Providers() {
             <div className={`w-10 h-10 rounded-lg flex items-center justify-center ${
               theme === 'dark' ? 'bg-purple-900' : 'bg-purple-50'
             }`}>
-              <Activity className={`w-5 h-5 ${theme === 'dark' ? 'text-purple-400' : 'text-purple-600'}`} />
+              <Chrome className={`w-5 h-5 ${theme === 'dark' ? 'text-purple-400' : 'text-purple-600'}`} />
             </div>
             <div>
               <p className={`text-2xl font-bold ${theme === 'dark' ? 'text-white' : 'text-gray-900'}`}>
-                {providers.filter(p => p.healthy).length}
+                {chromeStatus?.installed ? 'Yes' : 'No'}
               </p>
               <p className={`text-sm ${theme === 'dark' ? 'text-gray-400' : 'text-gray-600'}`}>
-                {t('providers.healthy')}
+                Chrome
               </p>
             </div>
           </div>
@@ -295,33 +212,17 @@ export default function Providers() {
       </div>
 
       {/* Provider List */}
-      {providers.length === 0 && !loading ? (
-        <div className={`${cardClass} p-12 text-center`}>
-          <Server className={`w-12 h-12 mx-auto mb-4 ${theme === 'dark' ? 'text-gray-600' : 'text-gray-400'}`} />
-          <p className={`mb-4 ${theme === 'dark' ? 'text-gray-400' : 'text-gray-600'}`}>
-            No providers configured yet
-          </p>
-          <button
-            onClick={() => setShowAddModal(true)}
-            className="px-4 py-2 bg-primary-500 text-white rounded-lg hover:bg-primary-600 transition-colors"
-          >
-            Add Provider
-          </button>
-        </div>
-      ) : (
-        <div className="space-y-4">
-          {providers.map((provider) => (
+      <div className="space-y-4">
+        {providers.map((provider) => {
+          const Icon = provider.icon;
+          return (
             <div key={provider.id} className={`${cardClass} p-6`}>
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-4">
                   <div className={`w-12 h-12 rounded-xl flex items-center justify-center ${
-                    provider.type === 'browser' ? 'bg-blue-500' : 'bg-green-500'
+                    provider.status === 'connected' ? 'bg-green-500' : 'bg-blue-500'
                   }`}>
-                    {provider.type === 'browser' ? (
-                      <Globe className="w-6 h-6 text-white" />
-                    ) : (
-                      <Zap className="w-6 h-6 text-white" />
-                    )}
+                    <Icon className="w-6 h-6 text-white" />
                   </div>
                   <div>
                     <h3 className={`text-lg font-semibold ${theme === 'dark' ? 'text-white' : 'text-gray-900'}`}>
@@ -331,75 +232,76 @@ export default function Providers() {
                       <span className={`text-xs px-2 py-0.5 rounded ${
                         theme === 'dark' ? 'bg-gray-700 text-gray-300' : 'bg-gray-100 text-gray-600'
                       }`}>
-                        {provider.type === 'browser' ? t('providers.browser') : t('providers.api')}
+                        Browser
                       </span>
-                      {PROVIDER_META[provider.id]?.siteUrl && (
-                        <a
-                          href={PROVIDER_META[provider.id].siteUrl}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className={`text-xs flex items-center gap-1 ${
-                            theme === 'dark' ? 'text-blue-400 hover:text-blue-300' : 'text-blue-600 hover:text-blue-700'
-                          }`}
-                        >
-                          {PROVIDER_META[provider.id].siteUrl}
-                          <ExternalLink className="w-3 h-3" />
-                        </a>
-                      )}
+                      <a
+                        href={provider.siteUrl}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className={`text-xs flex items-center gap-1 ${
+                          theme === 'dark' ? 'text-blue-400 hover:text-blue-300' : 'text-blue-600 hover:text-blue-700'
+                        }`}
+                      >
+                        {provider.siteUrl}
+                        <ExternalLink className="w-3 h-3" />
+                      </a>
                     </div>
                   </div>
                 </div>
 
                 <div className="flex items-center gap-3">
-                  {provider.status === 'checking' ? (
-                    <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-sm font-medium bg-yellow-50 text-yellow-700">
-                      <Loader2 className="w-4 h-4 animate-spin" />
-                      Checking...
-                    </span>
+                  {provider.status === 'connected' ? (
+                    <>
+                      <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-sm font-medium bg-green-50 text-green-700">
+                        <CheckCircle className="w-4 h-4" />
+                        Connected
+                      </span>
+                      <button
+                        onClick={() => handleDisconnect(provider.id)}
+                        className={`px-3 py-1.5 rounded-lg text-sm transition-colors ${
+                          theme === 'dark'
+                            ? 'bg-gray-700 text-gray-300 hover:bg-gray-600'
+                            : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                        }`}
+                      >
+                        Disconnect
+                      </button>
+                    </>
+                  ) : connectingProvider === provider.id ? (
+                    <div className="flex items-center gap-2">
+                      <span className="text-sm text-yellow-600">Sign in, then click:</span>
+                      <button
+                        onClick={() => handleMarkConnected(provider.id)}
+                        className="px-3 py-1.5 bg-green-600 text-white rounded-lg hover:bg-green-700 text-sm transition-colors"
+                      >
+                        I'm Signed In
+                      </button>
+                      <button
+                        onClick={() => setConnectingProvider(null)}
+                        className={`px-3 py-1.5 rounded-lg text-sm transition-colors ${
+                          theme === 'dark'
+                            ? 'bg-gray-700 text-gray-300 hover:bg-gray-600'
+                            : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                        }`}
+                      >
+                        Cancel
+                      </button>
+                    </div>
                   ) : (
-                    <span className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-sm font-medium ${
-                      provider.status === 'connected'
-                        ? 'bg-green-50 text-green-700'
-                        : provider.status === 'error'
-                          ? 'bg-red-50 text-red-700'
-                          : theme === 'dark' ? 'bg-gray-700 text-gray-300' : 'bg-gray-100 text-gray-600'
-                    }`}>
-                      {provider.status === 'connected' && <CheckCircle className="w-4 h-4" />}
-                      {provider.status === 'error' && <XCircle className="w-4 h-4" />}
-                      {provider.status === 'disconnected' && <XCircle className="w-4 h-4" />}
-                      {t(`providers.${provider.status}`)}
-                    </span>
-                  )}
-
-                  {provider.status === 'connected' && (
-                    <span className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-sm ${
-                      provider.healthy
-                        ? 'bg-green-50 text-green-700'
-                        : 'bg-red-50 text-red-700'
-                    }`}>
-                      {provider.healthy ? t('providers.healthy') : t('providers.unhealthy')}
-                    </span>
-                  )}
-
-                  {provider.latency && (
-                    <span className={`text-xs ${theme === 'dark' ? 'text-gray-500' : 'text-gray-400'}`}>
-                      {provider.latency}ms
-                    </span>
+                    <button
+                      onClick={() => handleConnect(provider.id)}
+                      className="flex items-center gap-2 px-4 py-2 bg-primary-500 text-white rounded-lg hover:bg-primary-600 transition-colors text-sm"
+                    >
+                      <ExternalLink className="w-4 h-4" />
+                      Connect
+                    </button>
                   )}
                 </div>
               </div>
-
-              {provider.error && (
-                <div className={`mt-3 p-3 rounded-lg text-sm ${
-                  theme === 'dark' ? 'bg-red-900/30 border border-red-800 text-red-400' : 'bg-red-50 border border-red-200 text-red-700'
-                }`}>
-                  {provider.error}
-                </div>
-              )}
             </div>
-          ))}
-        </div>
-      )}
+          );
+        })}
+      </div>
 
       {/* Add Provider Modal */}
       {showAddModal && (
@@ -409,43 +311,40 @@ export default function Providers() {
               Add AI Provider
             </h2>
             <p className={`text-sm mb-4 ${theme === 'dark' ? 'text-gray-400' : 'text-gray-600'}`}>
-              {isElectron
-                ? 'Click a provider to open sign-in page in Chrome. After signing in, the provider will be detected automatically.'
-                : 'Sign in to your AI provider in Chrome, then the provider will appear here automatically.'
-              }
+              Select a provider to connect. You'll need to sign in to the provider's website.
             </p>
             <div className="space-y-2">
-              {Object.entries(PROVIDER_META).map(([id, meta]) => (
-                <button
-                  key={id}
-                  onClick={() => handleAddProvider(id)}
-                  disabled={checkingProvider === id}
-                  className={`w-full flex items-center gap-3 p-3 rounded-lg transition-colors ${
-                    checkingProvider === id
-                      ? 'bg-yellow-50 border border-yellow-200'
-                      : theme === 'dark'
+              {providers.filter(p => p.status !== 'connected').map((provider) => {
+                const Icon = provider.icon;
+                return (
+                  <button
+                    key={provider.id}
+                    onClick={() => {
+                      handleConnect(provider.id);
+                      setShowAddModal(false);
+                    }}
+                    className={`w-full flex items-center gap-3 p-3 rounded-lg transition-colors ${
+                      theme === 'dark'
                         ? 'bg-gray-700 hover:bg-gray-600 text-white'
                         : 'bg-gray-50 hover:bg-gray-100 text-gray-900'
-                  }`}
-                >
-                  {checkingProvider === id ? (
-                    <Loader2 className="w-5 h-5 text-yellow-500 animate-spin" />
-                  ) : (
-                    <Globe className="w-5 h-5 text-blue-500" />
-                  )}
-                  <div className="text-left">
-                    <p className="font-medium">{meta.name}</p>
-                    <p className={`text-xs ${theme === 'dark' ? 'text-gray-400' : 'text-gray-500'}`}>
-                      {meta.siteUrl}
-                    </p>
-                  </div>
-                  {checkingProvider === id ? (
-                    <span className="ml-auto text-xs text-yellow-600">Checking...</span>
-                  ) : (
+                    }`}
+                  >
+                    <Icon className="w-5 h-5 text-blue-500" />
+                    <div className="text-left">
+                      <p className="font-medium">{provider.name}</p>
+                      <p className={`text-xs ${theme === 'dark' ? 'text-gray-400' : 'text-gray-500'}`}>
+                        {provider.siteUrl}
+                      </p>
+                    </div>
                     <ExternalLink className="w-4 h-4 ml-auto text-gray-400" />
-                  )}
-                </button>
-              ))}
+                  </button>
+                );
+              })}
+              {providers.every(p => p.status === 'connected') && (
+                <p className={`text-center py-4 ${theme === 'dark' ? 'text-gray-400' : 'text-gray-600'}`}>
+                  All providers are connected!
+                </p>
+              )}
             </div>
             <button
               onClick={() => setShowAddModal(false)}
