@@ -10,16 +10,54 @@ interface ThemeContextType {
 
 const ThemeContext = createContext<ThemeContextType | undefined>(undefined);
 
-export function ThemeProvider({ children }: { children: ReactNode }) {
-  const [theme, setThemeState] = useState<Theme>(() => {
-    const saved = localStorage.getItem('theme');
-    return (saved as Theme) || 'light';
-  });
+function isElectron(): boolean {
+  return typeof window !== 'undefined' && !!window.electronAPI;
+}
 
+export function ThemeProvider({ children }: { children: ReactNode }) {
+  const [theme, setThemeState] = useState<Theme>('dark');
+
+  // Load theme on mount
   useEffect(() => {
-    localStorage.setItem('theme', theme);
+    const loadTheme = async () => {
+      try {
+        if (isElectron()) {
+          const settings = await window.electronAPI!.loadSettings();
+          if (settings?.theme) {
+            setThemeState(settings.theme as Theme);
+            return;
+          }
+        }
+        // Fallback to localStorage
+        const saved = localStorage.getItem('theme');
+        if (saved) {
+          setThemeState(saved as Theme);
+        }
+      } catch (e) {
+        console.error('Failed to load theme:', e);
+      }
+    };
+    loadTheme();
+  }, []);
+
+  // Save theme when it changes
+  useEffect(() => {
     document.documentElement.classList.remove('light', 'dark');
     document.documentElement.classList.add(theme);
+
+    const saveTheme = async () => {
+      try {
+        localStorage.setItem('theme', theme);
+        if (isElectron()) {
+          const settings = await window.electronAPI!.loadSettings() || {};
+          settings.theme = theme;
+          await window.electronAPI!.saveSettings(settings);
+        }
+      } catch (e) {
+        console.error('Failed to save theme:', e);
+      }
+    };
+    saveTheme();
   }, [theme]);
 
   const toggleTheme = () => {

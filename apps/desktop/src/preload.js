@@ -26,9 +26,13 @@ contextBridge.exposeInMainWorld('electronAPI', {
 
   // ── Provider Detection ───────────────────────────────────────
   checkChrome: () => ipcRenderer.invoke('check-chrome'),
-  openProviderSignin: (providerId) => ipcRenderer.invoke('open-provider-signin', providerId),
+  openProviderSignin: (url) => ipcRenderer.invoke('open-provider-signin', url),
   checkProviderStatus: (providerId) => ipcRenderer.invoke('check-provider-status', providerId),
   getDetectedProviders: () => ipcRenderer.invoke('get-detected-providers'),
+
+  // ── Settings ─────────────────────────────────────────────────
+  loadSettings: () => ipcRenderer.invoke('load-settings'),
+  saveSettings: (settings) => ipcRenderer.invoke('save-settings', settings),
 
   // ── Events ───────────────────────────────────────────────────
   onServerStatus: (callback) => {

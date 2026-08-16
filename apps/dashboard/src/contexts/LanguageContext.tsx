@@ -273,15 +273,52 @@ const translations: Record<Language, Record<string, string>> = {
 
 const LanguageContext = createContext<LanguageContextType | undefined>(undefined);
 
-export function LanguageProvider({ children }: { children: ReactNode }) {
-  const [language, setLanguageState] = useState<Language>(() => {
-    const saved = localStorage.getItem('language');
-    return (saved as Language) || 'en';
-  });
+function isElectron(): boolean {
+  return typeof window !== 'undefined' && !!window.electronAPI;
+}
 
+export function LanguageProvider({ children }: { children: ReactNode }) {
+  const [language, setLanguageState] = useState<Language>('en');
+
+  // Load language on mount
   useEffect(() => {
-    localStorage.setItem('language', language);
+    const loadLanguage = async () => {
+      try {
+        if (isElectron()) {
+          const settings = await window.electronAPI!.loadSettings();
+          if (settings?.language) {
+            setLanguageState(settings.language as Language);
+            return;
+          }
+        }
+        const saved = localStorage.getItem('language');
+        if (saved) {
+          setLanguageState(saved as Language);
+        }
+      } catch (e) {
+        console.error('Failed to load language:', e);
+      }
+    };
+    loadLanguage();
+  }, []);
+
+  // Save language when it changes
+  useEffect(() => {
     document.documentElement.lang = language;
+
+    const saveLanguage = async () => {
+      try {
+        localStorage.setItem('language', language);
+        if (isElectron()) {
+          const settings = await window.electronAPI!.loadSettings() || {};
+          settings.language = language;
+          await window.electronAPI!.saveSettings(settings);
+        }
+      } catch (e) {
+        console.error('Failed to save language:', e);
+      }
+    };
+    saveLanguage();
   }, [language]);
 
   const setLanguage = (lang: Language) => {

@@ -16,6 +16,30 @@ const state = {
   site: null,
 };
 
+// Settings storage path
+const settingsPath = path.join(app.getPath('userData'), 'settings.json');
+
+function loadSettings() {
+  try {
+    if (fs.existsSync(settingsPath)) {
+      return JSON.parse(fs.readFileSync(settingsPath, 'utf-8'));
+    }
+  } catch (e) {
+    console.error('Failed to load settings:', e);
+  }
+  return null;
+}
+
+function saveSettings(settings) {
+  try {
+    fs.writeFileSync(settingsPath, JSON.stringify(settings, null, 2));
+    return true;
+  } catch (e) {
+    console.error('Failed to save settings:', e);
+    return false;
+  }
+}
+
 // ─── Platform helpers ────────────────────────────────────────────
 
 function getChromeUserDataDir() {
@@ -650,6 +674,16 @@ ipcMain.handle('get-detected-providers', async () => {
   }
 
   return detected;
+});
+
+// ─── IPC: Settings ───────────────────────────────────────────────
+
+ipcMain.handle('load-settings', async () => {
+  return loadSettings();
+});
+
+ipcMain.handle('save-settings', async (_event, settings) => {
+  return saveSettings(settings);
 });
 
 // ─── IPC: Tray actions ───────────────────────────────────────────

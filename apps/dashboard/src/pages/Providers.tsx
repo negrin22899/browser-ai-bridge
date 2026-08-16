@@ -4,15 +4,9 @@ import {
   Globe,
   Zap,
   CheckCircle,
-  XCircle,
   Plus,
-  RefreshCw,
-  Activity,
   ExternalLink,
   Chrome,
-  Loader2,
-  Wifi,
-  WifiOff,
 } from 'lucide-react';
 import { useTheme } from '../contexts/ThemeContext';
 import { useLanguage } from '../contexts/LanguageContext';
@@ -22,7 +16,7 @@ interface ProviderInfo {
   id: string;
   name: string;
   siteUrl: string;
-  status: 'connected' | 'available' | 'checking';
+  status: 'connected' | 'available';
   icon: typeof Globe;
 }
 
@@ -36,31 +30,26 @@ const PROVIDERS: ProviderInfo[] = [
 export default function Providers() {
   const { theme } = useTheme();
   const { t } = useLanguage();
-  const { isElectron, openProviderSignin, checkChrome } = useElectron();
+  const { isElectron, openProviderSignin } = useElectron();
   const [providers, setProviders] = useState<ProviderInfo[]>(PROVIDERS);
-  const [chromeStatus, setChromeStatus] = useState<{ installed: boolean; userDataExists: boolean } | null>(null);
   const [showAddModal, setShowAddModal] = useState(false);
   const [connectingProvider, setConnectingProvider] = useState<string | null>(null);
 
   useEffect(() => {
-    if (isElectron) {
-      checkChrome().then(status => {
-        setChromeStatus(status);
-      });
-    }
-
     // Load saved providers from localStorage
-    const saved = localStorage.getItem('bab-connected-providers');
-    if (saved) {
-      try {
+    try {
+      const saved = localStorage.getItem('bab-connected-providers');
+      if (saved) {
         const connectedIds = JSON.parse(saved) as string[];
-        setProviders(prev => prev.map(p => ({
+        setProviders(PROVIDERS.map(p => ({
           ...p,
           status: connectedIds.includes(p.id) ? 'connected' : 'available',
         })));
-      } catch {}
+      }
+    } catch (e) {
+      console.error('Failed to load providers:', e);
     }
-  }, [isElectron]);
+  }, []);
 
   const cardClass = `rounded-xl border ${
     theme === 'dark' ? 'bg-gray-800 border-gray-700' : 'bg-white border-gray-200'
@@ -69,19 +58,19 @@ export default function Providers() {
   const connectedCount = providers.filter(p => p.status === 'connected').length;
 
   const handleConnect = async (providerId: string) => {
-    setConnectingProvider(providerId);
-
     const provider = providers.find(p => p.id === providerId);
     if (!provider) return;
 
-    if (isElectron) {
-      // Open in default browser
-      const result = await openProviderSignin(provider.siteUrl);
-      if (!result.success) {
-        console.error('Failed to open URL:', result.error);
+    setConnectingProvider(providerId);
+
+    try {
+      if (isElectron) {
+        await openProviderSignin(provider.siteUrl);
+      } else {
+        window.open(provider.siteUrl, '_blank');
       }
-    } else {
-      window.open(provider.siteUrl, '_blank');
+    } catch (e) {
+      console.error('Failed to open URL:', e);
     }
   };
 
@@ -121,43 +110,31 @@ export default function Providers() {
             {t('providers.subtitle')}
           </p>
         </div>
-        <div className="flex gap-2">
-          <button
-            onClick={() => setShowAddModal(true)}
-            className="flex items-center gap-2 px-4 py-2.5 bg-primary-500 text-white rounded-lg hover:bg-primary-600 transition-colors"
-          >
-            <Plus className="w-4 h-4" />
-            {t('providers.add')}
-          </button>
-        </div>
+        <button
+          onClick={() => setShowAddModal(true)}
+          className="flex items-center gap-2 px-4 py-2.5 bg-primary-500 text-white rounded-lg hover:bg-primary-600 transition-colors"
+        >
+          <Plus className="w-4 h-4" />
+          {t('providers.add')}
+        </button>
       </div>
 
-      {/* Chrome Status */}
-      {isElectron && chromeStatus && (
+      {/* Chrome Info */}
+      {isElectron && (
         <div className={`mb-6 p-4 rounded-lg ${
-          chromeStatus.installed
-            ? theme === 'dark' ? 'bg-green-900/20 border border-green-800' : 'bg-green-50 border border-green-200'
-            : theme === 'dark' ? 'bg-yellow-900/20 border border-yellow-800' : 'bg-yellow-50 border border-yellow-200'
+          theme === 'dark' ? 'bg-blue-900/20 border border-blue-800' : 'bg-blue-50 border border-blue-200'
         }`}>
           <div className="flex items-center gap-3">
-            <Chrome className={`w-5 h-5 ${chromeStatus.installed ? 'text-green-500' : 'text-yellow-500'}`} />
-            <div>
-              <p className={`font-medium ${theme === 'dark' ? 'text-white' : 'text-gray-900'}`}>
-                {chromeStatus.installed ? 'Chrome Detected' : 'Chrome Not Found'}
-              </p>
-              <p className={`text-sm ${theme === 'dark' ? 'text-gray-400' : 'text-gray-600'}`}>
-                {chromeStatus.installed
-                  ? 'Chrome is installed. Sign in to AI providers to connect them.'
-                  : 'Please install Google Chrome to use browser-based AI providers.'
-                }
-              </p>
-            </div>
+            <Chrome className="w-5 h-5 text-blue-500" />
+            <p className={`text-sm ${theme === 'dark' ? 'text-blue-300' : 'text-blue-700'}`}>
+              Click "Connect" to open provider in browser, sign in, then click "I'm Signed In".
+            </p>
           </div>
         </div>
       )}
 
       {/* Stats */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
         <div className={`${cardClass} p-4`}>
           <div className="flex items-center gap-3">
             <div className={`w-10 h-10 rounded-lg flex items-center justify-center ${
@@ -192,23 +169,6 @@ export default function Providers() {
             </div>
           </div>
         </div>
-        <div className={`${cardClass} p-4`}>
-          <div className="flex items-center gap-3">
-            <div className={`w-10 h-10 rounded-lg flex items-center justify-center ${
-              theme === 'dark' ? 'bg-purple-900' : 'bg-purple-50'
-            }`}>
-              <Chrome className={`w-5 h-5 ${theme === 'dark' ? 'text-purple-400' : 'text-purple-600'}`} />
-            </div>
-            <div>
-              <p className={`text-2xl font-bold ${theme === 'dark' ? 'text-white' : 'text-gray-900'}`}>
-                {chromeStatus?.installed ? 'Yes' : 'No'}
-              </p>
-              <p className={`text-sm ${theme === 'dark' ? 'text-gray-400' : 'text-gray-600'}`}>
-                Chrome
-              </p>
-            </div>
-          </div>
-        </div>
       </div>
 
       {/* Provider List */}
@@ -228,24 +188,17 @@ export default function Providers() {
                     <h3 className={`text-lg font-semibold ${theme === 'dark' ? 'text-white' : 'text-gray-900'}`}>
                       {provider.name}
                     </h3>
-                    <div className="flex items-center gap-3 mt-1">
-                      <span className={`text-xs px-2 py-0.5 rounded ${
-                        theme === 'dark' ? 'bg-gray-700 text-gray-300' : 'bg-gray-100 text-gray-600'
-                      }`}>
-                        Browser
-                      </span>
-                      <a
-                        href={provider.siteUrl}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className={`text-xs flex items-center gap-1 ${
-                          theme === 'dark' ? 'text-blue-400 hover:text-blue-300' : 'text-blue-600 hover:text-blue-700'
-                        }`}
-                      >
-                        {provider.siteUrl}
-                        <ExternalLink className="w-3 h-3" />
-                      </a>
-                    </div>
+                    <a
+                      href={provider.siteUrl}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className={`text-xs flex items-center gap-1 mt-1 ${
+                        theme === 'dark' ? 'text-blue-400' : 'text-blue-600'
+                      }`}
+                    >
+                      {provider.siteUrl}
+                      <ExternalLink className="w-3 h-3" />
+                    </a>
                   </div>
                 </div>
 
@@ -258,10 +211,8 @@ export default function Providers() {
                       </span>
                       <button
                         onClick={() => handleDisconnect(provider.id)}
-                        className={`px-3 py-1.5 rounded-lg text-sm transition-colors ${
-                          theme === 'dark'
-                            ? 'bg-gray-700 text-gray-300 hover:bg-gray-600'
-                            : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                        className={`px-3 py-1.5 rounded-lg text-sm ${
+                          theme === 'dark' ? 'bg-gray-700 text-gray-300 hover:bg-gray-600' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
                         }`}
                       >
                         Disconnect
@@ -269,19 +220,19 @@ export default function Providers() {
                     </>
                   ) : connectingProvider === provider.id ? (
                     <div className="flex items-center gap-2">
-                      <span className="text-sm text-yellow-600">Sign in, then click:</span>
+                      <span className={`text-sm ${theme === 'dark' ? 'text-yellow-400' : 'text-yellow-600'}`}>
+                        Sign in, then:
+                      </span>
                       <button
                         onClick={() => handleMarkConnected(provider.id)}
-                        className="px-3 py-1.5 bg-green-600 text-white rounded-lg hover:bg-green-700 text-sm transition-colors"
+                        className="px-3 py-1.5 bg-green-600 text-white rounded-lg hover:bg-green-700 text-sm"
                       >
                         I'm Signed In
                       </button>
                       <button
                         onClick={() => setConnectingProvider(null)}
-                        className={`px-3 py-1.5 rounded-lg text-sm transition-colors ${
-                          theme === 'dark'
-                            ? 'bg-gray-700 text-gray-300 hover:bg-gray-600'
-                            : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                        className={`px-3 py-1.5 rounded-lg text-sm ${
+                          theme === 'dark' ? 'bg-gray-700 text-gray-300' : 'bg-gray-100 text-gray-700'
                         }`}
                       >
                         Cancel
@@ -290,7 +241,7 @@ export default function Providers() {
                   ) : (
                     <button
                       onClick={() => handleConnect(provider.id)}
-                      className="flex items-center gap-2 px-4 py-2 bg-primary-500 text-white rounded-lg hover:bg-primary-600 transition-colors text-sm"
+                      className="flex items-center gap-2 px-4 py-2 bg-primary-500 text-white rounded-lg hover:bg-primary-600 text-sm"
                     >
                       <ExternalLink className="w-4 h-4" />
                       Connect
@@ -310,9 +261,6 @@ export default function Providers() {
             <h2 className={`text-xl font-bold mb-4 ${theme === 'dark' ? 'text-white' : 'text-gray-900'}`}>
               Add AI Provider
             </h2>
-            <p className={`text-sm mb-4 ${theme === 'dark' ? 'text-gray-400' : 'text-gray-600'}`}>
-              Select a provider to connect. You'll need to sign in to the provider's website.
-            </p>
             <div className="space-y-2">
               {providers.filter(p => p.status !== 'connected').map((provider) => {
                 const Icon = provider.icon;
@@ -323,10 +271,8 @@ export default function Providers() {
                       handleConnect(provider.id);
                       setShowAddModal(false);
                     }}
-                    className={`w-full flex items-center gap-3 p-3 rounded-lg transition-colors ${
-                      theme === 'dark'
-                        ? 'bg-gray-700 hover:bg-gray-600 text-white'
-                        : 'bg-gray-50 hover:bg-gray-100 text-gray-900'
+                    className={`w-full flex items-center gap-3 p-3 rounded-lg ${
+                      theme === 'dark' ? 'bg-gray-700 hover:bg-gray-600 text-white' : 'bg-gray-50 hover:bg-gray-100 text-gray-900'
                     }`}
                   >
                     <Icon className="w-5 h-5 text-blue-500" />
@@ -336,22 +282,14 @@ export default function Providers() {
                         {provider.siteUrl}
                       </p>
                     </div>
-                    <ExternalLink className="w-4 h-4 ml-auto text-gray-400" />
                   </button>
                 );
               })}
-              {providers.every(p => p.status === 'connected') && (
-                <p className={`text-center py-4 ${theme === 'dark' ? 'text-gray-400' : 'text-gray-600'}`}>
-                  All providers are connected!
-                </p>
-              )}
             </div>
             <button
               onClick={() => setShowAddModal(false)}
-              className={`w-full mt-4 py-2 rounded-lg transition-colors ${
-                theme === 'dark'
-                  ? 'bg-gray-700 hover:bg-gray-600 text-white'
-                  : 'bg-gray-100 hover:bg-gray-200 text-gray-900'
+              className={`w-full mt-4 py-2 rounded-lg ${
+                theme === 'dark' ? 'bg-gray-700 hover:bg-gray-600 text-white' : 'bg-gray-100 hover:bg-gray-200 text-gray-900'
               }`}
             >
               Close
