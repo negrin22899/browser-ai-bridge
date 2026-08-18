@@ -269,10 +269,10 @@ describe('Session Isolation', () => {
       });
 
       fabric.start(sessionA.id);
-      fabric.pause(sessionB.id);
+      fabric.degrade(sessionB.id, 'Browser failure');
 
-      expect(sessionA.state.state).toBe('running');
-      expect(sessionB.state.state).toBe('paused');
+      expect(sessionA.state.state).toBe('BUSY');
+      expect(sessionB.state.state).toBe('DEGRADED');
     });
 
     it('should not allow terminating one session to affect another', () => {
@@ -288,7 +288,7 @@ describe('Session Isolation', () => {
 
       // Session B should still exist
       expect(fabric.has(sessionB.id)).toBe(true);
-      expect(sessionB.state.state).toBe('ready');
+      expect(sessionB.state.state).toBe('READY');
     });
   });
 
@@ -302,11 +302,11 @@ describe('Session Isolation', () => {
         providerId: 'gemini',
       });
 
-      sessionA.acquireLock();
+      sessionA.addRequest('req-a');
 
-      // Session B should not be locked
-      expect(sessionB.isLocked()).toBe(false);
-      expect(sessionB.acquireLock()).toBe(true);
+      // Session B should not be affected
+      expect(sessionB.getActiveRequests()).toHaveLength(0);
+      expect(sessionB.addRequest('req-b')).toBe(true);
     });
   });
 

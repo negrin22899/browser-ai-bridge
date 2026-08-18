@@ -68,8 +68,12 @@ export default function Sessions() {
   };
 
   const handleDeleteSession = async (sessionId: string) => {
-    // Note: API doesn't have delete endpoint yet, but button is wired
-    console.log('Delete session:', sessionId);
+    try {
+      await api.deleteSession(sessionId);
+      loadSessions();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to delete session');
+    }
   };
 
   if (loading) {

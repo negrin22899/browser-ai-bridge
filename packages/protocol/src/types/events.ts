@@ -51,6 +51,14 @@ export type EventMap = {
   'replay.tool_call': { sessionId: string; data: unknown };
   'replay.tool_result': { sessionId: string; data: unknown };
   'replay.permission': { sessionId: string; data: unknown };
+
+  // Plugin lifecycle events
+  'plugin.loaded': { name: string };
+  'plugin.unloaded': { name: string };
+  'plugin.reloaded': { name: string };
+  'plugin.error': { name: string; error: string };
+  'provider.register': { provider: unknown; plugin: string };
+  'tool.register': { tool: unknown; plugin: string };
 };
 
 export type EventHandler<T> = (data: T) => void | Promise<void>;

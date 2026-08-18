@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import {
   Save,
   Globe,
@@ -12,6 +12,7 @@ import {
 } from 'lucide-react';
 import { useTheme } from '../contexts/ThemeContext';
 import { useLanguage } from '../contexts/LanguageContext';
+import { api } from '../lib/api';
 
 export default function Settings() {
   const { theme, setTheme } = useTheme();
@@ -48,9 +49,29 @@ export default function Settings() {
     { id: 'appearance', title: t('settings.appearance'), description: t('settings.appearanceDesc'), icon: theme === 'dark' ? Moon : Sun },
   ];
 
-  const handleSave = () => {
-    localStorage.setItem('bab-settings', JSON.stringify(settings));
-    alert(language === 'ru' ? 'Настройки сохранены!' : 'Settings saved!');
+  useEffect(() => {
+    api
+      .getConfig()
+      .then((config) => setSettings(config))
+      .catch(() => {
+        // Backend not available — keep local defaults.
+      });
+  }, []);
+
+  const handleSave = async () => {
+    try {
+      const saved = await api.saveConfig(settings);
+      setSettings(saved);
+      alert(language === 'ru' ? 'Настройки сохранены!' : 'Settings saved!');
+    } catch (error) {
+      alert(
+        error instanceof Error
+          ? error.message
+          : language === 'ru'
+            ? 'Не удалось сохранить настройки'
+            : 'Failed to save settings'
+      );
+    }
   };
 
   const inputClass = `w-full px-4 py-2.5 border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500 ${

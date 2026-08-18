@@ -1,4 +1,4 @@
-import { Minus, Square, X, Server, Wifi, WifiOff } from 'lucide-react';
+import { Minus, Square, X, Wifi, WifiOff } from 'lucide-react';
 import { useElectron } from '../hooks/useElectron';
 import { useTheme } from '../contexts/ThemeContext';
 

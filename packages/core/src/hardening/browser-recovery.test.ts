@@ -49,7 +49,7 @@ describe('Browser Crash/Recovery', () => {
       // Simulate browser failure
       fabric.degrade(session.id, 'Browser disconnected');
 
-      expect(session.state.state).toBe('degraded');
+      expect(session.state.state).toBe('DEGRADED');
       expect(session.state.error).toBe('Browser disconnected');
     });
 
@@ -76,8 +76,8 @@ describe('Browser Crash/Recovery', () => {
       fabric.degrade(sessionA.id, 'Browser A failed');
 
       // Session B should remain running
-      expect(sessionA.state.state).toBe('degraded');
-      expect(sessionB.state.state).toBe('running');
+      expect(sessionA.state.state).toBe('DEGRADED');
+      expect(sessionB.state.state).toBe('BUSY');
     });
   });
 
@@ -91,7 +91,7 @@ describe('Browser Crash/Recovery', () => {
       fabric.degrade(session.id, 'Browser disconnected');
       fabric.recover(session.id);
 
-      expect(session.state.state).toBe('recovering');
+      expect(session.state.state).toBe('RECOVERING');
     });
 
     it('should emit recovery event', () => {
@@ -115,9 +115,9 @@ describe('Browser Crash/Recovery', () => {
       fabric.start(session.id);
       fabric.degrade(session.id, 'Browser disconnected');
       fabric.recover(session.id);
-      fabric.start(session.id);
+      fabric.complete(session.id);
 
-      expect(session.state.state).toBe('running');
+      expect(session.state.state).toBe('READY');
     });
   });
 
@@ -164,7 +164,7 @@ describe('Browser Crash/Recovery', () => {
 
       // Session should not accept new requests in degraded state
       // This is enforced at the request processing level
-      expect(session.state.state).toBe('degraded');
+      expect(session.state.state).toBe('DEGRADED');
     });
   });
 
@@ -177,21 +177,21 @@ describe('Browser Crash/Recovery', () => {
       // First cycle
       fabric.start(session.id);
       fabric.degrade(session.id, 'First crash');
-      expect(session.state.state).toBe('degraded');
+      expect(session.state.state).toBe('DEGRADED');
 
       fabric.recover(session.id);
-      expect(session.state.state).toBe('recovering');
+      expect(session.state.state).toBe('RECOVERING');
 
-      fabric.start(session.id);
-      expect(session.state.state).toBe('running');
+      fabric.complete(session.id);
+      expect(session.state.state).toBe('READY');
 
       // Second cycle
       fabric.degrade(session.id, 'Second crash');
-      expect(session.state.state).toBe('degraded');
+      expect(session.state.state).toBe('DEGRADED');
 
       fabric.recover(session.id);
-      fabric.start(session.id);
-      expect(session.state.state).toBe('running');
+      fabric.complete(session.id);
+      expect(session.state.state).toBe('READY');
     });
   });
 
@@ -218,8 +218,8 @@ describe('Browser Crash/Recovery', () => {
       fabric.degrade(sessionA.id, 'Browser A crashed');
 
       // Session B should be unaffected
-      expect(sessionA.state.state).toBe('degraded');
-      expect(sessionB.state.state).toBe('running');
+      expect(sessionA.state.state).toBe('DEGRADED');
+      expect(sessionB.state.state).toBe('BUSY');
       expect(sessionA.getTools()).toEqual(['fs.read']);
       expect(sessionB.getTools()).toEqual(['git.status']);
     });
@@ -267,7 +267,7 @@ describe('Browser Crash/Recovery', () => {
 
       const context = session.getContext();
       expect(context.state.error).toBe('Chrome tab became unavailable');
-      expect(context.state.state).toBe('degraded');
+      expect(context.state.state).toBe('DEGRADED');
     });
   });
 });

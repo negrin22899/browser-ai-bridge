@@ -344,29 +344,55 @@ export const DEEPSEEK_STRATEGIES: Record<string, SelectorStrategy> = {
 };
 
 /**
+ * All provider strategies keyed by provider id and role.
+ *
+ * Strategies are namespaced (e.g. "gemini.input") so that registering every
+ * provider does not overwrite the previous provider's strategies.
+ */
+export const PROVIDER_STRATEGIES: Record<
+  string,
+  Record<'input' | 'sendButton' | 'response', SelectorStrategy>
+> = {
+  gemini: GEMINI_STRATEGIES,
+  chatgpt: CHATGPT_STRATEGIES,
+  claude: CLAUDE_STRATEGIES,
+  deepseek: DEEPSEEK_STRATEGIES,
+};
+
+/**
+ * Return the ordered selector lists for a provider, keyed by role.
+ */
+export function getProviderSelectors(providerId: string): {
+  input: string[];
+  sendButton: string[];
+  response: string[];
+} {
+  const strategies = PROVIDER_STRATEGIES[providerId];
+  if (!strategies) {
+    throw new Error(`Unknown provider strategies: ${providerId}`);
+  }
+
+  return {
+    input: strategies.input.selectors,
+    sendButton: strategies.sendButton.selectors,
+    response: strategies.response.selectors,
+  };
+}
+
+/**
  * Create a resilient finder with default strategies
  */
 export function createDefaultFinder(): ResilientFinder {
   const finder = new ResilientFinder();
 
-  // Register Gemini strategies
-  for (const strategy of Object.values(GEMINI_STRATEGIES)) {
-    finder.registerStrategy(strategy);
-  }
-
-  // Register ChatGPT strategies
-  for (const strategy of Object.values(CHATGPT_STRATEGIES)) {
-    finder.registerStrategy(strategy);
-  }
-
-  // Register Claude strategies
-  for (const strategy of Object.values(CLAUDE_STRATEGIES)) {
-    finder.registerStrategy(strategy);
-  }
-
-  // Register DeepSeek strategies
-  for (const strategy of Object.values(DEEPSEEK_STRATEGIES)) {
-    finder.registerStrategy(strategy);
+  for (const [providerId, strategies] of Object.entries(PROVIDER_STRATEGIES)) {
+    for (const strategy of Object.values(strategies)) {
+      // Namespace so every provider's strategies coexist in one finder.
+      finder.registerStrategy({
+        ...strategy,
+        name: `${providerId}.${strategy.name}`,
+      });
+    }
   }
 
   return finder;

@@ -1,4 +1,8 @@
 export { createServer } from './server.js';
+export { runToolLoop, runToolLoopStream, extractToolCalls, parseActionsJson } from './tool-loop.js';
+export type { ToolLoopOptions } from './tool-loop.js';
+export { ConfigStore, DEFAULT_CONFIG } from './config-store.js';
+export type { AppConfig } from './config-store.js';
 export { RateLimiter } from './rate-limiter.js';
 export type { RateLimitConfig, RateLimitInfo } from './rate-limiter.js';
 export { WebSocketHandler } from './websocket.js';

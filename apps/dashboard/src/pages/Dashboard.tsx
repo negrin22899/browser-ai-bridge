@@ -8,7 +8,6 @@ import {
   Shield,
   RefreshCw,
   Power,
-  Wifi,
   WifiOff,
 } from 'lucide-react';
 import { useTheme } from '../contexts/ThemeContext';

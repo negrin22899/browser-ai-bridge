@@ -245,3 +245,99 @@ describe('Runtime', () => {
     });
   });
 });
+
+describe('Runtime interactive mode', () => {
+  const interactiveScope: ToolScope = {
+    allowedPaths: ['/tmp'],
+    allowedCommands: [],
+    deniedCommands: ['rm -rf', 'sudo'],
+    maxExecutionTime: 30000,
+  };
+
+  function makeInteractiveRuntime(): Runtime {
+    return new Runtime(new EventBus(), {
+      workingDirectory: '/tmp',
+      permissions: {
+        mode: 'scope',
+        defaultScope: interactiveScope,
+        dangerousTools: [],
+      },
+      audit: {
+        enabled: true,
+        maxEntries: 1000,
+      },
+      interactive: true,
+      permissionTimeoutMs: 60000,
+    });
+  }
+
+  it('holds a confirm tool and resolves it on approve', async () => {
+    const runtime = makeInteractiveRuntime();
+    const tool = createMockTool('fs.write');
+    runtime.tools.register(tool);
+    await runtime.start();
+
+    const execution = runtime.executeTool('fs.write', { path: '/tmp/x', content: 'data' }, 'session-1');
+
+    await vi.waitFor(() => {
+      expect(runtime.getPendingPermissions()).toHaveLength(1);
+    });
+
+    const pending = runtime.getPendingPermissions()[0];
+    expect(pending.toolName).toBe('fs.write');
+    expect(pending.params).toEqual({ path: '/tmp/x', content: 'data' });
+
+    runtime.approvePermission(pending.id);
+
+    const result = await execution;
+    expect(result.success).toBe(true);
+    expect(tool.execute).toHaveBeenCalled();
+  });
+
+  it('denies the tool when the request is declined', async () => {
+    const runtime = makeInteractiveRuntime();
+    const tool = createMockTool('fs.write');
+    runtime.tools.register(tool);
+    await runtime.start();
+
+    const execution = runtime.executeTool('fs.write', { path: '/tmp/x', content: 'data' }, 'session-1');
+
+    await vi.waitFor(() => {
+      expect(runtime.getPendingPermissions()).toHaveLength(1);
+    });
+
+    const pending = runtime.getPendingPermissions()[0];
+    runtime.denyPermission(pending.id);
+
+    const result = await execution;
+    expect(result.success).toBe(false);
+    expect(result.error).toContain('Permission denied');
+    expect(tool.execute).not.toHaveBeenCalled();
+  });
+
+  it('grants the session when approved with persist', async () => {
+    const runtime = makeInteractiveRuntime();
+    const tool = createMockTool('fs.write');
+    runtime.tools.register(tool);
+    await runtime.start();
+
+    const execution = runtime.executeTool('fs.write', { path: '/tmp/x', content: 'data' }, 'session-1');
+
+    await vi.waitFor(() => {
+      expect(runtime.getPendingPermissions()).toHaveLength(1);
+    });
+
+    const pending = runtime.getPendingPermissions()[0];
+    runtime.approvePermission(pending.id, { persist: true, scope: interactiveScope });
+
+    const result = await execution;
+    expect(result.success).toBe(true);
+    expect(runtime.permissions.getScope('fs.write', 'session-1')).toEqual(interactiveScope);
+
+    // A second call for the same session must not prompt again.
+    const second = await runtime.executeTool('fs.write', { path: '/tmp/y', content: 'data' }, 'session-1');
+    expect(second.success).toBe(true);
+    expect(runtime.getPendingPermissions()).toHaveLength(0);
+    expect(tool.execute).toHaveBeenCalledTimes(2);
+  });
+});

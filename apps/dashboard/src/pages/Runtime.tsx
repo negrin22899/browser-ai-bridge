@@ -1,8 +1,6 @@
 import { useState, useEffect } from 'react';
 import {
   Activity,
-  Play,
-  Square,
   CheckCircle,
   XCircle,
   Shield,

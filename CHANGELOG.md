@@ -5,6 +5,28 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+- **Tool execution loop** in `/v1/chat/completions` — tool_calls/actions are executed through PermissionEngine + ToolDispatcher and results fed back until the AI answers.
+- `--allow` CLI flag to pre-authorize tools (e.g. `--allow fs.write,shell.exec`).
+- `DELETE /v1/sessions/:id`, `/v1/audit`, `/v1/config`, `/v1/extensions` endpoints.
+- Dashboard wired to real data: Providers, Logs, Extensions, Settings, session deletion.
+- Full Prometheus metrics (request totals/durations, per-provider requests/errors).
+- Deterministic integration-test CI job.
+
+### Changed
+- `cancel()` implemented for Playwright providers and connected to HTTP stream abort.
+- Graceful shutdown (SIGINT/SIGTERM) closes the browser and stops the runtime.
+- CI now fails when unit tests fail.
+
+### Fixed
+- Removed 4 duplicated `BrowserManager` implementations from provider plugins.
+- Fixed `workspace:*` dependency declarations (normalized to `*`).
+- Fixed plugin lifecycle events not declared in the EventBus event map.
+- Fixed stale tests and test scripts; build and test suite now pass cleanly.
+- Fixed `ProfileManager` ID collision when creating profiles in the same millisecond.
+
 ## [1.0.0] - 2026-08-08
 
 ### Added

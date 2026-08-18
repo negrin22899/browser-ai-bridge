@@ -15,7 +15,7 @@ export default function ConnectionInfo() {
   const { theme } = useTheme();
   const [health, setHealth] = useState<HealthStatus | null>(null);
   const [copied, setCopied] = useState<string | null>(null);
-  const [port, setPort] = useState('3000');
+  const [port] = useState('3000');
 
   useEffect(() => {
     async function load() {

@@ -117,10 +117,12 @@ Model: gemini
 
 | Provider | URL | Status |
 |----------|-----|--------|
-| 🟢 Gemini | gemini.google.com | ✅ Working |
-| 🟢 ChatGPT | chatgpt.com | ✅ Working |
-| 🟢 Claude | claude.ai | ✅ Working |
-| 🟢 DeepSeek | chat.deepseek.com | ✅ Working |
+| 🟢 Gemini | gemini.google.com | ✅ E2E tested |
+| 🟢 ChatGPT | chatgpt.com | ✅ Implemented |
+| 🟢 Claude | claude.ai | ✅ Implemented |
+| 🟢 DeepSeek | chat.deepseek.com | ✅ Implemented |
+
+> Only Gemini is verified end-to-end in CI. The other providers are implemented but should be verified against their current UI before relying on them in production.
 
 ---
 

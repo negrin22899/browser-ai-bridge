@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach } from 'vitest';
-import { WebSocketHandler } from '../websocket.js';
+import { WebSocketHandler } from './websocket.js';
 
 describe('WebSocketHandler', () => {
   let handler: WebSocketHandler;
@@ -48,6 +48,9 @@ describe('WebSocketHandler', () => {
 
     handler.open(mockClient1);
     handler.open(mockClient2);
+
+    // Ignore welcome messages sent during open()
+    messages.length = 0;
 
     handler.broadcast({ type: 'test', data: { value: 123 } });
 

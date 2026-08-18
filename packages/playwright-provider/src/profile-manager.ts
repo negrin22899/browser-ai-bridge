@@ -1,6 +1,7 @@
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import * as os from 'node:os';
+import { randomUUID } from 'node:crypto';
 
 export interface BrowserProfile {
   id: string;
@@ -74,7 +75,7 @@ export class ProfileManager {
     executablePath?: string;
     isDefault?: boolean;
   }): BrowserProfile {
-    const id = `profile-${Date.now()}`;
+    const id = `profile-${randomUUID()}`;
     const browserType = options.browserType ?? 'chrome';
 
     const profile: BrowserProfile = {

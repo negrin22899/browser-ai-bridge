@@ -153,38 +153,35 @@ describe('Cross-Session Attack Prevention', () => {
       const sessionB = fabric.create({ providerId: 'gemini' });
 
       fabric.start(sessionA.id);
-      fabric.pause(sessionA.id);
+      fabric.degrade(sessionA.id, 'Browser failure');
 
-      // Session B should remain in 'ready' state
-      expect(sessionB.state.state).toBe('ready');
+      // Session B should remain in READY state
+      expect(sessionA.state.state).toBe('DEGRADED');
+      expect(sessionB.state.state).toBe('READY');
     });
   });
 
-  describe('Lock Security', () => {
-    it('should not allow lock stealing between sessions', () => {
+  describe('Concurrency Isolation', () => {
+    it('should enforce concurrent request limits independently per session', () => {
+      const sessionA = fabric.create({ providerId: 'gemini', maxConcurrentRequests: 1 });
+      const sessionB = fabric.create({ providerId: 'gemini', maxConcurrentRequests: 1 });
+
+      expect(sessionA.addRequest('req-a')).toBe(true);
+      expect(sessionB.addRequest('req-b')).toBe(true);
+
+      // Each session has its own limit
+      expect(sessionA.addRequest('req-a-2')).toBe(false);
+      expect(sessionB.addRequest('req-b-2')).toBe(false);
+    });
+
+    it('should isolate active requests between sessions', () => {
       const sessionA = fabric.create({ providerId: 'gemini' });
       const sessionB = fabric.create({ providerId: 'gemini' });
 
-      // Session A acquires lock
-      expect(sessionA.acquireLock()).toBe(true);
+      sessionA.addRequest('req-a');
 
-      // Session B should be able to acquire its own lock
-      expect(sessionB.acquireLock()).toBe(true);
-
-      // Session A's lock should not affect session B
-      expect(sessionA.isLocked()).toBe(true);
-      expect(sessionB.isLocked()).toBe(true);
-    });
-
-    it('should not allow releasing another session lock', () => {
-      const sessionA = fabric.create({ providerId: 'gemini' });
-
-      sessionA.acquireLock();
-      expect(sessionA.isLocked()).toBe(true);
-
-      // Releasing should work from the same session
-      sessionA.releaseLock();
-      expect(sessionA.isLocked()).toBe(false);
+      expect(sessionB.getActiveRequests()).toHaveLength(0);
+      expect(sessionB.addRequest('req-b')).toBe(true);
     });
   });
 
@@ -234,11 +231,10 @@ describe('Cross-Session Attack Prevention', () => {
 
       // Multiple state changes
       fabric.start(session.id);
-      fabric.pause(session.id);
-      fabric.resume(session.id);
+      fabric.complete(session.id);
 
-      // Final state should be 'running'
-      expect(session.state.state).toBe('running');
+      // Final state should be READY
+      expect(session.state.state).toBe('READY');
     });
   });
 });

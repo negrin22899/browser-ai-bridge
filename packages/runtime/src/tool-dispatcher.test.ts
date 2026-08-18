@@ -61,9 +61,10 @@ describe('ToolDispatcher', () => {
     expect(result.success).toBe(true);
   });
 
-  it('should throw for unregistered tool', async () => {
-    await expect(dispatcher.execute('unknown', {}, context))
-      .rejects.toThrow('Tool "unknown" not found');
+  it('should return error result for unregistered tool', async () => {
+    const result = await dispatcher.execute('unknown', {}, context);
+    expect(result.success).toBe(false);
+    expect(result.error).toContain('Tool "unknown" not found');
   });
 
   it('should emit tool events on execute', async () => {
@@ -88,9 +89,10 @@ describe('ToolDispatcher', () => {
     const errorHandler = vi.fn();
     eventBus.on('tool.error', errorHandler);
 
-    await expect(dispatcher.execute('fs.read', {}, context))
-      .rejects.toThrow('Permission denied');
+    const result = await dispatcher.execute('fs.read', {}, context);
 
+    expect(result.success).toBe(false);
+    expect(result.error).toContain('Permission denied');
     expect(errorHandler).toHaveBeenCalled();
   });
 });

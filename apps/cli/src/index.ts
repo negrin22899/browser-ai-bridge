@@ -1,10 +1,10 @@
 #!/usr/bin/env node
 
 import { Command } from 'commander';
-import { createServer } from '@bab/api';
+import { createServer, runToolLoop } from '@bab/api';
 import { ProviderManager, SessionManager, EventBus, Logger } from '@bab/core';
 import { PromptEngine } from '@bab/prompt-engine';
-import { ToolDispatcher } from '@bab/runtime';
+import { Runtime } from '@bab/runtime';
 import { PlaywrightProvider } from '@bab/playwright-provider';
 import { FsReadTool, FsWriteTool } from '@bab/tools-fs';
 import { GitStatusTool, GitDiffTool, GitCommitTool } from '@bab/tools-git';
@@ -26,13 +26,47 @@ program
 
 // ── Helpers ──────────────────────────────────────────────────────
 
-function registerTools(dispatcher: ToolDispatcher): void {
-  dispatcher.register(new FsReadTool());
-  dispatcher.register(new FsWriteTool());
-  dispatcher.register(new GitStatusTool());
-  dispatcher.register(new GitDiffTool());
-  dispatcher.register(new GitCommitTool());
-  dispatcher.register(new ShellExecTool());
+function registerTools(runtime: Runtime): void {
+  runtime.tools.register(new FsReadTool());
+  runtime.tools.register(new FsWriteTool());
+  runtime.tools.register(new GitStatusTool());
+  runtime.tools.register(new GitDiffTool());
+  runtime.tools.register(new GitCommitTool());
+  runtime.tools.register(new ShellExecTool());
+}
+
+function parseAllowList(value?: string): string[] {
+  if (!value) return [];
+  return value
+    .split(',')
+    .map((s) => s.trim())
+    .filter(Boolean);
+}
+
+function createRuntime(eventBus: EventBus, allow: string[], interactive = false): Runtime {
+  const workingDirectory = process.cwd();
+  const runtime = new Runtime(eventBus, {
+    workingDirectory,
+    permissions: {
+      mode: 'scope',
+      defaultScope: {
+        allowedPaths: [workingDirectory],
+        allowedCommands: ['git status', 'git diff', 'git log', 'ls', 'dir'],
+        deniedCommands: ['rm -rf', 'sudo', 'format', 'shutdown', 'del /f /s /q'],
+        maxExecutionTime: 30000,
+      },
+      dangerousTools: [],
+    },
+    audit: {
+      enabled: true,
+      maxEntries: 1000,
+    },
+    autoGrant: allow,
+    interactive,
+  });
+
+  registerTools(runtime);
+  return runtime;
 }
 
 // ── Commands ─────────────────────────────────────────────────────
@@ -114,15 +148,17 @@ program
   .option('--no-headless', 'Show browser window')
   .option('--profile', 'Use existing Chrome profile (for logged-in sessions)', true)
   .option('--no-profile', 'Use new browser profile')
+  .option('--allow <tools>', 'Comma-separated tools to allow without confirmation (e.g. fs.write,shell.exec)')
+  .option('--interactive', 'Prompt for permission decisions via the API instead of denying immediately')
   .action(async (options) => {
     const eventBus = new EventBus();
     const logger = new Logger({ level: 'info', format: 'text', context: 'CLI' });
     const sessionManager = new SessionManager(eventBus);
     const providerManager = new ProviderManager(eventBus);
     const promptEngine = new PromptEngine();
-    const toolDispatcher = new ToolDispatcher(eventBus);
+    const runtime = createRuntime(eventBus, parseAllowList(options.allow), options.interactive);
 
-    registerTools(toolDispatcher);
+    await runtime.start();
 
     if (options.site) {
       const { id: providerId, adapter } = resolveProvider(options.site);
@@ -134,7 +170,7 @@ program
         useExistingProfile: options.profile,
       });
 
-      provider.setTools(toolDispatcher.getDescriptions());
+      provider.setTools(runtime.getToolDescriptions());
       providerManager.register(provider);
       providerManager.setActive(providerId);
 
@@ -150,7 +186,7 @@ program
       }
     }
 
-    const app = createServer({ providerManager, sessionManager, logger, promptEngine });
+    const app = createServer({ providerManager, sessionManager, logger, promptEngine, runtime });
     const port = parseInt(options.port);
 
     serve({ fetch: app.fetch, port }, (info) => {
@@ -160,6 +196,29 @@ program
       logger.info('  POST /v1/responses - Responses API');
       logger.info('  GET  /models - List models');
       logger.info('  GET  /health - Health check');
+    });
+
+    // Graceful shutdown: close browser and stop runtime.
+    let shuttingDown = false;
+    const shutdown = async () => {
+      if (shuttingDown) return;
+      shuttingDown = true;
+      logger.info('Shutting down...');
+      await providerManager.shutdownAll();
+      await runtime.stop();
+      process.exit(0);
+    };
+
+    process.on('SIGINT', shutdown);
+    process.on('SIGTERM', shutdown);
+    process.on('uncaughtException', (error) => {
+      logger.error('Uncaught exception', { error: error.message });
+      void shutdown();
+    });
+    process.on('unhandledRejection', (reason) => {
+      logger.error('Unhandled rejection', {
+        error: reason instanceof Error ? reason.message : String(reason),
+      });
     });
   });
 
@@ -174,12 +233,13 @@ program
   .option('--no-headless', 'Show browser window')
   .option('--profile', 'Use existing Chrome profile', true)
   .option('--no-profile', 'Use new browser profile')
+  .option('--allow <tools>', 'Comma-separated tools to allow without confirmation (e.g. fs.write,shell.exec)')
   .action(async (message, options) => {
     const logger = new Logger({ level: 'info', format: 'text', context: 'Chat' });
     const eventBus = new EventBus();
-    const toolDispatcher = new ToolDispatcher(eventBus);
+    const runtime = createRuntime(eventBus, parseAllowList(options.allow));
 
-    registerTools(toolDispatcher);
+    await runtime.start();
 
     const { id: providerId, adapter } = resolveProvider(options.site);
     const provider = new PlaywrightProvider({
@@ -190,7 +250,7 @@ program
       useExistingProfile: options.profile,
     });
 
-    provider.setTools(toolDispatcher.getDescriptions());
+    provider.setTools(runtime.getToolDescriptions());
 
     logger.info(`Connecting to ${options.site}...`);
     try {
@@ -204,15 +264,24 @@ program
     }
 
     const promptEngine = new PromptEngine();
-    const systemPrompt = promptEngine.generateSystemPrompt(toolDispatcher.getDescriptions());
+    const systemPrompt = promptEngine.generateSystemPrompt(runtime.getToolDescriptions());
+    const sessionManager = new SessionManager(eventBus);
+    const session = sessionManager.create(providerId);
 
-    const response = await provider.send({
-      model: providerId,
-      messages: [
-        { role: 'system', content: systemPrompt },
-        { role: 'user', content: message },
-      ],
-    });
+    const response = await runToolLoop(
+      provider,
+      runtime,
+      logger,
+      {
+        model: providerId,
+        messages: [
+          { role: 'system', content: systemPrompt },
+          { role: 'user', content: message },
+        ],
+      },
+      session.id,
+      { onMessage: (m) => session.addMessage(m) }
+    );
 
     console.log('\nAI Response:');
     console.log('='.repeat(50));
@@ -220,6 +289,7 @@ program
     console.log('='.repeat(50));
 
     await provider.disconnect();
+    await runtime.stop();
   });
 
 program.parse();

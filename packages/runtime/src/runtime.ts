@@ -15,6 +15,7 @@ import type { EventBus } from '@bab/core';
 import { ToolDispatcher } from './tool-dispatcher.js';
 import { PermissionEngine } from './permission-engine.js';
 import { AuditLogger } from './audit-logger.js';
+import { PermissionBroker, type PendingPermissionRequest } from './permission-broker.js';
 
 export interface RuntimeConfig {
   workingDirectory: string;
@@ -27,6 +28,19 @@ export interface RuntimeConfig {
     enabled: boolean;
     maxEntries: number;
   };
+  /**
+   * Tools that are auto-granted a permissive scope for every session.
+   * Useful for headless servers where interactive confirmation is unavailable.
+   */
+  autoGrant?: string[];
+  /**
+   * When true, tools that need confirmation create a pending permission
+   * request and wait for an explicit approve/deny instead of being denied
+   * immediately. Resolve via getPendingPermissions()/approvePermission().
+   */
+  interactive?: boolean;
+  /** How long to wait for an interactive decision before auto-denying (ms). */
+  permissionTimeoutMs?: number;
 }
 
 export class Runtime implements IRuntime {
@@ -40,14 +54,22 @@ export class Runtime implements IRuntime {
   private config: RuntimeConfig;
   private eventBus: EventBus;
   private started = false;
+  private autoGrantTools: Set<string>;
+  private interactive: boolean;
+  private permissionBroker: PermissionBroker;
 
   constructor(eventBus: EventBus, config: RuntimeConfig) {
     this.eventBus = eventBus;
     this.config = config;
+    this.autoGrantTools = new Set(config.autoGrant ?? []);
+    this.interactive = config.interactive ?? false;
 
     this.toolDispatcher = new ToolDispatcher(eventBus);
     this.permissionEngine = new PermissionEngine(eventBus, config.permissions);
     this.auditLogger = new AuditLogger();
+    this.permissionBroker = new PermissionBroker(eventBus, {
+      timeoutMs: config.permissionTimeoutMs,
+    });
 
     this.tools = {
       register: (tool: Tool) => this.toolDispatcher.register(tool),
@@ -102,7 +124,40 @@ export class Runtime implements IRuntime {
       auditLog: this.auditLogger.getEntries(context.sessionId),
     };
 
-    const permissionResult = await this.permissionEngine.check(name, params, permissionContext);
+    let permissionResult = await this.permissionEngine.check(name, params, permissionContext);
+
+    // Interactive confirmation: instead of denying a not-yet-granted tool,
+    // hold the call until the user approves or denies it.
+    if (
+      !permissionResult.allowed &&
+      'reason' in permissionResult &&
+      permissionResult.reason === 'not_granted' &&
+      this.interactive
+    ) {
+      const decision = await this.permissionBroker.request(
+        name,
+        params,
+        context.sessionId,
+        this.config.permissions.defaultScope
+      );
+
+      if (decision.allowed) {
+        if (decision.persist) {
+          this.permissionEngine.grant(
+            name,
+            decision.scope ?? this.getAutoGrantScope(),
+            context.sessionId
+          );
+        }
+        permissionResult = { allowed: true };
+      } else {
+        permissionResult = {
+          allowed: false,
+          reason: decision.reason ?? 'denied_by_user',
+          suggestion: 'The permission request was declined',
+        };
+      }
+    }
 
     // Log audit entry
     const auditEntry: AuditEntry = {
@@ -137,6 +192,10 @@ export class Runtime implements IRuntime {
 
   // Convenience methods for common operations
   async executeTool(name: string, params: Record<string, unknown>, sessionId: string): Promise<ToolResult> {
+    if (this.autoGrantTools.has(name)) {
+      this.grantPermission(name, this.getAutoGrantScope(), sessionId);
+    }
+
     const context: ToolContext = {
       sessionId,
       workingDirectory: this.config.workingDirectory,
@@ -145,6 +204,18 @@ export class Runtime implements IRuntime {
     };
 
     return this.tools.execute(name, params, context);
+  }
+
+  private getAutoGrantScope(): ToolScope {
+    return {
+      allowedPaths: [
+        this.config.workingDirectory,
+        ...this.config.permissions.defaultScope.allowedPaths,
+      ],
+      allowedCommands: [],
+      deniedCommands: this.config.permissions.defaultScope.deniedCommands,
+      maxExecutionTime: this.config.permissions.defaultScope.maxExecutionTime,
+    };
   }
 
   grantPermission(toolName: string, scope: ToolScope, sessionId: string): void {
@@ -157,6 +228,18 @@ export class Runtime implements IRuntime {
 
   getAuditLog(sessionId: string): AuditEntry[] {
     return this.auditLogger.getEntries(sessionId);
+  }
+
+  getPendingPermissions(): PendingPermissionRequest[] {
+    return this.permissionBroker.list();
+  }
+
+  approvePermission(id: string, options?: { persist?: boolean; scope?: ToolScope }): boolean {
+    return this.permissionBroker.approve(id, options);
+  }
+
+  denyPermission(id: string, reason?: string): boolean {
+    return this.permissionBroker.deny(id, reason);
   }
 
   isStarted(): boolean {

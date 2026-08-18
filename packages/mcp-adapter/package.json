@@ -6,11 +6,11 @@
   "types": "dist/index.d.ts",
   "scripts": {
     "build": "tsc --project tsconfig.build.json",
-    "test": "vitest run"
+    "test": "vitest run --passWithNoTests"
   },
   "dependencies": {
-    "@bab/protocol": "workspace:*",
-    "@bab/core": "workspace:*"
+    "@bab/protocol": "*",
+    "@bab/core": "*"
   },
   "devDependencies": {
     "typescript": "^5.6.0",

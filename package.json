@@ -16,13 +16,13 @@
   },
   "scripts": {
     "setup": "node setup.js",
-    "build": "npm run build --workspaces",
+    "build": "npm run build -w @bab/protocol -w @bab/core -w @bab/runtime -w @bab/prompt-engine -w @bab/playwright-provider -w @bab/plugin-sdk -w @bab/mcp-adapter -w @bab/tools-fs -w @bab/tools-git -w @bab/tools-shell -w @bab/api -w browser-ai-bridge -w @bab/dashboard -w @bab/plugin-example",
     "build:desktop": "cd apps/desktop && npm run build:win",
     "build:desktop:mac": "cd apps/desktop && npm run build:mac",
     "build:desktop:linux": "cd apps/desktop && npm run build:linux",
-    "test": "npm run test --workspaces",
+    "test": "npm run test --workspaces --if-present",
     "lint": "npm run lint --workspaces",
-    "clean": "npm run clean --workspaces",
+    "clean": "npm run clean --workspaces --if-present && rm -rf packages/*/tsconfig.build.tsbuildinfo apps/*/tsconfig.build.tsbuildinfo examples/*/tsconfig.build.tsbuildinfo packages/tools/*/tsconfig.build.tsbuildinfo",
     "dashboard": "npm run dev -w @bab/dashboard",
     "start": "node scripts/start-dashboard.js"
   },
