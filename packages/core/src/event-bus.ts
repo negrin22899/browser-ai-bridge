@@ -2,6 +2,18 @@ import type { EventMap, EventHandler } from '@bab/protocol';
 
 export class EventBus {
   private listeners = new Map<string, Set<EventHandler<unknown>>>();
+  private anyListeners = new Set<(event: string, data: unknown) => void>();
+
+  /**
+   * Subscribe to every event (useful for streaming/SSE forwarders).
+   * Returns an unsubscribe function.
+   */
+  onAny(handler: (event: string, data: unknown) => void): () => void {
+    this.anyListeners.add(handler);
+    return () => {
+      this.anyListeners.delete(handler);
+    };
+  }
 
   on<K extends keyof EventMap & string>(
     event: K,
@@ -38,13 +50,21 @@ export class EventBus {
     data: EventMap[K]
   ): void {
     const handlers = this.listeners.get(event);
-    if (!handlers) return;
+    if (handlers) {
+      for (const handler of handlers) {
+        try {
+          handler(data);
+        } catch (error) {
+          console.error(`EventBus error in handler for "${event}":`, error);
+        }
+      }
+    }
 
-    for (const handler of handlers) {
+    for (const listener of this.anyListeners) {
       try {
-        handler(data);
+        listener(event, data);
       } catch (error) {
-        console.error(`EventBus error in handler for "${event}":`, error);
+        console.error(`EventBus error in wildcard handler for "${event}":`, error);
       }
     }
   }
@@ -69,5 +89,6 @@ export class EventBus {
 
   removeAllListeners(): void {
     this.listeners.clear();
+    this.anyListeners.clear();
   }
 }

@@ -111,6 +111,20 @@ export interface Extension {
   description?: string;
 }
 
+export interface PendingPermission {
+  id: string;
+  toolName: string;
+  params: Record<string, unknown>;
+  sessionId: string;
+  scope: {
+    allowedPaths: string[];
+    allowedCommands: string[];
+    deniedCommands: string[];
+    maxExecutionTime: number;
+  };
+  createdAt: number;
+}
+
 export interface AppConfig {
   general: { serverPort: number; autoStart: boolean; minimizeToTray: boolean };
   browser: { useExistingProfile: boolean; headless: boolean; defaultTimeout: number };
@@ -220,6 +234,24 @@ export const api = {
   // Extensions
   async getExtensions(): Promise<{ object: string; data: Extension[] }> {
     return request('/v1/extensions');
+  },
+
+  // Permissions
+  async getPendingPermissions(): Promise<{ object: string; data: PendingPermission[] }> {
+    return request('/v1/permissions/pending');
+  },
+
+  async approvePermission(id: string, mode: 'once' | 'session' | 'always'): Promise<{ approved: boolean; id: string }> {
+    return request(`/v1/permissions/${id}/approve`, {
+      method: 'POST',
+      body: JSON.stringify({ mode }),
+    });
+  },
+
+  async denyPermission(id: string): Promise<{ denied: boolean; id: string }> {
+    return request(`/v1/permissions/${id}/deny`, {
+      method: 'POST',
+    });
   },
 
   // Config

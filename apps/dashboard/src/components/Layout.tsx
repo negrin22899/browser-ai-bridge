@@ -19,6 +19,7 @@ import { useState } from 'react';
 import { useTheme } from '../contexts/ThemeContext';
 import { useLanguage } from '../contexts/LanguageContext';
 import { useElectron } from '../hooks/useElectron';
+import PermissionPrompt from './PermissionPrompt';
 
 interface LayoutProps {
   children: ReactNode;
@@ -162,6 +163,8 @@ export default function Layout({ children }: LayoutProps) {
           </div>
         </main>
       </div>
+
+      <PermissionPrompt />
     </div>
   );
 }

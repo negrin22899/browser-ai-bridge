@@ -134,6 +134,15 @@ const translations: Record<Language, Record<string, string>> = {
     'settings.english': 'English',
     'settings.russian': 'Russian',
 
+    // Permissions
+    'permission.title': 'AI requests permission',
+    'permission.tool': 'Tool',
+    'permission.session': 'Session',
+    'permission.params': 'Parameters',
+    'permission.allowOnce': 'Allow once',
+    'permission.allowSession': 'This session',
+    'permission.deny': 'Deny',
+
     // Status
     'status.serverRunning': 'Server running',
     'status.success': 'success',
@@ -263,6 +272,15 @@ const translations: Record<Language, Record<string, string>> = {
     'settings.darkTheme': 'Тёмная',
     'settings.english': 'Английский',
     'settings.russian': 'Русский',
+
+    // Permissions
+    'permission.title': 'AI запрашивает разрешение',
+    'permission.tool': 'Инструмент',
+    'permission.session': 'Сессия',
+    'permission.params': 'Параметры',
+    'permission.allowOnce': 'Разрешить (1 раз)',
+    'permission.allowSession': 'На сессию',
+    'permission.deny': 'Отклонить',
 
     // Status
     'status.serverRunning': 'Сервер работает',

@@ -1,12 +1,22 @@
 #!/usr/bin/env node
 
 import { Command } from 'commander';
-import { createServer, runToolLoop } from '@bab/api';
+import * as os from 'node:os';
+import * as path from 'node:path';
+import { createServer, runToolLoop, StatePersistence } from '@bab/api';
 import { ProviderManager, SessionManager, EventBus, Logger } from '@bab/core';
 import { PromptEngine } from '@bab/prompt-engine';
 import { Runtime } from '@bab/runtime';
 import { PlaywrightProvider } from '@bab/playwright-provider';
-import { FsReadTool, FsWriteTool } from '@bab/tools-fs';
+import {
+  FsReadTool,
+  FsWriteTool,
+  FsEditTool,
+  FsSearchTool,
+  FsGlobTool,
+  FsExistsTool,
+  FsDeleteTool,
+} from '@bab/tools-fs';
 import { GitStatusTool, GitDiffTool, GitCommitTool } from '@bab/tools-git';
 import { ShellExecTool } from '@bab/tools-shell';
 import { serve } from '@hono/node-server';
@@ -29,6 +39,11 @@ program
 function registerTools(runtime: Runtime): void {
   runtime.tools.register(new FsReadTool());
   runtime.tools.register(new FsWriteTool());
+  runtime.tools.register(new FsEditTool());
+  runtime.tools.register(new FsSearchTool());
+  runtime.tools.register(new FsGlobTool());
+  runtime.tools.register(new FsExistsTool());
+  runtime.tools.register(new FsDeleteTool());
   runtime.tools.register(new GitStatusTool());
   runtime.tools.register(new GitDiffTool());
   runtime.tools.register(new GitCommitTool());
@@ -160,6 +175,41 @@ program
 
     await runtime.start();
 
+    // Persistence: restore sessions/audit from disk and save periodically.
+    const persistence = new StatePersistence(
+      path.join(os.homedir(), '.browser-ai-bridge', 'state.json')
+    );
+    const savedState = persistence.load();
+    if (savedState) {
+      for (const s of savedState.sessions) {
+        sessionManager.restore(
+          { id: s.id, providerId: s.providerId, model: s.model, createdAt: s.createdAt },
+          s.messages
+        );
+      }
+      if (savedState.activeSessionId && sessionManager.has(savedState.activeSessionId)) {
+        sessionManager.setActive(savedState.activeSessionId);
+      }
+      if (savedState.audit && Object.keys(savedState.audit).length > 0) {
+        runtime.restoreAudit(new Map(Object.entries(savedState.audit)));
+      }
+      logger.info(`Restored ${savedState.sessions.length} session(s) from disk`);
+    }
+
+    const captureState = () => ({
+      sessions: sessionManager.list().map((s) => ({
+        id: s.id,
+        providerId: s.providerId,
+        model: s.model,
+        createdAt: s.createdAt,
+        messages: s.getMessages(),
+      })),
+      audit: Object.fromEntries(runtime.getAllAuditEntries()),
+      activeSessionId: sessionManager.getActiveId(),
+    });
+    const saveState = () => persistence.save(captureState());
+    const saveInterval = setInterval(saveState, 5000);
+
     if (options.site) {
       const { id: providerId, adapter } = resolveProvider(options.site);
       const provider = new PlaywrightProvider({
@@ -186,7 +236,7 @@ program
       }
     }
 
-    const app = createServer({ providerManager, sessionManager, logger, promptEngine, runtime });
+    const app = createServer({ providerManager, sessionManager, logger, promptEngine, runtime, eventBus });
     const port = parseInt(options.port);
 
     serve({ fetch: app.fetch, port }, (info) => {
@@ -204,6 +254,8 @@ program
       if (shuttingDown) return;
       shuttingDown = true;
       logger.info('Shutting down...');
+      clearInterval(saveInterval);
+      saveState();
       await providerManager.shutdownAll();
       await runtime.stop();
       process.exit(0);

@@ -13,6 +13,7 @@ import {
 import { useTheme } from '../contexts/ThemeContext';
 import { useLanguage } from '../contexts/LanguageContext';
 import { useElectron } from '../hooks/useElectron';
+import { useBabEvents } from '../hooks/useBabEvents';
 import { api } from '../lib/api';
 
 interface ProviderInfo {
@@ -79,6 +80,12 @@ export default function Providers() {
     const interval = setInterval(loadProviders, 5000);
     return () => clearInterval(interval);
   }, [loadProviders]);
+
+  useBabEvents((type) => {
+    if (type.startsWith('provider.')) {
+      loadProviders();
+    }
+  });
 
   const handleConnect = async (providerId: string) => {
     const provider = providers.find((p) => p.id === providerId);

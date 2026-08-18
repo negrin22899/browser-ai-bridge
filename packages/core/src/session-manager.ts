@@ -22,6 +22,27 @@ export class SessionManager {
     this.config = config ?? {};
   }
 
+  /**
+   * Restore a previously persisted session with the given id and messages.
+   * Used by disk persistence to rebuild sessions after a restart.
+   */
+  restore(
+    config: SessionConfig,
+    messages: import('@bab/protocol').Message[] = []
+  ): Session {
+    const session = new Session(config);
+    for (const message of messages) {
+      session.addMessage(message);
+    }
+    this.sessions.set(session.id, session);
+
+    if (!this.activeSessionId) {
+      this.activeSessionId = session.id;
+    }
+
+    return session;
+  }
+
   create(providerId: string, model?: string): Session {
     // Check max sessions limit
     if (this.config.maxSessions && this.sessions.size >= this.config.maxSessions) {

@@ -230,6 +230,14 @@ export class Runtime implements IRuntime {
     return this.auditLogger.getEntries(sessionId);
   }
 
+  getAllAuditEntries(): Map<string, AuditEntry[]> {
+    return this.auditLogger.getAll();
+  }
+
+  restoreAudit(entries: Map<string, AuditEntry[]>): void {
+    this.auditLogger.restore(entries);
+  }
+
   getPendingPermissions(): PendingPermissionRequest[] {
     return this.permissionBroker.list();
   }

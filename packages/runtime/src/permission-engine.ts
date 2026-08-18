@@ -39,7 +39,11 @@ export class PermissionEngine implements IPermissionEngine {
       { toolPattern: /^fs\.read/, mode: 'auto' },
       { toolPattern: /^fs\.list/, mode: 'auto' },
       { toolPattern: /^fs\.stat/, mode: 'auto' },
+      { toolPattern: /^fs\.exists/, mode: 'auto' },
+      { toolPattern: /^fs\.glob/, mode: 'auto' },
+      { toolPattern: /^fs\.search/, mode: 'auto' },
       { toolPattern: /^fs\.write/, mode: 'confirm', reason: 'Write file requires confirmation' },
+      { toolPattern: /^fs\.edit/, mode: 'confirm', reason: 'Edit file requires confirmation' },
       { toolPattern: /^fs\.delete/, mode: 'confirm', reason: 'Delete file requires confirmation' },
       { toolPattern: /^fs\.mkdir/, mode: 'confirm', reason: 'Create directory requires confirmation' },
 

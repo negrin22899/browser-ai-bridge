@@ -1,6 +1,6 @@
 import { Hono } from 'hono';
 import { cors } from 'hono/cors';
-import type { ProviderManager, SessionManager, Logger } from '@bab/core';
+import type { EventBus, ProviderManager, SessionManager, Logger } from '@bab/core';
 import type { PromptEngine } from '@bab/prompt-engine';
 import type { Runtime } from '@bab/runtime';
 import type {
@@ -22,6 +22,7 @@ interface ServerDeps {
   sessionManager: SessionManager;
   logger: Logger;
   promptEngine: PromptEngine;
+  eventBus?: EventBus;
   runtime?: Runtime;
   configStore?: ConfigStore;
   metrics?: MetricsCollector;
@@ -438,6 +439,51 @@ export function createServer(deps: ServerDeps): Hono {
     }
 
     return c.text(lines.join('\n'), 200, { 'Content-Type': 'text/plain' });
+  });
+
+  // ── Events (SSE) ─────────────────────────────────────────────
+
+  app.get('/v1/events', (c) => {
+    if (!deps.eventBus) {
+      return c.json({ error: { message: 'Event bus not available' } }, 503);
+    }
+
+    const encoder = new TextEncoder();
+    let unsubscribe: (() => void) | null = null;
+    let heartbeat: ReturnType<typeof setInterval> | null = null;
+
+    const stream = new ReadableStream({
+      start(controller) {
+        const send = (type: string, data: unknown) => {
+          try {
+            controller.enqueue(
+              encoder.encode(`data: ${JSON.stringify({ type, data })}\n\n`)
+            );
+          } catch {
+            // Stream already closed.
+          }
+        };
+
+        unsubscribe = deps.eventBus!.onAny((event, data) => send(event, data));
+        send('connected', { timestamp: Date.now() });
+
+        heartbeat = setInterval(() => {
+          send('heartbeat', { timestamp: Date.now() });
+        }, 15000);
+      },
+      cancel() {
+        unsubscribe?.();
+        if (heartbeat) clearInterval(heartbeat);
+      },
+    });
+
+    return new Response(stream, {
+      headers: {
+        'Content-Type': 'text/event-stream',
+        'Cache-Control': 'no-cache',
+        'Connection': 'keep-alive',
+      },
+    });
   });
 
   return app;

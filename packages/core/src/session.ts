@@ -4,6 +4,7 @@ export interface SessionConfig {
   id: string;
   providerId: string;
   model?: string;
+  createdAt?: number;
   metadata?: Record<string, unknown>;
 }
 
@@ -24,7 +25,7 @@ export class Session {
     this.id = config.id;
     this.providerId = config.providerId;
     this.model = config.model;
-    this.createdAt = Date.now();
+    this.createdAt = config.createdAt ?? Date.now();
     this._updatedAt = Date.now();
     this.metadata = config.metadata ?? {};
   }

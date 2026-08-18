@@ -10,6 +10,7 @@ import {
 } from 'lucide-react';
 import { useTheme } from '../contexts/ThemeContext';
 import { useLanguage } from '../contexts/LanguageContext';
+import { useBabEvents } from '../hooks/useBabEvents';
 import { api, type Session } from '../lib/api';
 
 export default function Sessions() {
@@ -40,6 +41,12 @@ export default function Sessions() {
     const interval = setInterval(loadSessions, 15000);
     return () => clearInterval(interval);
   }, []);
+
+  useBabEvents((type) => {
+    if (type.startsWith('session.')) {
+      loadSessions();
+    }
+  });
 
   const cardClass = `rounded-xl border ${
     theme === 'dark' ? 'bg-gray-800 border-gray-700' : 'bg-white border-gray-200'

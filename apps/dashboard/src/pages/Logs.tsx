@@ -9,6 +9,7 @@ import {
 } from 'lucide-react';
 import { useTheme } from '../contexts/ThemeContext';
 import { useLanguage } from '../contexts/LanguageContext';
+import { useBabEvents } from '../hooks/useBabEvents';
 import { api, type AuditEntry } from '../lib/api';
 
 type Filter = 'all' | 'allowed' | 'denied' | 'error';
@@ -39,6 +40,12 @@ export default function Logs() {
     const interval = setInterval(loadLogs, 10000);
     return () => clearInterval(interval);
   }, [loadLogs]);
+
+  useBabEvents((type) => {
+    if (type.startsWith('tool.') || type.startsWith('permission.') || type.startsWith('session.')) {
+      loadLogs();
+    }
+  });
 
   const cardClass = `rounded-xl border ${
     theme === 'dark' ? 'bg-gray-800 border-gray-700' : 'bg-white border-gray-200'
