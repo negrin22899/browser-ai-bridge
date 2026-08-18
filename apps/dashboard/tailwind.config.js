@@ -20,6 +20,12 @@ export default {
           800: '#075985',
           900: '#0c4a6e',
         },
+        gray: {
+          750: '#2a3342',
+        },
+      },
+      fontFamily: {
+        sans: ['Inter', 'system-ui', '-apple-system', 'Segoe UI', 'Roboto', 'Avenir', 'Helvetica', 'Arial', 'sans-serif'],
       },
     },
   },

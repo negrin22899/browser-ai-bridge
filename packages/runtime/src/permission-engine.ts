@@ -177,6 +177,18 @@ export class PermissionEngine implements IPermissionEngine {
     return [...this.rules];
   }
 
+  /**
+   * Resolve the effective permission mode for a tool without executing it.
+   * Used by the API/dashboard to show honest permission badges instead of
+   * guessing from the tool name.
+   */
+  getMode(toolName: string): PermissionMode {
+    if (this.dangerousTools.has(toolName)) {
+      return 'deny';
+    }
+    return this.findRule(toolName)?.mode ?? 'confirm';
+  }
+
   addRule(rule: PermissionRule): void {
     this.rules.unshift(rule);
   }

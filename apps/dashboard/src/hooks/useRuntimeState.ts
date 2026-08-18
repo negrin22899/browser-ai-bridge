@@ -140,9 +140,9 @@ export function useRuntimeState(): RuntimeState {
             ...prev,
             permissions: tools.map(tool => ({
               tool: tool.name,
-              mode: (tool.name.includes('read') || tool.name.includes('status') || tool.name.includes('diff'))
-                ? 'auto' as const
-                : 'confirm' as const,
+              mode: (tool.permission ?? (tool.name.includes('read') || tool.name.includes('status') || tool.name.includes('diff')
+                ? 'auto'
+                : 'confirm')) as 'auto' | 'confirm' | 'deny',
             })),
           }));
         } catch {

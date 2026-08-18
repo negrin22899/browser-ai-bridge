@@ -17,6 +17,7 @@ interface Tool {
   name: string;
   description: string;
   parameters: Record<string, unknown>;
+  permission?: 'auto' | 'confirm' | 'deny';
 }
 
 export default function RuntimePage() {
@@ -50,12 +51,13 @@ export default function RuntimePage() {
     theme === 'dark' ? 'bg-gray-800 border-gray-700' : 'bg-white border-gray-200'
   }`;
 
-  const getPermissionMode = (name: string): 'auto' | 'confirm' => {
-    // Read-only operations are auto-approved
-    if (name.includes('read') || name.includes('status') || name.includes('diff') || name.includes('log') || name.includes('list')) {
+  // Prefer the real permission mode reported by the server; only fall back
+  // to a name heuristic for providers that don't report one.
+  const getPermissionMode = (tool: Tool): 'auto' | 'confirm' | 'deny' => {
+    if (tool.permission) return tool.permission;
+    if (tool.name.includes('read') || tool.name.includes('status') || tool.name.includes('diff') || tool.name.includes('log') || tool.name.includes('list')) {
       return 'auto';
     }
-    // Write operations need confirmation
     return 'confirm';
   };
 
@@ -164,7 +166,7 @@ export default function RuntimePage() {
             </div>
             <div>
               <p className={`text-2xl font-bold ${theme === 'dark' ? 'text-white' : 'text-gray-900'}`}>
-                {tools.filter(t => getPermissionMode(t.name) === 'confirm').length}
+                {tools.filter(t => getPermissionMode(t) === 'confirm').length}
               </p>
               <p className={`text-sm ${theme === 'dark' ? 'text-gray-400' : 'text-gray-600'}`}>
                 {t('runtime.permissions')}
@@ -179,7 +181,7 @@ export default function RuntimePage() {
         <div className={`${cardClass} p-12 text-center`}>
           <Terminal className={`w-12 h-12 mx-auto mb-4 ${theme === 'dark' ? 'text-gray-600' : 'text-gray-400'}`} />
           <p className={theme === 'dark' ? 'text-gray-400' : 'text-gray-600'}>
-            No tools registered. Start the server with --site flag.
+            No tools registered.
           </p>
         </div>
       ) : (
@@ -191,7 +193,7 @@ export default function RuntimePage() {
           </div>
           <div className={`divide-y ${theme === 'dark' ? 'divide-gray-700' : 'divide-gray-100'}`}>
             {tools.map((tool) => {
-              const permMode = getPermissionMode(tool.name);
+              const permMode = getPermissionMode(tool);
               return (
                 <div key={tool.name} className="px-6 py-4 flex items-center justify-between">
                   <div className="flex items-center gap-3">

@@ -4,7 +4,7 @@
 
 ### Code Quality
 
-- [x] No TODO/FIXME/HACK/XXX/STUB in production code
+- [ ] No TODO/FIXME/HACK/XXX/STUB in production code (P3 stubs remain: CDP/Extension adapters, Docker/WSL/SSH runtimes, MCP adapter)
 - [ ] All `any` types documented or replaced (26 found)
 - [ ] All error messages are user-friendly
 - [ ] No dead code
@@ -18,8 +18,8 @@
 
 ### Testing
 
-- [x] Unit tests: 124 passing
-- [x] Integration tests: 22 passing
+- [x] Unit tests: 294 passing
+- [x] Integration tests: 28 passing
 - [ ] E2E tests: Not implemented
 - [ ] Performance tests: Not implemented
 
@@ -65,7 +65,7 @@
 
 1. **`any` types in main.ts** - Desktop app has 14 `any` types
 2. **npm audit vulnerabilities** - 3 vulnerabilities need fixing
-3. **Mock data in Dashboard** - UI shows simulated data
+3. ~~**Mock data in Dashboard**~~ - fixed: all dashboard stats now use real API data
 
 ### Should Fix Soon
 

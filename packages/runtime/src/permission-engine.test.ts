@@ -189,4 +189,31 @@ describe('PermissionEngine', () => {
       expect(engine.getRules().length).toBe(initialCount + 1);
     });
   });
+
+  describe('getMode', () => {
+    it('returns auto for read-only tools', () => {
+      expect(engine.getMode('fs.read')).toBe('auto');
+      expect(engine.getMode('fs.exists')).toBe('auto');
+      expect(engine.getMode('fs.glob')).toBe('auto');
+      expect(engine.getMode('fs.search')).toBe('auto');
+      expect(engine.getMode('git.status')).toBe('auto');
+      expect(engine.getMode('git.branch')).toBe('auto');
+    });
+
+    it('returns confirm for write tools', () => {
+      expect(engine.getMode('fs.write')).toBe('confirm');
+      expect(engine.getMode('fs.edit')).toBe('confirm');
+      expect(engine.getMode('fs.delete')).toBe('confirm');
+      expect(engine.getMode('git.commit')).toBe('confirm');
+      expect(engine.getMode('shell.exec')).toBe('confirm');
+    });
+
+    it('returns deny for dangerous tools', () => {
+      expect(engine.getMode('dangerous.tool')).toBe('deny');
+    });
+
+    it('returns confirm for unknown tools (default require permission)', () => {
+      expect(engine.getMode('unknown.tool')).toBe('confirm');
+    });
+  });
 });

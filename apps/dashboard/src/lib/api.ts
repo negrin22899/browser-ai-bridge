@@ -86,10 +86,18 @@ export interface ChatCompletionResponse {
 }
 
 export interface MetricsData {
-  requests_total: number;
-  requests_duration: number;
-  provider_requests: Record<string, number>;
-  provider_errors: Record<string, number>;
+  requestsTotal: number;
+  requestsErrors: number;
+  providerRequests: number;
+  providerErrors: number;
+  toolExecutions: number;
+}
+
+export interface ToolInfo {
+  name: string;
+  description: string;
+  parameters: Record<string, unknown>;
+  permission?: 'auto' | 'confirm' | 'deny';
 }
 
 export interface AuditEntry {
@@ -222,8 +230,12 @@ export const api = {
   },
 
   // Tools
-  async getTools(): Promise<Array<{ name: string; description: string; parameters: Record<string, unknown> }>> {
+  async getTools(): Promise<ToolInfo[]> {
     return request('/v1/tools');
+  },
+
+  async getMetricsJson(): Promise<MetricsData> {
+    return request('/v1/metrics');
   },
 
   // Audit

@@ -50,6 +50,15 @@ const translations: Record<Language, Record<string, string>> = {
     'providers.api': 'API',
     'providers.status': 'Status',
 
+    // Integrations
+    'integrations.title': 'Integrations',
+    'integrations.subtitle': 'Connect to browser AI providers',
+    'integrations.connected': 'Connected',
+    'integrations.available': 'Available',
+    'integrations.apiKeys': 'API keys used',
+    'integrations.search': 'Search integrations...',
+    'integrations.connect': 'Connect',
+
     // Sessions
     'sessions.title': 'Sessions',
     'sessions.subtitle': 'Manage conversation sessions',
@@ -188,6 +197,15 @@ const translations: Record<Language, Record<string, string>> = {
     'providers.browser': 'Браузер',
     'providers.api': 'API',
     'providers.status': 'Статус',
+
+    // Integrations
+    'integrations.title': 'Интеграции',
+    'integrations.subtitle': 'Подключение к браузерным AI провайдерам',
+    'integrations.connected': 'Подключено',
+    'integrations.available': 'Доступно',
+    'integrations.apiKeys': 'Использовано API-ключей',
+    'integrations.search': 'Поиск интеграций...',
+    'integrations.connect': 'Подключить',
 
     // Sessions
     'sessions.title': 'Сессии',

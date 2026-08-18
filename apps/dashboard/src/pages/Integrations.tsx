@@ -196,10 +196,10 @@ export default function Integrations() {
             </div>
             <div>
               <p className={`text-2xl font-bold ${theme === 'dark' ? 'text-white' : 'text-gray-900'}`}>
-                100%
+                0
               </p>
               <p className={`text-sm ${theme === 'dark' ? 'text-gray-400' : 'text-gray-600'}`}>
-                {t('integrations.secure')}
+                {t('integrations.apiKeys')}
               </p>
             </div>
           </div>

@@ -65,7 +65,9 @@ export function createServer(deps: ServerDeps): Hono {
 
   app.get('/health', async (c) => {
     const healthResults = await providerManager.healthCheckAll();
-    const allHealthy = Array.from(healthResults.values()).every((r) => r.healthy);
+    const providerEntries = Array.from(healthResults.entries());
+    // No providers at all is not "ok" — an empty bridge can't answer anything.
+    const allHealthy = providerEntries.length > 0 && providerEntries.every(([, r]) => r.healthy);
 
     return c.json({
       status: allHealthy ? 'ok' : 'degraded',
@@ -282,6 +284,17 @@ export function createServer(deps: ServerDeps): Hono {
   // ── Tools ────────────────────────────────────────────────────
 
   app.get('/v1/tools', (c) => {
+    // Runtime tools are the real, executable tools (fs/git/shell).
+    // Provider tools are only a fallback for runtimes that don't register tools.
+    if (deps.runtime) {
+      return c.json(
+        deps.runtime.getToolDescriptions().map((tool) => ({
+          ...tool,
+          permission: deps.runtime!.getToolPermissionMode(tool.name),
+        }))
+      );
+    }
+
     try {
       const provider = providerManager.getActive();
       const tools = provider.getTools?.() ?? [];
@@ -439,6 +452,24 @@ export function createServer(deps: ServerDeps): Hono {
     }
 
     return c.text(lines.join('\n'), 200, { 'Content-Type': 'text/plain' });
+  });
+
+  // ── Metrics (JSON) ────────────────────────────────────────────
+
+  app.get('/v1/metrics', (c) => {
+    const sum = (name: string) =>
+      metrics
+        .getMetrics()
+        .filter((m) => m.name === name)
+        .reduce((acc, m) => acc + m.value, 0);
+
+    return c.json({
+      requestsTotal: sum('bab.requests.total'),
+      requestsErrors: sum('bab.requests.errors'),
+      providerRequests: sum('bab.provider.requests'),
+      providerErrors: sum('bab.provider.errors'),
+      toolExecutions: sum('bab.tool.executions'),
+    });
   });
 
   // ── Events (SSE) ─────────────────────────────────────────────

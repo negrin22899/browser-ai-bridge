@@ -261,6 +261,30 @@ describe('Stage 6: OpenAI API Integration Tests', () => {
     });
   });
 
+  describe('Tools & Metrics Endpoints', () => {
+    it('should list runtime tools with real permission modes', async () => {
+      const res = await app.request('/v1/tools');
+      expect(res.status).toBe(200);
+
+      const tools = await res.json();
+      expect(Array.isArray(tools)).toBe(true);
+
+      const byName = new Map(tools.map((t: { name: string; permission?: string }) => [t.name, t.permission]));
+      expect(byName.get('fs.read')).toBe('auto');
+      expect(byName.get('fs.write')).toBe('confirm');
+      expect(byName.get('git.status')).toBe('auto');
+    });
+
+    it('should expose JSON metrics', async () => {
+      const res = await app.request('/v1/metrics');
+      expect(res.status).toBe(200);
+
+      const body = await res.json();
+      expect(typeof body.requestsTotal).toBe('number');
+      expect(body.requestsTotal).toBeGreaterThanOrEqual(0);
+    });
+  });
+
   describe('Chat Completions', () => {
     it('should handle simple chat request', async () => {
       const res = await app.request('/v1/chat/completions', {

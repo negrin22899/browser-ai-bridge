@@ -108,6 +108,10 @@ export class Runtime implements IRuntime {
     return this.toolDispatcher.get(name);
   }
 
+  getToolPermissionMode(name: string): 'auto' | 'confirm' | 'deny' {
+    return this.permissionEngine.getMode(name);
+  }
+
   private async executeWithPermission(
     name: string,
     params: Record<string, unknown>,

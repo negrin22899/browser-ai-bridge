@@ -14,6 +14,7 @@ import { useTheme } from '../contexts/ThemeContext';
 import { useLanguage } from '../contexts/LanguageContext';
 import { api, type HealthStatus, type Session } from '../lib/api';
 import { useElectron } from '../hooks/useElectron';
+import { Card, PageHeader, StatCard, Badge, Spinner } from '../components/ui';
 
 export default function Dashboard() {
   const { theme } = useTheme();
@@ -23,6 +24,9 @@ export default function Dashboard() {
   const [sessions, setSessions] = useState<Session[]>([]);
   const [providerCount, setProviderCount] = useState(0);
   const [connectedCount, setConnectedCount] = useState(0);
+  const [toolsCount, setToolsCount] = useState(0);
+  const [confirmCount, setConfirmCount] = useState(0);
+  const [requestsTotal, setRequestsTotal] = useState(0);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -39,6 +43,23 @@ export default function Dashboard() {
       const providers = Object.keys(healthData.providers);
       setProviderCount(providers.length);
       setConnectedCount(providers.filter(p => healthData.providers[p]?.healthy).length);
+
+      // Real tools + permission modes (not hardcoded).
+      try {
+        const tools = await api.getTools();
+        setToolsCount(tools.length);
+        setConfirmCount(tools.filter(t => t.permission === 'confirm').length);
+      } catch {
+        // Tools endpoint unavailable (no runtime).
+      }
+
+      // Real request count from the metrics collector.
+      try {
+        const metrics = await api.getMetricsJson();
+        setRequestsTotal(metrics.requestsTotal);
+      } catch {
+        // Metrics endpoint unavailable.
+      }
     } catch (err) {
       const msg = err instanceof Error ? err.message : 'Failed to load data';
       setError(msg);
@@ -52,10 +73,6 @@ export default function Dashboard() {
     const interval = setInterval(loadData, 30000);
     return () => clearInterval(interval);
   }, []);
-
-  const cardClass = `rounded-xl border ${
-    theme === 'dark' ? 'bg-gray-800 border-gray-700' : 'bg-white border-gray-200'
-  }`;
 
   // Server not running - show friendly screen
   if (!loading && error && error.includes('Server not running')) {
@@ -78,7 +95,6 @@ export default function Dashboard() {
               await startServer();
               setTimeout(loadData, 3000);
             } else {
-              // In browser, show instructions
               alert('Run in terminal: bab serve --site gemini');
             }
           }}
@@ -102,99 +118,74 @@ export default function Dashboard() {
   if (loading && !health) {
     return (
       <div className="flex items-center justify-center h-64">
-        <RefreshCw className="w-8 h-8 animate-spin text-primary-500" />
+        <Spinner />
       </div>
     );
   }
 
-  const stats = [
-    { name: t('dashboard.totalRequests'), value: sessions.length.toString(), icon: Activity, change: '' },
-    { name: t('dashboard.activeSessions'), value: sessions.length.toString(), icon: MessageSquare, change: '' },
-    { name: t('dashboard.activeProviders'), value: `${connectedCount}/${providerCount}`, icon: Server, change: connectedCount > 0 ? 'Online' : 'Offline' },
-    { name: t('dashboard.uptime'), value: health?.status === 'ok' ? 'Running' : 'Down', icon: Clock, change: health?.status || 'unknown' },
-  ];
-
   const systemStatus = [
     { name: t('dashboard.runtimeReady'), status: health?.status === 'ok' },
-    { name: t('dashboard.toolsRegistered'), value: '6', status: true },
-    { name: t('dashboard.permissionsActive'), value: 'scope', status: true },
+    { name: t('dashboard.toolsRegistered'), value: toolsCount.toString(), status: true },
+    { name: t('dashboard.permissionsActive'), value: confirmCount > 0 ? `${confirmCount} confirm` : 'auto', status: true },
   ];
 
   return (
     <div>
-      <div className="mb-8 flex items-center justify-between">
-        <div>
-          <h1 className={`text-2xl font-bold ${theme === 'dark' ? 'text-white' : 'text-gray-900'}`}>
-            {t('dashboard.title')}
-          </h1>
-          <p className={theme === 'dark' ? 'text-gray-400' : 'text-gray-600'}>
-            {t('dashboard.welcome')}
-          </p>
-        </div>
-        <div className="flex items-center gap-2">
-          {isElectron && (
+      <PageHeader
+        title={t('dashboard.title')}
+        subtitle={t('dashboard.welcome')}
+        actions={
+          <>
+            {isElectron && (
+              <button
+                onClick={() => serverRunning ? stopServer() : startServer()}
+                className={`flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-medium transition-colors ${
+                  serverRunning
+                    ? 'bg-red-900/30 text-red-400 hover:bg-red-900/50'
+                    : 'bg-green-900/30 text-green-400 hover:bg-green-900/50'
+                }`}
+              >
+                <Power className="w-4 h-4" />
+                {serverRunning ? 'Stop' : 'Start'}
+              </button>
+            )}
             <button
-              onClick={() => serverRunning ? stopServer() : startServer()}
-              className={`flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-medium transition-colors ${
-                serverRunning
-                  ? 'bg-red-900/30 text-red-400 hover:bg-red-900/50'
-                  : 'bg-green-900/30 text-green-400 hover:bg-green-900/50'
+              onClick={loadData}
+              className={`p-2 rounded-lg transition-colors ${
+                theme === 'dark' ? 'hover:bg-gray-700' : 'hover:bg-gray-100'
               }`}
             >
-              <Power className="w-4 h-4" />
-              {serverRunning ? 'Stop' : 'Start'}
+              <RefreshCw className={`w-5 h-5 ${loading ? 'animate-spin' : ''} ${
+                theme === 'dark' ? 'text-gray-400' : 'text-gray-600'
+              }`} />
             </button>
-          )}
-          <button
-            onClick={loadData}
-            className={`p-2 rounded-lg transition-colors ${
-              theme === 'dark' ? 'hover:bg-gray-700' : 'hover:bg-gray-100'
-            }`}
-          >
-            <RefreshCw className={`w-5 h-5 ${loading ? 'animate-spin' : ''} ${
-              theme === 'dark' ? 'text-gray-400' : 'text-gray-600'
-            }`} />
-          </button>
-        </div>
-      </div>
+          </>
+        }
+      />
 
       {/* Stats */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
-        {stats.map((stat) => (
-          <div key={stat.name} className={`${cardClass} p-6 hover:shadow-md transition-shadow`}>
-            <div className="flex items-center justify-between">
-              <div className={`w-12 h-12 rounded-xl flex items-center justify-center ${
-                theme === 'dark' ? 'bg-primary-900' : 'bg-primary-50'
-              }`}>
-                <stat.icon className={`w-6 h-6 ${theme === 'dark' ? 'text-primary-400' : 'text-primary-600'}`} />
-              </div>
-              {stat.change && (
-                <span className={`text-sm font-medium px-2.5 py-1 rounded-full ${
-                  stat.change === 'Online' || stat.change === 'ok'
-                    ? 'text-green-600 bg-green-50'
-                    : stat.change === 'Offline'
-                      ? 'text-red-600 bg-red-50'
-                      : 'text-gray-600 bg-gray-50'
-                }`}>
-                  {stat.change}
-                </span>
-              )}
-            </div>
-            <div className="mt-4">
-              <p className={`text-3xl font-bold ${theme === 'dark' ? 'text-white' : 'text-gray-900'}`}>
-                {stat.value}
-              </p>
-              <p className={`text-sm mt-1 ${theme === 'dark' ? 'text-gray-400' : 'text-gray-600'}`}>
-                {stat.name}
-              </p>
-            </div>
-          </div>
-        ))}
+        <StatCard label={t('dashboard.totalRequests')} value={requestsTotal.toString()} icon={Activity} accent="primary" />
+        <StatCard label={t('dashboard.activeSessions')} value={sessions.length.toString()} icon={MessageSquare} accent="blue" />
+        <StatCard
+          label={t('dashboard.activeProviders')}
+          value={`${connectedCount}/${providerCount}`}
+          icon={Server}
+          accent={connectedCount > 0 ? 'green' : 'red'}
+          change={connectedCount > 0 ? 'Online' : 'Offline'}
+        />
+        <StatCard
+          label={t('dashboard.uptime')}
+          value={health?.status === 'ok' ? 'Running' : 'Down'}
+          icon={Clock}
+          accent={health?.status === 'ok' ? 'green' : 'red'}
+          change={health?.status || 'unknown'}
+        />
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         {/* System Status */}
-        <div className={`${cardClass}`}>
+        <Card>
           <div className={`px-6 py-4 border-b ${theme === 'dark' ? 'border-gray-700' : 'border-gray-200'}`}>
             <h2 className={`text-lg font-semibold ${theme === 'dark' ? 'text-white' : 'text-gray-900'}`}>
               {t('dashboard.systemStatus')}
@@ -217,10 +208,10 @@ export default function Dashboard() {
               </div>
             ))}
           </div>
-        </div>
+        </Card>
 
         {/* Providers Status */}
-        <div className={`lg:col-span-2 ${cardClass}`}>
+        <Card className="lg:col-span-2">
           <div className={`px-6 py-4 border-b flex items-center justify-between ${
             theme === 'dark' ? 'border-gray-700' : 'border-gray-200'
           }`}>
@@ -254,13 +245,9 @@ export default function Dashboard() {
                       {provider.latency}ms
                     </span>
                   )}
-                  <span className={`text-xs px-2 py-0.5 rounded ${
-                    provider.healthy
-                      ? 'bg-green-50 text-green-700'
-                      : 'bg-red-50 text-red-700'
-                  }`}>
+                  <Badge tone={provider.healthy ? 'green' : 'red'}>
                     {provider.healthy ? 'Healthy' : 'Unhealthy'}
-                  </span>
+                  </Badge>
                 </div>
               </div>
             ))}
@@ -272,7 +259,7 @@ export default function Dashboard() {
               </div>
             )}
           </div>
-        </div>
+        </Card>
       </div>
     </div>
   );
