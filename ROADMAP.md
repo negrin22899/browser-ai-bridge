@@ -45,7 +45,8 @@
 - [ ] Краш-репорты + логирование в файл (см. этап выше).
 - [ ] Глобальные хоткеи + системные уведомления (desktop).
 - [ ] Автообновление: канал stable/beta.
-- [ ] Plugin marketplace + sandboxing + hot-reload.
+- [x] Plugin marketplace (catalog + install local/git + `bab plugin list|install`); hot-reload уже в PluginLoader.
+- [ ] Plugin sandboxing (изоляция кода плагинов в worker/VM) — отдельный заход, рискованно делать наспех.
 - [ ] OAuth-интеграции (GitHub и т.п.).
 - [ ] Connection pooling, lazy loading провайдеров, debounce стриминга.
 - [ ] Performance budget и бенчмарки; testing-strategy doc.
