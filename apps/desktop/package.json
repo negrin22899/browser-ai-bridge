@@ -64,6 +64,7 @@
       }
     ],
     "win": {
+      "icon": "build/icon.png",
       "target": [
         {
           "target": "nsis",
@@ -80,7 +81,7 @@
     },
     "mac": {
       "target": ["dmg", "zip"],
-      "icon": "build/icon.icns",
+      "icon": "build/icon.png",
       "category": "public.app-category.developer-tools"
     },
     "linux": {

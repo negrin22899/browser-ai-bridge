@@ -257,9 +257,12 @@ async function startServer(port = 3000): Promise<{ success: boolean; error?: str
       }
     }
 
-    serverProcess = spawn('node', [cliPath, 'serve', '--port', port.toString()], {
+    // Run the CLI with Electron's bundled Node runtime (ELECTRON_RUN_AS_NODE),
+    // so a separately installed Node is NOT required by end users.
+    serverProcess = spawn(process.execPath, [cliPath, 'serve', '--port', port.toString()], {
       cwd: getAppPath(),
       stdio: 'pipe',
+      env: { ...process.env, ELECTRON_RUN_AS_NODE: '1' },
     });
 
     serverProcess.stdout?.on('data', (data: Buffer) => {

@@ -5,6 +5,9 @@ on:
     tags:
       - 'v*'
 
+permissions:
+  contents: write
+
 jobs:
   publish-cli:
     runs-on: ubuntu-latest
@@ -30,6 +33,7 @@ jobs:
         run: npm test
 
       - name: Publish @bab/cli to npm
+        if: ${{ secrets.NPM_TOKEN != '' }}
         run: npm publish --workspace @bab/cli --access public
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
@@ -38,7 +42,16 @@ jobs:
     runs-on: ${{ matrix.os }}
     strategy:
       matrix:
-        os: [ubuntu-latest, windows-latest, macos-latest]
+        include:
+          - os: ubuntu-latest
+            build: build:linux
+            artifact: linux
+          - os: windows-latest
+            build: build:win
+            artifact: windows
+          - os: macos-latest
+            build: build:mac
+            artifact: macos
     steps:
       - uses: actions/checkout@v4
 
@@ -51,25 +64,39 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      # The installer bundles apps/cli/dist and apps/dashboard/dist, so they
+      # must exist before electron-builder runs.
+      - name: Build CLI + dashboard
+        run: npm run build
+
       - name: Install desktop dependencies
         working-directory: apps/desktop
         run: npm ci
 
       - name: Build desktop app
         working-directory: apps/desktop
-        run: |
-          if [ "$RUNNER_OS" = "Windows" ]; then
-            npm run build:win
-          elif [ "$RUNNER_OS" = "macOS" ]; then
-            npm run build:mac
-          else
-            npm run build:linux
-          fi
-        shell: bash
+        run: npm run ${{ matrix.build }}
 
-      - name: Upload artifacts
+      - name: Upload installers
         uses: actions/upload-artifact@v4
         with:
-          name: desktop-${{ matrix.os }}
-          path: apps/desktop/build/
+          name: desktop-${{ matrix.artifact }}
+          path: |
+            apps/desktop/release/*
+            !apps/desktop/release/*.blockmap
           if-no-files-found: warn
+
+  release:
+    needs: desktop
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download installers
+        uses: actions/download-artifact@v4
+        with:
+          path: release-artifacts
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: release-artifacts/**/*
+          generate_release_notes: true

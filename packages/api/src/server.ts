@@ -71,7 +71,12 @@ export function createServer(deps: ServerDeps): Hono<ServerEnv> {
 
   // CORS
   app.use('*', cors({
-    origin: ['http://localhost', 'http://127.0.0.1', 'http://localhost:3000', 'http://localhost:5173'],
+    // Local tool: allow any loopback origin plus packaged Electron (the
+    // dashboard is loaded from file:// so its Origin header is "null").
+    origin: (origin: string) => {
+      if (!origin || origin === 'null') return origin;
+      return /^https?:\/\/(localhost|127\.0\.0\.1|\[::1\])(:\d+)?$/.test(origin) ? origin : '';
+    },
     allowMethods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
     allowHeaders: ['Content-Type', 'Authorization'],
   }));
