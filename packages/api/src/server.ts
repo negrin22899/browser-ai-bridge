@@ -2,6 +2,7 @@ import { Hono } from 'hono';
 import { cors } from 'hono/cors';
 import { randomUUID } from 'node:crypto';
 import type { EventBus, ProviderManager, SessionManager, Logger } from '@bab/core';
+import { detectIde } from '@bab/prompt-engine';
 import type { PromptEngine } from '@bab/prompt-engine';
 import type { Runtime } from '@bab/runtime';
 import type {
@@ -152,10 +153,12 @@ export function createServer(deps: ServerDeps): Hono {
       metricsHelpers.recordProviderRequest(provider.id);
       eventBus?.emit('request.received', { requestId, model: body.model });
 
-      // Inject system prompt with tool negotiation if tools available
+      // Inject system prompt with tool negotiation if tools available.
+      // Tailor the prompt to the calling IDE when it identifies itself.
       const tools = provider.getTools?.() ?? [];
       if (tools.length > 0 && !body.messages.some((m) => m.role === 'system')) {
-        const systemPrompt = promptEngine.generateSystemPrompt(tools);
+        const clientHint = c.req.header('user-agent') ?? c.req.header('x-client') ?? c.req.header('x-ide');
+        const systemPrompt = promptEngine.generateSystemPrompt(tools, undefined, detectIde(clientHint));
         body.messages.unshift({ role: 'system', content: systemPrompt });
       }
 

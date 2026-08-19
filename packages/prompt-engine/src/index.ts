@@ -1,1 +1,1 @@
-export { PromptEngine } from './prompt-engine.js';
+export { PromptEngine, detectIde, type IdeTarget } from './prompt-engine.js';

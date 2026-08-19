@@ -1,7 +1,39 @@
 import type { ToolDescription, ToolNegotiation, NegotiationConstraints } from '@bab/protocol';
 
+export type IdeTarget = 'cursor' | 'vscode' | 'continue' | 'generic';
+
+const IDE_SECTIONS: Record<Exclude<IdeTarget, 'generic'>, string> = {
+  cursor: `## Environment: Cursor IDE
+You are running inside Cursor. Respect the project's .cursorrules if present.
+Prefer editing existing files with minimal diffs, read before you edit, and
+format output so it reads naturally in Cursor's chat and agent panels.`,
+  vscode: `## Environment: VS Code
+You are running inside Visual Studio Code. Use the workspace folder as your
+context, reference files by relative path, and match the repository's existing
+code style and formatting settings.`,
+  continue: `## Environment: Continue
+You are running inside Continue. Keep answers concise and actionable, prefer
+returning concrete code edits or diffs over long explanations, and write code
+that fits the current editor context.`,
+};
+
+/**
+ * Detect the calling IDE from a client hint (user-agent / custom header).
+ */
+export function detectIde(hint: string | undefined | null): IdeTarget {
+  const h = (hint ?? '').toLowerCase();
+  if (h.includes('cursor')) return 'cursor';
+  if (h.includes('continue')) return 'continue';
+  if (h.includes('vscode') || h.includes('visual studio code') || h.includes('code/1.')) return 'vscode';
+  return 'generic';
+}
+
 export class PromptEngine {
-  generateSystemPrompt(tools: ToolDescription[], constraints?: NegotiationConstraints): string {
+  generateSystemPrompt(
+    tools: ToolDescription[],
+    constraints?: NegotiationConstraints,
+    ide: IdeTarget = 'generic'
+  ): string {
     const sections: string[] = [];
 
     sections.push(this.buildHeader());
@@ -13,6 +45,10 @@ export class PromptEngine {
 
     if (constraints) {
       sections.push(this.buildConstraintsSection(constraints));
+    }
+
+    if (ide !== 'generic') {
+      sections.push(IDE_SECTIONS[ide]);
     }
 
     sections.push(this.buildExamplesSection(tools));
