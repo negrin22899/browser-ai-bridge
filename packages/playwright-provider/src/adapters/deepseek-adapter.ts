@@ -1,5 +1,6 @@
 import { PlaywrightAdapter, type PlaywrightAdapterConfig } from '../playwright-adapter.js';
 import { getProviderSelectors } from '../resilient-finder.js';
+import { getProviderStreamConfig } from '../stream-parsers.js';
 
 /**
  * DeepSeek PlaywrightAdapter configuration.
@@ -20,6 +21,7 @@ const DEEPSEEK_CONFIG: PlaywrightAdapterConfig = {
   timeouts: {
     response: 120000,
   },
+  stream: getProviderStreamConfig('deepseek'),
 };
 
 /**

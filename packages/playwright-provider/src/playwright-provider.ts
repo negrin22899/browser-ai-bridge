@@ -17,6 +17,8 @@ import * as os from 'node:os';
 import type { PlaywrightAdapter } from './playwright-adapter.js';
 import type { BrowserSession } from './browser-session.js';
 import { withRetry, withConnectionRetry } from './retry-logic.js';
+import { CDPClient } from './cdp-client.js';
+import { CdpTokenStream } from './stream-interceptor.js';
 
 export interface PlaywrightProviderOptions {
   id: string;
@@ -267,11 +269,27 @@ export class PlaywrightProvider implements Provider {
         }
       }
 
+      // Attach CDP interception BEFORE sending so the SSE response is captured.
+      const capture = await this.captureCdpStream(session);
+
       // Send message to AI with context
       await this.adapter.sendMessage(session, userMessage, context);
 
-      // Wait for and read response
-      const responseText = await this.adapter.readResponse(session);
+      // Prefer the real token stream captured from the network; fall back to
+      // DOM reading when nothing was captured or the stream did not complete.
+      let responseText: string | null = null;
+      try {
+        if (capture) {
+          // 4s grace: if the native stream never starts, fall back to DOM.
+          responseText = await capture.stream.collect(120000, 4000);
+        }
+      } finally {
+        if (capture) await capture.dispose();
+      }
+
+      if (responseText === null) {
+        responseText = await this.adapter.readResponse(session);
+      }
 
       this._status = 'connected';
 
@@ -320,29 +338,25 @@ export class PlaywrightProvider implements Provider {
         if (parts.length > 0) context = parts.join('\n');
       }
 
-      // Send message to AI with context
-      await this.adapter.sendMessage(session, userMessage, context);
+      // Attach CDP interception BEFORE sending so the SSE response is captured.
+      const capture = await this.captureCdpStream(session);
 
-      // Stream response chunks
-      for await (const chunk of this.adapter.streamResponse(session)) {
-        yield {
-          id: chunkId,
-          object: 'chat.completion.chunk',
-          created: Math.floor(Date.now() / 1000),
-          model: request.model,
-          choices: [{
-            index: 0,
-            delta: {
-              role: 'assistant',
-              content: chunk,
-            },
-            finish_reason: null,
-          }],
-        };
-      }
+      const makeChunk = (content: string): ChatCompletionChunk => ({
+        id: chunkId,
+        object: 'chat.completion.chunk',
+        created: Math.floor(Date.now() / 1000),
+        model: request.model,
+        choices: [{
+          index: 0,
+          delta: {
+            role: 'assistant',
+            content,
+          },
+          finish_reason: null,
+        }],
+      });
 
-      // Send final chunk
-      yield {
+      const finalChunk: ChatCompletionChunk = {
         id: chunkId,
         object: 'chat.completion.chunk',
         created: Math.floor(Date.now() / 1000),
@@ -353,6 +367,35 @@ export class PlaywrightProvider implements Provider {
           finish_reason: 'stop',
         }],
       };
+
+      // Send message to AI with context
+      await this.adapter.sendMessage(session, userMessage, context);
+
+      if (capture) {
+        try {
+          // Give the native stream a short grace period to produce a token;
+          // if nothing arrives, fall back to DOM reading.
+          const first = await capture.stream.take(4000);
+          if (first !== null) {
+            yield makeChunk(first);
+            for await (const token of capture.stream.tokens()) {
+              yield makeChunk(token);
+            }
+            yield finalChunk;
+            this._status = 'connected';
+            return;
+          }
+        } finally {
+          await capture.dispose();
+        }
+      }
+
+      // Fallback: read from DOM as the response renders.
+      for await (const chunk of this.adapter.streamResponse(session)) {
+        yield makeChunk(chunk);
+      }
+
+      yield finalChunk;
 
       this._status = 'connected';
     } catch (error) {
@@ -422,5 +465,37 @@ export class PlaywrightProvider implements Provider {
 
   getSession(): BrowserSession | null {
     return this.session;
+  }
+
+  /**
+   * Attach CDP network interception for the provider's native SSE stream.
+   * Returns null when CDP is unavailable or the provider has no stream config.
+   */
+  private async captureCdpStream(
+    session: BrowserSession
+  ): Promise<{ stream: CdpTokenStream; dispose: () => Promise<void> } | null> {
+    try {
+      const page = session.getPage();
+      if (!page) return null;
+
+      const config = this.adapter.getStreamConfig();
+      if (!config) return null;
+
+      const cdp = new CDPClient();
+      await cdp.attach(page);
+      const stream = new CdpTokenStream(
+        cdp.captureStream(config.urlPatterns),
+        config.createParser()
+      );
+
+      return {
+        stream,
+        dispose: async () => {
+          await cdp.detach();
+        },
+      };
+    } catch {
+      return null;
+    }
   }
 }

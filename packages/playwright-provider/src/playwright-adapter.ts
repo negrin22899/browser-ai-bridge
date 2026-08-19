@@ -5,6 +5,7 @@ import { MessageSender } from './message-sender.js';
 import { ResponseReader } from './response-reader.js';
 import { toSelectorList, type SelectorList } from './selector-utils.js';
 import { withRetry } from './retry-logic.js';
+import type { ProviderStreamConfig } from './stream-parsers.js';
 
 export interface PlaywrightAdapterConfig {
   selectors: {
@@ -17,6 +18,8 @@ export interface PlaywrightAdapterConfig {
     response?: number;
     navigation?: number;
   };
+  /** Native SSE stream interception config (real tokens via CDP). */
+  stream?: ProviderStreamConfig;
 }
 
 /**
@@ -124,6 +127,10 @@ export class PlaywrightAdapter {
 
   getTabManager(): TabManager {
     return this.tabManager;
+  }
+
+  getStreamConfig(): ProviderStreamConfig | undefined {
+    return this.config.stream;
   }
 
   async close(): Promise<void> {

@@ -31,6 +31,11 @@ export class BrowserSession {
     return this.page !== null && !this.page.isClosed();
   }
 
+  /** Expose the underlying Playwright page for CDP attach. */
+  getPage(): Page | null {
+    return this.page;
+  }
+
   async attach(page: Page): Promise<void> {
     this.page = page;
     this._url = page.url();

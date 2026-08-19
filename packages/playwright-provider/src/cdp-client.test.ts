@@ -60,7 +60,7 @@ describe('CDPClient', () => {
 
     session.emit('Network.responseReceived', {
       requestId: 'r1',
-      response: { url: 'https://example.com/stream.php' },
+      response: { url: 'https://example.com/stream.php', status: 200 },
     });
     session.emit('Network.dataReceived', { requestId: 'r1', data: base64('hello ') });
     session.emit('Network.dataReceived', { requestId: 'r1', data: base64('world') });
@@ -70,6 +70,7 @@ describe('CDPClient', () => {
     expect(session.sent).toContain('Network.enable');
     expect(chunks.map((c) => c.text)).toEqual(['hello ', 'world']);
     expect(chunks[0].url).toBe('https://example.com/stream.php');
+    expect(chunks[0].status).toBe(200);
   });
 
   it('stops yielding after cancel', async () => {

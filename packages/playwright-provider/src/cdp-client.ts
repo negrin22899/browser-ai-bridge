@@ -4,6 +4,8 @@ export interface NetworkCaptureChunk {
   requestId: string;
   url: string;
   text: string;
+  /** HTTP status from the response headers (0 when unavailable). */
+  status?: number;
 }
 
 /**
@@ -58,6 +60,7 @@ export class CDPClient {
 export class NetworkCaptureStream implements AsyncIterable<NetworkCaptureChunk> {
   private queue: NetworkCaptureChunk[] = [];
   private requests = new Map<string, string>(); // requestId -> url
+  private statuses = new Map<string, number>(); // requestId -> status
   private matchers: RegExp[];
   private cancelled = false;
   private waiter: (() => void) | null = null;
@@ -76,11 +79,12 @@ export class NetworkCaptureStream implements AsyncIterable<NetworkCaptureChunk> 
 
     const onResponseReceived = (event: {
       requestId: string;
-      response?: { url?: string };
+      response?: { url?: string; status?: number };
     }) => {
       const url = event.response?.url ?? '';
       if (!matches(url)) return;
       this.requests.set(event.requestId, url);
+      this.statuses.set(event.requestId, event.response?.status ?? 0);
     };
 
     const onDataReceived = (event: {
@@ -97,12 +101,18 @@ export class NetworkCaptureStream implements AsyncIterable<NetworkCaptureChunk> 
         text = event.data;
       }
 
-      this.queue.push({ requestId: event.requestId, url, text });
+      this.queue.push({
+        requestId: event.requestId,
+        url,
+        text,
+        status: this.statuses.get(event.requestId) ?? 0,
+      });
       this.waiter?.();
     };
 
     const onLoadingFinished = (event: { requestId: string }) => {
       this.requests.delete(event.requestId);
+      this.statuses.delete(event.requestId);
     };
 
     const offs: Array<() => void> = [

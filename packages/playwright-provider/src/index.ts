@@ -76,3 +76,14 @@ export { ExtensionAdapter } from './extension-adapter.js';
 
 // CDP client
 export { CDPClient } from './cdp-client.js';
+export type { NetworkCaptureChunk } from './cdp-client.js';
+
+// Native stream interception
+export { CdpTokenStream } from './stream-interceptor.js';
+export {
+  getProviderStreamConfig,
+  ProviderBlockError,
+  ProviderStreamError,
+  detectBlockError,
+} from './stream-parsers.js';
+export type { ProviderStreamConfig, StreamEventParser, ParsedEvent, BlockErrorCode } from './stream-parsers.js';
