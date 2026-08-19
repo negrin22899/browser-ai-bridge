@@ -5,7 +5,7 @@ import * as os from 'node:os';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { createServer, runToolLoop, StatePersistence } from '@bab/api';
-import { ProviderManager, SessionManager, EventBus, Logger } from '@bab/core';
+import { ProviderManager, SessionManager, EventBus, Logger, ProviderRotation } from '@bab/core';
 import { PromptEngine } from '@bab/prompt-engine';
 import { Runtime } from '@bab/runtime';
 import { PlaywrightProvider } from '@bab/playwright-provider';
@@ -203,6 +203,7 @@ program
   .option('--api-key <key>', 'API key for the native API provider (or use OPENAI_API_KEY / ANTHROPIC_API_KEY / GOOGLE_API_KEY)')
   .option('--api-model <model>', 'Model for the native API provider (default: provider id)')
   .option('--api-base-url <url>', 'Base URL for the native API provider')
+  .option('--accounts <n>', 'Number of browser accounts/profiles to rotate between (default: 1)')
   .action(async (options) => {
     const eventBus = new EventBus();
     const logger = new Logger({
@@ -254,20 +255,45 @@ program
     const saveInterval = setInterval(saveState, 5000);
 
     if (options.site) {
-      const { id: providerId, adapter } = resolveProvider(options.site);
-      const provider = new PlaywrightProvider({
-        id: providerId,
-        name: options.site,
-        adapter,
-        headless: options.headless,
-        useExistingProfile: options.profile,
-      });
+      const { id: providerId } = resolveProvider(options.site);
+      const accountCount = Math.max(1, parseInt(options.accounts ?? '1', 10) || 1);
 
-      provider.setTools(runtime.getToolDescriptions());
+      // Multi-account rotation: each account gets its own Chrome profile so the
+      // user can be logged into a different AI account in each one. Account 0
+      // reuses the existing logged-in profile; the rest use dedicated profiles
+      // that the user can sign into once.
+      const accounts: PlaywrightProvider[] = [];
+      for (let i = 0; i < accountCount; i++) {
+        const { adapter } = resolveProvider(options.site);
+        const account = new PlaywrightProvider({
+          id: accountCount > 1 ? `${providerId}-account-${i + 1}` : providerId,
+          name: accountCount > 1 ? `${options.site} (account ${i + 1})` : options.site,
+          adapter,
+          headless: options.headless,
+          useExistingProfile: i === 0 ? options.profile : false,
+          // Distinct profile dir + CDP port keep accounts from colliding on the
+          // same browser instance.
+          userDataDir: i === 0
+            ? undefined
+            : path.join(os.homedir(), '.browser-ai-bridge', 'profiles', `${providerId}-account-${i + 1}`),
+          cdpPort: 9222 + i,
+        });
+        account.setTools(runtime.getToolDescriptions());
+        accounts.push(account);
+      }
+
+      const provider = accountCount > 1
+        ? new ProviderRotation(providerId, accounts, { name: options.site })
+        : accounts[0];
+
       providerManager.register(provider);
       providerManager.setActive(providerId);
 
-      logger.info(`Connecting to ${options.site}...`);
+      logger.info(
+        accountCount > 1
+          ? `Connecting to ${options.site} across ${accountCount} accounts...`
+          : `Connecting to ${options.site}...`
+      );
       try {
         await provider.connect();
         logger.info('Connected to browser AI');

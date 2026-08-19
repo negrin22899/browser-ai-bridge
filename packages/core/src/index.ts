@@ -15,6 +15,7 @@ export type { SessionManagerConfig } from './session-manager.js';
 
 // Provider management
 export { ProviderManager } from './provider-manager.js';
+export { ProviderRotation, isBlockError } from './provider-rotation.js';
 
 // Routing
 export { Router } from './router.js';
