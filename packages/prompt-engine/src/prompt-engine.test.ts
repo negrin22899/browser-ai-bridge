@@ -33,6 +33,10 @@ describe('detectIde', () => {
     expect(detectIde('continue/1.0')).toBe('continue');
   });
 
+  it('detects OpenCode', () => {
+    expect(detectIde('opencode/1.0')).toBe('opencode');
+  });
+
   it('falls back to generic for unknown clients', () => {
     expect(detectIde('curl/8.0')).toBe('generic');
     expect(detectIde(undefined)).toBe('generic');
@@ -86,6 +90,7 @@ describe('PromptEngine', () => {
     expect(engine.generateSystemPrompt(mockTools, undefined, 'cursor')).toContain('Cursor IDE');
     expect(engine.generateSystemPrompt(mockTools, undefined, 'vscode')).toContain('VS Code');
     expect(engine.generateSystemPrompt(mockTools, undefined, 'continue')).toContain('Continue');
+    expect(engine.generateSystemPrompt(mockTools, undefined, 'opencode')).toContain('OpenCode');
     expect(engine.generateSystemPrompt(mockTools, undefined, 'generic')).not.toContain('Environment:');
   });
 

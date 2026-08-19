@@ -236,6 +236,29 @@ export default function Sessions() {
                         {formatRelative(session.createdAt)}
                       </span>
                     </div>
+
+                    {/* Context usage */}
+                    {typeof session.contextUsagePercent === 'number' && (
+                      <div className="mt-2 max-w-xs">
+                        <div className={`h-1.5 rounded-full overflow-hidden ${
+                          theme === 'dark' ? 'bg-gray-700' : 'bg-gray-100'
+                        }`}>
+                          <div
+                            className={`h-full rounded-full transition-all ${
+                              session.contextUsagePercent > 80
+                                ? 'bg-red-500'
+                                : session.contextUsagePercent > 60
+                                  ? 'bg-yellow-500'
+                                  : 'bg-green-500'
+                            }`}
+                            style={{ width: `${session.contextUsagePercent}%` }}
+                          />
+                        </div>
+                        <p className={`text-xs mt-1 ${theme === 'dark' ? 'text-gray-500' : 'text-gray-400'}`}>
+                          ~{(session.estimatedTokens ?? 0).toLocaleString()} / {(session.contextLimit ?? 0).toLocaleString()} tokens
+                        </p>
+                      </div>
+                    )}
                   </div>
                 </div>
 

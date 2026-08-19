@@ -1,8 +1,14 @@
 import type { ToolDescription, ToolNegotiation, NegotiationConstraints } from '@bab/protocol';
 
-export type IdeTarget = 'cursor' | 'vscode' | 'continue' | 'generic';
+export type IdeTarget = 'cursor' | 'vscode' | 'continue' | 'opencode' | 'generic';
 
 const IDE_SECTIONS: Record<Exclude<IdeTarget, 'generic'>, string> = {
+  opencode: `## Environment: OpenCode
+You are running inside OpenCode, a terminal coding agent. Work autonomously
+through the read → plan → edit → verify loop, use the available tools rather
+than asking the user to run commands, and keep output concise and
+terminal-friendly with minimal markdown noise.`,
+
   cursor: `## Environment: Cursor IDE
 You are running inside Cursor. Respect the project's .cursorrules if present.
 Prefer editing existing files with minimal diffs, read before you edit, and
@@ -24,6 +30,7 @@ export function detectIde(hint: string | undefined | null): IdeTarget {
   const h = (hint ?? '').toLowerCase();
   if (h.includes('cursor')) return 'cursor';
   if (h.includes('continue')) return 'continue';
+  if (h.includes('opencode')) return 'opencode';
   if (h.includes('vscode') || h.includes('visual studio code') || h.includes('code/1.')) return 'vscode';
   return 'generic';
 }

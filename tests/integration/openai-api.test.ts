@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeAll, afterAll } from 'vitest';
+import { describe, it, expect, beforeAll, afterAll, vi } from 'vitest';
 import { createServer } from '@bab/api';
 import { EventBus, Logger, SessionManager, ProviderManager } from '@bab/core';
 import { Runtime } from '@bab/runtime';
@@ -602,6 +602,40 @@ describe('Stage 6: OpenAI API Integration Tests', () => {
     it('should return 404 when exporting an unknown session', async () => {
       const res = await app.request('/v1/sessions/nope/export?format=markdown');
       expect(res.status).toBe(404);
+    });
+  });
+
+  describe('Verbatim Response Cache', () => {
+    it('serves an identical stateless request from the cache', async () => {
+      const sendSpy = vi.spyOn(mockProvider, 'send');
+      const payload = {
+        model: 'mock-ai',
+        messages: [{ role: 'user', content: 'cache me please' }],
+      };
+
+      const first = await app.request('/v1/chat/completions', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      });
+      const firstBody = await first.json();
+      expect(firstBody.cached).toBeUndefined();
+
+      const callsAfterFirst = sendSpy.mock.calls.length;
+
+      const second = await app.request('/v1/chat/completions', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      });
+      const secondBody = await second.json();
+
+      expect(second.status).toBe(200);
+      expect(secondBody.cached).toBe(true);
+      expect(secondBody.choices[0].message.content).toBe(firstBody.choices[0].message.content);
+      expect(sendSpy.mock.calls.length).toBe(callsAfterFirst);
+
+      sendSpy.mockRestore();
     });
   });
 

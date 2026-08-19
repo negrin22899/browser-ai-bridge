@@ -19,6 +19,9 @@ export { ProviderManager } from './provider-manager.js';
 // Routing
 export { Router } from './router.js';
 
+// Token estimation
+export { estimateTokens, estimateMessageTokens } from './tokenizer.js';
+
 // Recording & Replay
 export { Recorder } from './recorder.js';
 export type { RecordedAction, RecordingSession } from './recorder.js';

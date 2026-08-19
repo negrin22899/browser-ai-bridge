@@ -1,4 +1,5 @@
 import type { Message } from '@bab/protocol';
+import { estimateMessageTokens, DEFAULT_CONTEXT_LIMIT } from './tokenizer.js';
 
 export interface SessionConfig {
   id: string;
@@ -38,6 +39,11 @@ export class Session {
     return this.messages.length;
   }
 
+  /** Rough token estimate of the whole conversation history. */
+  estimateTokens(): number {
+    return estimateMessageTokens(this.messages);
+  }
+
   addMessage(message: Message): void {
     this.messages.push(message);
     this._updatedAt = Date.now();
@@ -73,6 +79,12 @@ export class Session {
       createdAt: this.createdAt,
       updatedAt: this._updatedAt,
       messageCount: this.messageCount,
+      estimatedTokens: this.estimateTokens(),
+      contextLimit: DEFAULT_CONTEXT_LIMIT,
+      contextUsagePercent: Math.min(
+        100,
+        Math.round((this.estimateTokens() / DEFAULT_CONTEXT_LIMIT) * 100)
+      ),
       metadata: this.metadata,
       ...(includeMessages ? { messages: this.getMessages() } : {}),
     };

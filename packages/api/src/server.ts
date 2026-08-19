@@ -8,6 +8,7 @@ import type { Runtime } from '@bab/runtime';
 import type {
   ChatCompletionChunk,
   ChatCompletionRequest,
+  ChatCompletionResponse,
   Message,
   Provider,
   ToolScope,
@@ -17,6 +18,7 @@ import { redactString } from './redaction.js';
 import { RequestValidator } from './validation.js';
 import { runToolLoop, runToolLoopStream } from './tool-loop.js';
 import { ConfigStore } from './config-store.js';
+import { ResponseCache } from './response-cache.js';
 import { MetricsCollector, createRequestMetrics } from './metrics.js';
 
 interface ServerDeps {
@@ -30,6 +32,7 @@ interface ServerDeps {
   metrics?: MetricsCollector;
   rateLimiter?: RateLimiter;
   validator?: RequestValidator;
+  responseCache?: ResponseCache;
 }
 
 export function createServer(deps: ServerDeps): Hono {
@@ -40,6 +43,7 @@ export function createServer(deps: ServerDeps): Hono {
   const configStore = deps.configStore ?? new ConfigStore();
   const metrics = deps.metrics ?? new MetricsCollector();
   const metricsHelpers = createRequestMetrics(metrics);
+  const responseCache = deps.responseCache ?? new ResponseCache();
 
   // CORS
   app.use('*', cors({
@@ -220,6 +224,21 @@ export function createServer(deps: ServerDeps): Hono {
         return streamResponse(provider, body, logger);
       }
 
+      // Verbatim cache is only valid for stateless API providers — browser
+      // providers keep conversation state in the DOM, so caching them would
+      // return stale answers.
+      const cacheKey = !body.stream && provider.type === 'api'
+        ? responseCache.keyFor(provider.id, body.model, body.messages)
+        : null;
+
+      if (cacheKey) {
+        const hit = responseCache.get(cacheKey);
+        if (hit) {
+          eventBus?.emit('request.completed', { requestId, duration: Date.now() - startedAt });
+          return c.json({ ...hit, session_id: session.id, cached: true });
+        }
+      }
+
       try {
         const response = deps.runtime
           ? await runToolLoop(provider, deps.runtime, logger, body, session.id, {
@@ -230,6 +249,10 @@ export function createServer(deps: ServerDeps): Hono {
 
         if (response.choices[0]?.message && !deps.runtime) {
           session.addMessage(response.choices[0].message);
+        }
+
+        if (cacheKey && !hasToolCalls(response)) {
+          responseCache.set(cacheKey, response);
         }
 
         eventBus?.emit('request.completed', { requestId, duration: Date.now() - startedAt });
@@ -252,6 +275,13 @@ export function createServer(deps: ServerDeps): Hono {
           providerId = fallbackProvider.id;
           metricsHelpers.recordProviderRequest(fallbackProvider.id);
 
+          const fallbackCacheKey = responseCache.keyFor(provider.id, body.model, body.messages);
+          const cachedHit = responseCache.get(fallbackCacheKey);
+          if (cachedHit) {
+            eventBus?.emit('request.completed', { requestId, duration: Date.now() - startedAt });
+            return c.json({ ...cachedHit, session_id: session.id, cached: true });
+          }
+
           const fallbackResponse = deps.runtime
             ? await runToolLoop(provider, deps.runtime, logger, body, session.id, {
                 onMessage: (m) => session.addMessage(m),
@@ -261,6 +291,10 @@ export function createServer(deps: ServerDeps): Hono {
 
           if (fallbackResponse.choices[0]?.message && !deps.runtime) {
             session.addMessage(fallbackResponse.choices[0].message);
+          }
+
+          if (!hasToolCalls(fallbackResponse)) {
+            responseCache.set(fallbackCacheKey, fallbackResponse);
           }
 
           eventBus?.emit('request.completed', { requestId, duration: Date.now() - startedAt });
@@ -637,6 +671,11 @@ export function createServer(deps: ServerDeps): Hono {
   });
 
   return app;
+}
+
+function hasToolCalls(response: ChatCompletionResponse): boolean {
+  const message = response.choices[0]?.message;
+  return !!message?.tool_calls && message.tool_calls.length > 0;
 }
 
 // ── Streaming ──────────────────────────────────────────────────

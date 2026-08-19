@@ -45,6 +45,9 @@ export interface Session {
   createdAt: number;
   updatedAt?: number;
   messageCount?: number;
+  estimatedTokens?: number;
+  contextLimit?: number;
+  contextUsagePercent?: number;
   messages: Array<{ role: string; content: string }>;
 }
 
