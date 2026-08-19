@@ -19,6 +19,7 @@ import { RequestValidator } from './validation.js';
 import { runToolLoop, runToolLoopStream } from './tool-loop.js';
 import { ConfigStore } from './config-store.js';
 import { ResponseCache } from './response-cache.js';
+import { computeReliability } from './provider-reliability.js';
 import { MetricsCollector, createRequestMetrics } from './metrics.js';
 
 interface ServerDeps {
@@ -112,6 +113,7 @@ export function createServer(deps: ServerDeps): Hono {
         type: p.type,
         status: p.status,
         capabilities: p.getCapabilities?.() ?? {},
+        reliability: computeReliability(metrics, p.id),
       })),
     });
   });
@@ -151,6 +153,22 @@ export function createServer(deps: ServerDeps): Hono {
         provider = providerManager.get(body.model) ?? providerManager.getActive();
       } catch {
         return c.json({ error: { message: 'No provider available' } }, 503);
+      }
+
+      // Auto-select: if the requested provider is in an error state, route to
+      // the most reliable connected provider instead of failing the request.
+      if (provider.status === 'error') {
+        const healthy = providerManager
+          .list()
+          .filter((p) => p.status === 'connected')
+          .sort((a, b) => computeReliability(metrics, b.id).score - computeReliability(metrics, a.id).score);
+        if (healthy.length > 0) {
+          logger.warn('Provider in error state, auto-selecting a healthy provider', {
+            requested: provider.id,
+            selected: healthy[0].id,
+          });
+          provider = healthy[0];
+        }
       }
 
       providerId = provider.id;
