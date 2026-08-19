@@ -1,6 +1,6 @@
 {
   "name": "@bab/cli",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "description": "CLI for Browser AI Bridge - Use browser AI in your local environment",
   "main": "dist/index.js",
   "bin": {
