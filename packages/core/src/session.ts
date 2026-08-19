@@ -65,7 +65,7 @@ export class Session {
     this._updatedAt = Date.now();
   }
 
-  toJSON(): object {
+  toJSON(includeMessages = false): object {
     return {
       id: this.id,
       providerId: this.providerId,
@@ -74,6 +74,41 @@ export class Session {
       updatedAt: this._updatedAt,
       messageCount: this.messageCount,
       metadata: this.metadata,
+      ...(includeMessages ? { messages: this.getMessages() } : {}),
     };
+  }
+
+  /**
+   * Render the conversation as markdown for export.
+   */
+  toMarkdown(): string {
+    const lines: string[] = [
+      `# Session ${this.id}`,
+      '',
+      `- Provider: ${this.providerId}`,
+      `- Model: ${this.model ?? 'n/a'}`,
+      `- Created: ${new Date(this.createdAt).toISOString()}`,
+      `- Updated: ${new Date(this._updatedAt).toISOString()}`,
+      '',
+    ];
+
+    for (const message of this.messages) {
+      const role = message.role === 'assistant' ? '🤖 Assistant' : message.role === 'system' ? '⚙️ System' : '👤 User';
+      lines.push(`## ${role}`);
+      lines.push('');
+      lines.push(message.content ?? '');
+      lines.push('');
+
+      if (message.tool_calls && message.tool_calls.length > 0) {
+        lines.push('**Tool calls:**');
+        lines.push('');
+        lines.push('```json');
+        lines.push(JSON.stringify(message.tool_calls, null, 2));
+        lines.push('```');
+        lines.push('');
+      }
+    }
+
+    return lines.join('\n');
   }
 }

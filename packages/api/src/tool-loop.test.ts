@@ -4,6 +4,7 @@ import {
   runToolLoopStream,
   extractToolCalls,
   parseActionsJson,
+  looksLikeBrokenActions,
 } from './tool-loop.js';
 import type { Logger } from '@bab/core';
 import type {
@@ -73,6 +74,24 @@ describe('parseActionsJson', () => {
 
   it('returns empty array for prose without actions', () => {
     expect(parseActionsJson('Here is the answer.')).toEqual([]);
+  });
+});
+
+describe('looksLikeBrokenActions', () => {
+  it('detects truncated actions JSON', () => {
+    expect(looksLikeBrokenActions('{"actions":[{"tool":"fs.read","params":{"path":"pac')).toBe(true);
+  });
+
+  it('detects actions key without valid JSON', () => {
+    expect(looksLikeBrokenActions('I will do: "actions" with "tool" fs.read')).toBe(true);
+  });
+
+  it('returns false for plain prose', () => {
+    expect(looksLikeBrokenActions('Here is the final answer.')).toBe(false);
+  });
+
+  it('returns false for valid actions JSON', () => {
+    expect(looksLikeBrokenActions('{"actions":[{"tool":"fs.read","params":{}}]}')).toBe(false);
   });
 });
 
@@ -237,6 +256,106 @@ describe('runToolLoopStream', () => {
 });
 
 describe('runToolLoop', () => {
+  it('retries when the provider returns malformed actions JSON', async () => {
+    const provider = makeProvider([
+      {
+        id: 'resp-1',
+        object: 'chat.completion',
+        created: 1,
+        model: 'mock',
+        choices: [
+          {
+            index: 0,
+            message: {
+              role: 'assistant',
+              content: '{"actions":[{"tool":"fs.read","params":{"path":"pac',
+            },
+            finish_reason: 'stop',
+          },
+        ],
+      },
+      {
+        id: 'resp-2',
+        object: 'chat.completion',
+        created: 2,
+        model: 'mock',
+        choices: [
+          {
+            index: 0,
+            message: {
+              role: 'assistant',
+              content: null,
+              tool_calls: [
+                {
+                  id: 'call-1',
+                  type: 'function',
+                  function: { name: 'fs.read', arguments: '{"path":"package.json"}' },
+                },
+              ],
+            },
+            finish_reason: 'tool_calls',
+          },
+        ],
+      },
+      {
+        id: 'resp-3',
+        object: 'chat.completion',
+        created: 3,
+        model: 'mock',
+        choices: [
+          {
+            index: 0,
+            message: { role: 'assistant', content: 'Recovered!' },
+            finish_reason: 'stop',
+          },
+        ],
+      },
+    ]);
+
+    const executed: string[] = [];
+    const runtime = makeRuntime((name) => {
+      executed.push(name);
+      return { success: true, output: 'ok' };
+    });
+
+    const response = await runToolLoop(provider, runtime, makeLogger(), {
+      model: 'mock',
+      messages: [{ role: 'user', content: 'Read package.json' }],
+    }, 'session-1');
+
+    expect(executed).toEqual(['fs.read']);
+    expect(response.choices[0].message.content).toBe('Recovered!');
+  });
+
+  it('gives up repairing after the retry limit and returns the broken answer', async () => {
+    const broken = {
+      id: 'resp-1',
+      object: 'chat.completion',
+      created: 1,
+      model: 'mock',
+      choices: [
+        {
+          index: 0,
+          message: { role: 'assistant', content: '{"actions":[{"tool":"fs.read"' },
+          finish_reason: 'stop',
+        },
+      ],
+    };
+    const provider = makeProvider([broken, broken, broken, broken]);
+
+    const runtime = makeRuntime(() => {
+      throw new Error('should not execute');
+    });
+
+    const response = await runToolLoop(provider, runtime, makeLogger(), {
+      model: 'mock',
+      messages: [{ role: 'user', content: 'Read package.json' }],
+    }, 'session-1');
+
+    // After MAX_JSON_REPAIRS the loop stops repairing and returns the last answer.
+    expect(response.choices[0].message.content).toContain('"actions"');
+  });
+
   it('returns the response unchanged when there are no tool calls', async () => {
     const provider = makeProvider([
       {

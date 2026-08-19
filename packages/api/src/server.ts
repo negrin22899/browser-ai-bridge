@@ -138,13 +138,27 @@ export function createServer(deps: ServerDeps): Hono {
         body.messages.unshift({ role: 'system', content: systemPrompt });
       }
 
-      // Create or get session
+      // Create or get session. Clients may pass `session_id` to continue
+      // an existing conversation history.
       let session;
-      try {
-        session = sessionManager.getActive();
-      } catch {
-        session = sessionManager.create(provider.id, body.model);
+      const requestedSessionId = (body as { session_id?: string; sessionId?: string }).session_id
+        ?? (body as { sessionId?: string }).sessionId;
+      if (requestedSessionId) {
+        session = sessionManager.get(requestedSessionId);
+        if (!session) {
+          return c.json({ error: { message: 'Session not found' } }, 404);
+        }
+        sessionManager.setActive(requestedSessionId);
+      } else {
+        try {
+          session = sessionManager.getActive();
+        } catch {
+          session = sessionManager.create(provider.id, body.model);
+        }
       }
+
+      // Expose the session id so clients can continue the conversation.
+      c.header('X-Session-Id', session.id);
 
       const userMessage = body.messages[body.messages.length - 1];
       if (userMessage) {
@@ -175,7 +189,7 @@ export function createServer(deps: ServerDeps): Hono {
         session.addMessage(response.choices[0].message);
       }
 
-      return c.json(response);
+      return c.json({ ...response, session_id: session.id });
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : 'Internal server error';
       metricsHelpers.recordError(errorMessage);
@@ -268,7 +282,32 @@ export function createServer(deps: ServerDeps): Hono {
     if (!session) {
       return c.json({ error: { message: 'Session not found' } }, 404);
     }
-    return c.json(session.toJSON());
+    // Include the full message history in the detail view.
+    return c.json(session.toJSON(true));
+  });
+
+  // Export a session's history as markdown or JSON.
+  app.get('/v1/sessions/:id/export', (c) => {
+    const id = c.req.param('id');
+    const session = sessionManager.get(id);
+    if (!session) {
+      return c.json({ error: { message: 'Session not found' } }, 404);
+    }
+
+    const format = (c.req.query('format') ?? 'markdown').toLowerCase();
+    const safeId = id.replace(/[^a-zA-Z0-9_-]/g, '');
+
+    if (format === 'json') {
+      return c.text(JSON.stringify(session.toJSON(true), null, 2), 200, {
+        'Content-Type': 'application/json',
+        'Content-Disposition': `attachment; filename="bab-session-${safeId}.json"`,
+      });
+    }
+
+    return c.text(session.toMarkdown(), 200, {
+      'Content-Type': 'text/markdown',
+      'Content-Disposition': `attachment; filename="bab-session-${safeId}.md"`,
+    });
   });
 
   app.delete('/v1/sessions/:id', (c) => {

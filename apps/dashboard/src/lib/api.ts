@@ -43,6 +43,8 @@ export interface Session {
   providerId: string;
   model: string;
   createdAt: number;
+  updatedAt?: number;
+  messageCount?: number;
   messages: Array<{ role: string; content: string }>;
 }
 
@@ -66,6 +68,8 @@ export interface ChatCompletionRequest {
   model: string;
   messages: ChatMessage[];
   stream?: boolean;
+  /** Continue an existing session instead of creating a new one. */
+  sessionId?: string;
 }
 
 export interface ChatCompletionResponse {
@@ -172,12 +176,60 @@ export const api = {
     return request(`/v1/sessions/${id}`, { method: 'DELETE' });
   },
 
+  async exportSession(id: string, format: 'markdown' | 'json'): Promise<string> {
+    const url = `${API_BASE}/v1/sessions/${id}/export?format=${format}`;
+    const response = await fetch(url);
+    if (!response.ok) {
+      throw new Error(`Export failed: ${response.status}`);
+    }
+    return response.text();
+  },
+
+  /** Trigger a browser download of the exported session. */
+  async downloadSession(id: string, format: 'markdown' | 'json'): Promise<void> {
+    const content = await this.exportSession(id, format);
+    const ext = format === 'json' ? 'json' : 'md';
+    const blob = new Blob([content], {
+      type: format === 'json' ? 'application/json' : 'text/markdown',
+    });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `bab-session-${id.slice(0, 8)}.${ext}`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  },
+
   // Chat
   async chat(request_body: ChatCompletionRequest): Promise<ChatCompletionResponse> {
     return request('/v1/chat/completions', {
       method: 'POST',
       body: JSON.stringify(request_body),
     });
+  },
+
+  /** Chat + the server-side session id so the conversation can be continued. */
+  async chatWithMeta(request_body: ChatCompletionRequest): Promise<{
+    response: ChatCompletionResponse;
+    sessionId?: string;
+  }> {
+    const url = `${API_BASE}/v1/chat/completions`;
+    const res = await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(request_body),
+    });
+    if (!res.ok) {
+      const error = await res.json().catch(() => ({ error: { message: res.statusText } }));
+      throw new Error(error.error?.message || `API error: ${res.status}`);
+    }
+    const response: ChatCompletionResponse = await res.json();
+    return {
+      response,
+      sessionId: res.headers.get('X-Session-Id') ?? undefined,
+    };
   },
 
   async *chatStream(request_body: ChatCompletionRequest): AsyncGenerator<string> {

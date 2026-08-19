@@ -1,13 +1,18 @@
 import type { LoggingConfig } from '@bab/protocol';
+import * as fs from 'node:fs';
+import * as path from 'node:path';
 
 interface LoggerOptions extends LoggingConfig {
   context?: string;
+  /** Optional file path — every log line is appended there too. */
+  filePath?: string;
 }
 
 export class Logger {
   private level: LoggingConfig['level'];
   private format: LoggingConfig['format'];
   private context?: string;
+  private filePath?: string;
 
   private levels: Record<string, number> = {
     debug: 0,
@@ -20,6 +25,7 @@ export class Logger {
     this.level = options.level;
     this.format = options.format;
     this.context = options.context;
+    this.filePath = options.filePath;
   }
 
   child(name: string): Logger {
@@ -70,6 +76,8 @@ export class Logger {
     } else {
       console.log(output);
     }
+
+    this.writeToFile(output);
   }
 
   private logJson(level: string, message: string, data?: Record<string, unknown>): void {
@@ -81,10 +89,23 @@ export class Logger {
       ...data,
     };
 
+    const output = JSON.stringify(entry);
     if (level === 'error') {
-      console.error(JSON.stringify(entry));
+      console.error(output);
     } else {
-      console.log(JSON.stringify(entry));
+      console.log(output);
+    }
+
+    this.writeToFile(output);
+  }
+
+  private writeToFile(line: string): void {
+    if (!this.filePath) return;
+    try {
+      fs.mkdirSync(path.dirname(this.filePath), { recursive: true });
+      fs.appendFileSync(this.filePath, line + '\n');
+    } catch {
+      // Logging must never crash the process.
     }
   }
 }

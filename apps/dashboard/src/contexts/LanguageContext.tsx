@@ -59,6 +59,19 @@ const translations: Record<Language, Record<string, string>> = {
     'integrations.search': 'Search integrations...',
     'integrations.connect': 'Connect',
 
+    // Chat
+    'chat.title': 'Chat',
+    'chat.subtitle': 'Talk to your browser AI',
+    'chat.placeholder': 'Type a message...',
+    'chat.thinking': 'Thinking...',
+    'chat.quickActions': 'Quick actions:',
+    'chat.readFile': 'Read a file',
+    'chat.gitStatus': 'Git status',
+    'chat.runCommand': 'Run a command',
+    'chat.history': 'History',
+    'chat.noHistory': 'No history yet',
+    'chat.new': 'New chat',
+
     // Sessions
     'sessions.title': 'Sessions',
     'sessions.subtitle': 'Manage conversation sessions',
@@ -206,6 +219,19 @@ const translations: Record<Language, Record<string, string>> = {
     'integrations.apiKeys': 'Использовано API-ключей',
     'integrations.search': 'Поиск интеграций...',
     'integrations.connect': 'Подключить',
+
+    // Chat
+    'chat.title': 'Чат',
+    'chat.subtitle': 'Общение с твоим браузерным AI',
+    'chat.placeholder': 'Напиши сообщение...',
+    'chat.thinking': 'Думаю...',
+    'chat.quickActions': 'Быстрые действия:',
+    'chat.readFile': 'Прочитать файл',
+    'chat.gitStatus': 'Статус git',
+    'chat.runCommand': 'Выполнить команду',
+    'chat.history': 'История',
+    'chat.noHistory': 'Истории пока нет',
+    'chat.new': 'Новый чат',
 
     // Sessions
     'sessions.title': 'Сессии',

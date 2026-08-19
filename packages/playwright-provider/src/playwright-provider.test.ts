@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { PlaywrightProvider } from './playwright-provider.js';
+import { ProviderBlockError } from './stream-parsers.js';
 import type { PlaywrightAdapter } from './playwright-adapter.js';
 
 // Mock Playwright so connect() resolves without a real browser
@@ -130,6 +131,54 @@ describe('PlaywrightProvider', () => {
       await provider.disconnect();
 
       expect(provider.status).toBe('disconnected');
+    });
+  });
+
+  describe('Block detection', () => {
+    it('records a provider block and surfaces it in health()', async () => {
+      const blockAdapter = {
+        ...adapter,
+        readResponse: vi.fn().mockRejectedValue(
+          new ProviderBlockError('auth_required', 'Provider blocked the request (auth_required)')
+        ),
+      } as unknown as PlaywrightAdapter;
+
+      const blocked = new PlaywrightProvider({ id: 'blocked', name: 'Blocked', adapter: blockAdapter });
+      await blocked.connect();
+
+      await expect(
+        blocked.send({ model: 'blocked', messages: [{ role: 'user', content: 'hi' }] })
+      ).rejects.toThrow(ProviderBlockError);
+
+      expect(blocked.getBlockError()).toBe('auth_required');
+
+      const health = await blocked.health();
+      expect(health.healthy).toBe(false);
+      expect(health.details?.blockError).toBe('auth_required');
+      expect(health.error).toContain('Authentication required');
+    });
+
+    it('clears the block after a successful send', async () => {
+      const blockAdapter = {
+        ...adapter,
+        readResponse: vi
+          .fn()
+          .mockRejectedValueOnce(new ProviderBlockError('rate_limited', 'blocked'))
+          .mockResolvedValueOnce('Recovered'),
+      } as unknown as PlaywrightAdapter;
+
+      const provider2 = new PlaywrightProvider({ id: 'p2', name: 'P2', adapter: blockAdapter });
+      await provider2.connect();
+
+      await expect(
+        provider2.send({ model: 'p2', messages: [{ role: 'user', content: 'hi' }] })
+      ).rejects.toThrow(ProviderBlockError);
+      expect(provider2.getBlockError()).toBe('rate_limited');
+
+      await provider2.connect();
+      const response = await provider2.send({ model: 'p2', messages: [{ role: 'user', content: 'hi again' }] });
+      expect(response.choices[0].message.content).toBe('Recovered');
+      expect(provider2.getBlockError()).toBeNull();
     });
   });
 });

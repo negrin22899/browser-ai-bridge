@@ -479,6 +479,131 @@ describe('Stage 6: OpenAI API Integration Tests', () => {
     });
   });
 
+  describe('Session History & Export', () => {
+    it('should include messages in session detail', async () => {
+      const created = await app.request('/v1/sessions', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ providerId: 'mock-ai', model: 'mock-model' }),
+      });
+      const session = await created.json();
+
+      const res = await app.request(`/v1/sessions/${session.id}`);
+      expect(res.status).toBe(200);
+      const detail = await res.json();
+      expect(Array.isArray(detail.messages)).toBe(true);
+    });
+
+    it('should return the session id for continuation', async () => {
+      const res = await app.request('/v1/chat/completions', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          model: 'mock-ai',
+          messages: [{ role: 'user', content: 'first message' }],
+        }),
+      });
+
+      expect(res.status).toBe(200);
+      const body = await res.json();
+      expect(typeof body.session_id).toBe('string');
+      expect(res.headers.get('X-Session-Id')).toBe(body.session_id);
+    });
+
+    it('should continue an existing session via session_id', async () => {
+      const created = await app.request('/v1/sessions', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ providerId: 'mock-ai', model: 'mock-model' }),
+      });
+      const sessionId = (await created.json()).id;
+
+      const first = await app.request('/v1/chat/completions', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          model: 'mock-ai',
+          session_id: sessionId,
+          messages: [{ role: 'user', content: 'session A' }],
+        }),
+      });
+      expect(first.status).toBe(200);
+      expect((await first.json()).session_id).toBe(sessionId);
+
+      const second = await app.request('/v1/chat/completions', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          model: 'mock-ai',
+          session_id: sessionId,
+          messages: [{ role: 'user', content: 'session B' }],
+        }),
+      });
+      expect(second.status).toBe(200);
+      expect((await second.json()).session_id).toBe(sessionId);
+
+      const detail = await (await app.request(`/v1/sessions/${sessionId}`)).json();
+      const contents = detail.messages
+        .map((m: { content: string | null }) => m.content)
+        .filter((c: string | null): c is string => typeof c === 'string');
+      expect(contents.some((c) => c.includes('session A'))).toBe(true);
+      expect(contents.some((c) => c.includes('session B'))).toBe(true);
+    });
+
+    it('should return 404 when continuing an unknown session', async () => {
+      const res = await app.request('/v1/chat/completions', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          model: 'mock-ai',
+          session_id: 'does-not-exist',
+          messages: [{ role: 'user', content: 'hi' }],
+        }),
+      });
+      expect(res.status).toBe(404);
+    });
+
+    it('should export a session as markdown', async () => {
+      const created = await app.request('/v1/sessions', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ providerId: 'mock-ai', model: 'mock-model' }),
+      });
+      const session = await created.json();
+
+      const res = await app.request(`/v1/sessions/${session.id}/export?format=markdown`);
+      expect(res.status).toBe(200);
+      expect(res.headers.get('content-type')).toContain('text/markdown');
+      expect(res.headers.get('content-disposition')).toContain('attachment');
+
+      const text = await res.text();
+      expect(text).toContain('# Session');
+      expect(text).toContain('mock-ai');
+    });
+
+    it('should export a session as JSON', async () => {
+      const created = await app.request('/v1/sessions', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ providerId: 'mock-ai', model: 'mock-model' }),
+      });
+      const session = await created.json();
+
+      const res = await app.request(`/v1/sessions/${session.id}/export?format=json`);
+      expect(res.status).toBe(200);
+      expect(res.headers.get('content-type')).toContain('application/json');
+
+      const parsed = JSON.parse(await res.text());
+      expect(parsed.id).toBe(session.id);
+      expect(Array.isArray(parsed.messages)).toBe(true);
+    });
+
+    it('should return 404 when exporting an unknown session', async () => {
+      const res = await app.request('/v1/sessions/nope/export?format=markdown');
+      expect(res.status).toBe(404);
+    });
+  });
+
   describe('Runtime - Auto-approve Tools', () => {
     it('should execute fs.read (auto-approve)', async () => {
       const result = await runtime.executeTool('fs.read', { path: 'package.json' }, 'test-auto');

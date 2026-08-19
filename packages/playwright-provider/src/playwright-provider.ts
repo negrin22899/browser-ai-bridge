@@ -19,6 +19,7 @@ import type { BrowserSession } from './browser-session.js';
 import { withRetry, withConnectionRetry } from './retry-logic.js';
 import { CDPClient } from './cdp-client.js';
 import { CdpTokenStream } from './stream-interceptor.js';
+import { ProviderBlockError, type BlockErrorCode } from './stream-parsers.js';
 
 export interface PlaywrightProviderOptions {
   id: string;
@@ -49,6 +50,7 @@ export class PlaywrightProvider implements Provider {
   private useExistingProfile: boolean;
   private userDataDir?: string;
   private cdpPort: number;
+  private blockError: BlockErrorCode | null = null;
 
   constructor(options: PlaywrightProviderOptions) {
     this.id = options.id;
@@ -291,6 +293,7 @@ export class PlaywrightProvider implements Provider {
         responseText = await this.adapter.readResponse(session);
       }
 
+      this.blockError = null;
       this._status = 'connected';
 
       return {
@@ -306,6 +309,9 @@ export class PlaywrightProvider implements Provider {
       };
     } catch (error) {
       this._status = 'error';
+      if (error instanceof ProviderBlockError) {
+        this.blockError = error.code;
+      }
       throw error;
     }
   }
@@ -382,6 +388,7 @@ export class PlaywrightProvider implements Provider {
               yield makeChunk(token);
             }
             yield finalChunk;
+            this.blockError = null;
             this._status = 'connected';
             return;
           }
@@ -397,15 +404,31 @@ export class PlaywrightProvider implements Provider {
 
       yield finalChunk;
 
+      this.blockError = null;
       this._status = 'connected';
     } catch (error) {
       this._status = 'error';
+      if (error instanceof ProviderBlockError) {
+        this.blockError = error.code;
+      }
       throw error;
     }
   }
 
   async health(): Promise<HealthCheckResult> {
     try {
+      // A block (auth/rate-limit/CAPTCHA) is an explicit, actionable failure.
+      if (this.blockError) {
+        return {
+          healthy: false,
+          error: blockErrorMessage(this.blockError),
+          details: {
+            status: this._status,
+            blockError: this.blockError,
+          },
+        };
+      }
+
       if (this._status === 'disconnected') {
         return {
           healthy: false,
@@ -467,6 +490,11 @@ export class PlaywrightProvider implements Provider {
     return this.session;
   }
 
+  /** Last detected block code (auth_required/rate_limited/captcha), if any. */
+  getBlockError(): BlockErrorCode | null {
+    return this.blockError;
+  }
+
   /**
    * Attach CDP network interception for the provider's native SSE stream.
    * Returns null when CDP is unavailable or the provider has no stream config.
@@ -497,5 +525,18 @@ export class PlaywrightProvider implements Provider {
     } catch {
       return null;
     }
+  }
+}
+
+function blockErrorMessage(code: BlockErrorCode): string {
+  switch (code) {
+    case 'auth_required':
+      return 'Authentication required — re-login in the browser';
+    case 'rate_limited':
+      return 'Rate limited by provider';
+    case 'captcha':
+      return 'CAPTCHA challenge detected';
+    default:
+      return 'Provider blocked the request';
   }
 }

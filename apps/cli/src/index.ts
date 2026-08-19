@@ -2,6 +2,7 @@
 
 import { Command } from 'commander';
 import * as os from 'node:os';
+import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { createServer, runToolLoop, StatePersistence } from '@bab/api';
 import { ProviderManager, SessionManager, EventBus, Logger } from '@bab/core';
@@ -153,6 +154,38 @@ program
 
 // ── Serve ────────────────────────────────────────────────────────
 
+function logFilePath(): string {
+  const date = new Date().toISOString().slice(0, 10);
+  return path.join(os.homedir(), '.browser-ai-bridge', 'logs', `bab-${date}.log`);
+}
+
+function crashDir(): string {
+  return path.join(os.homedir(), '.browser-ai-bridge', 'crashes');
+}
+
+function writeCrashReport(kind: 'exception' | 'rejection', error: unknown): string {
+  try {
+    const dir = crashDir();
+    fs.mkdirSync(dir, { recursive: true });
+    const err = error instanceof Error ? error : new Error(String(error));
+    const report = {
+      kind,
+      timestamp: new Date().toISOString(),
+      name: err.name,
+      message: err.message,
+      stack: err.stack,
+      node: process.version,
+      platform: process.platform,
+      arch: process.arch,
+    };
+    const filepath = path.join(dir, `crash-${Date.now()}.json`);
+    fs.writeFileSync(filepath, JSON.stringify(report, null, 2));
+    return filepath;
+  } catch {
+    return '';
+  }
+}
+
 program
   .command('serve')
   .description('Start the API server')
@@ -167,7 +200,12 @@ program
   .option('--interactive', 'Prompt for permission decisions via the API instead of denying immediately')
   .action(async (options) => {
     const eventBus = new EventBus();
-    const logger = new Logger({ level: 'info', format: 'text', context: 'CLI' });
+    const logger = new Logger({
+      level: 'info',
+      format: 'text',
+      context: 'CLI',
+      filePath: logFilePath(),
+    });
     const sessionManager = new SessionManager(eventBus);
     const providerManager = new ProviderManager(eventBus);
     const promptEngine = new PromptEngine();
@@ -265,12 +303,16 @@ program
     process.on('SIGTERM', shutdown);
     process.on('uncaughtException', (error) => {
       logger.error('Uncaught exception', { error: error.message });
+      const report = writeCrashReport('exception', error);
+      if (report) logger.info('Crash report saved', { path: report });
       void shutdown();
     });
     process.on('unhandledRejection', (reason) => {
       logger.error('Unhandled rejection', {
         error: reason instanceof Error ? reason.message : String(reason),
       });
+      const report = writeCrashReport('rejection', reason);
+      if (report) logger.info('Crash report saved', { path: report });
     });
   });
 

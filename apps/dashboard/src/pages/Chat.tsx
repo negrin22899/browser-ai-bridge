@@ -13,10 +13,12 @@ import {
   CheckCircle,
   XCircle,
   Loader2,
+  History,
+  Plus,
 } from 'lucide-react';
 import { useTheme } from '../contexts/ThemeContext';
 import { useLanguage } from '../contexts/LanguageContext';
-import { api, type Provider } from '../lib/api';
+import { api, type Provider, type Session } from '../lib/api';
 
 interface Message {
   id: string;
@@ -49,6 +51,9 @@ export default function Chat() {
   const [selectedProvider, setSelectedProvider] = useState('gemini');
   const [isLoading, setIsLoading] = useState(false);
   const [providers, setProviders] = useState<Provider[]>([]);
+  const [sessions, setSessions] = useState<Session[]>([]);
+  const [historyOpen, setHistoryOpen] = useState(false);
+  const [currentSessionId, setCurrentSessionId] = useState<string | null>(null);
 
   // Load real providers from API
   useEffect(() => {
@@ -74,7 +79,47 @@ export default function Chat() {
       }
     }
     loadProviders();
+    loadSessions();
   }, []);
+
+  async function loadSessions() {
+    try {
+      const data = await api.getSessions();
+      setSessions(data.data || []);
+    } catch {
+      // Ignore — history is optional.
+    }
+  }
+
+  const loadHistory = async (sessionId: string) => {
+    try {
+      const session = await api.getSession(sessionId);
+      const history: Message[] = (session.messages || []).map((m, i) => ({
+        id: `${sessionId}-${i}`,
+        role: m.role as Message['role'],
+        content: m.content ?? '',
+        timestamp: new Date(),
+      }));
+      setMessages(history.length > 0 ? history : messages);
+      setCurrentSessionId(sessionId);
+      setSelectedProvider(session.providerId || selectedProvider);
+      setHistoryOpen(false);
+    } catch {
+      // Ignore load errors.
+    }
+  };
+
+  const newChat = () => {
+    setCurrentSessionId(null);
+    setMessages([
+      {
+        id: Date.now().toString(),
+        role: 'system',
+        content: 'Welcome! I can help you with file operations, git commands, and more. Just ask!',
+        timestamp: new Date(),
+      },
+    ]);
+  };
 
   const getProviderIcon = (id: string) => {
     switch (id) {
@@ -101,11 +146,18 @@ export default function Chat() {
     setIsLoading(true);
 
     try {
-      // Call real API
-      const response = await api.chat({
+      // Call real API, continuing the loaded history when present.
+      const historyMessages: Array<{ role: 'system' | 'user' | 'assistant'; content: string }> =
+        messages
+          .filter((m) => m.role !== 'system')
+          .map((m) => ({ role: m.role, content: m.content }));
+
+      const { response } = await api.chatWithMeta({
         model: selectedProvider,
+        sessionId: currentSessionId ?? undefined,
         messages: [
           { role: 'system', content: 'You are a helpful assistant. Be concise.' },
+          ...historyMessages,
           { role: 'user', content: userInput },
         ],
       });
@@ -118,6 +170,7 @@ export default function Chat() {
       };
 
       setMessages((prev) => [...prev, assistantMessage]);
+      loadSessions();
     } catch (error) {
       const errorMessage: Message = {
         id: (Date.now() + 1).toString(),
@@ -153,8 +206,76 @@ export default function Chat() {
         </p>
       </div>
 
-      {/* Provider Selection */}
+      {/* Provider Selection + History */}
       <div className="flex gap-2 mb-4">
+        <div className="relative">
+          <button
+            onClick={() => setHistoryOpen((v) => !v)}
+            className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
+              theme === 'dark'
+                ? 'bg-gray-700 text-gray-300 border border-gray-600 hover:bg-gray-600'
+                : 'bg-white text-gray-700 border border-gray-200 hover:bg-gray-50'
+            }`}
+            title="Chat history"
+          >
+            <History className="w-4 h-4" />
+            {t('chat.history')}
+          </button>
+          {historyOpen && (
+            <div className={`absolute left-0 top-12 w-80 z-50 rounded-xl border shadow-lg overflow-hidden ${
+              theme === 'dark' ? 'bg-gray-800 border-gray-700' : 'bg-white border-gray-200'
+            }`}>
+              <div className={`px-4 py-2 text-xs font-semibold uppercase tracking-wide ${
+                theme === 'dark' ? 'text-gray-400 border-b border-gray-700' : 'text-gray-500 border-b border-gray-100'
+              }`}>
+                {t('chat.history')} ({sessions.length})
+              </div>
+              {sessions.length === 0 ? (
+                <div className={`px-4 py-6 text-sm text-center ${theme === 'dark' ? 'text-gray-400' : 'text-gray-500'}`}>
+                  {t('chat.noHistory')}
+                </div>
+              ) : (
+                <div className="max-h-72 overflow-y-auto">
+                  {sessions.map((session) => {
+                    const last = session.messages?.[session.messages.length - 1];
+                    return (
+                      <button
+                        key={session.id}
+                        onClick={() => loadHistory(session.id)}
+                        className={`w-full px-4 py-3 text-left transition-colors ${
+                          currentSessionId === session.id
+                            ? theme === 'dark' ? 'bg-primary-500/10' : 'bg-primary-50'
+                            : theme === 'dark' ? 'hover:bg-gray-700' : 'hover:bg-gray-50'
+                        }`}
+                      >
+                        <div className={`text-sm font-medium ${theme === 'dark' ? 'text-white' : 'text-gray-900'}`}>
+                          {session.providerId.charAt(0).toUpperCase() + session.providerId.slice(1)}
+                          <span className={`ml-2 text-xs font-normal ${theme === 'dark' ? 'text-gray-400' : 'text-gray-500'}`}>
+                            {session.messageCount ?? session.messages?.length ?? 0} msgs
+                          </span>
+                        </div>
+                        <div className={`text-xs truncate mt-0.5 ${theme === 'dark' ? 'text-gray-400' : 'text-gray-500'}`}>
+                          {last ? (last.content || (last as { tool_calls?: unknown }).tool_calls ? '[tool call]' : '(empty)') : '(empty)'}
+                        </div>
+                      </button>
+                    );
+                  })}
+                </div>
+              )}
+              <button
+                onClick={newChat}
+                className={`w-full flex items-center gap-2 px-4 py-2.5 text-sm font-medium border-t transition-colors ${
+                  theme === 'dark'
+                    ? 'text-primary-400 border-gray-700 hover:bg-gray-700'
+                    : 'text-primary-600 border-gray-100 hover:bg-gray-50'
+                }`}
+              >
+                <Plus className="w-4 h-4" />
+                {t('chat.new')}
+              </button>
+            </div>
+          )}
+        </div>
         {providers.map((provider) => {
           const Icon = getProviderIcon(provider.id);
           return (

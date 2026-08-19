@@ -22,6 +22,12 @@ interface Action {
 }
 
 const DEFAULT_MAX_ITERATIONS = 4;
+const MAX_JSON_REPAIRS = 2;
+
+const REPAIR_PROMPT =
+  'Your previous response contained a malformed or truncated JSON actions block. ' +
+  'Reply with either valid JSON in the form {"actions":[{"tool":"...","params":{...}}]} ' +
+  'or your final answer in plain text.';
 
 /**
  * Execute a chat request with a real tool loop.
@@ -41,6 +47,7 @@ export async function runToolLoop(
   const maxIterations = options?.maxIterations ?? DEFAULT_MAX_ITERATIONS;
   const messages: Message[] = [...request.messages];
   let lastResponse: ChatCompletionResponse | null = null;
+  let repairs = 0;
 
   for (let iteration = 0; iteration < maxIterations; iteration++) {
     const response = await provider.send({ ...request, messages });
@@ -53,6 +60,25 @@ export async function runToolLoop(
 
     const calls = extractToolCalls(choice.message);
     if (calls.length === 0) {
+      // The provider sometimes returns truncated/malformed actions JSON (common
+      // on long code edits). Detect it and ask for a clean retry instead of
+      // silently treating it as the final answer.
+      const content = choice.message.content ?? '';
+      if (repairs < MAX_JSON_REPAIRS && looksLikeBrokenActions(content)) {
+        repairs++;
+        logger.warn('Malformed actions JSON detected; requesting a retry', {
+          sessionId,
+          iteration,
+          repairs,
+        });
+        messages.push({ ...choice.message });
+        const repairMessage: Message = { role: 'user', content: REPAIR_PROMPT };
+        messages.push(repairMessage);
+        options?.onMessage?.({ ...choice.message });
+        options?.onMessage?.(repairMessage);
+        continue;
+      }
+
       options?.onMessage?.({ ...choice.message });
       return response;
     }
@@ -259,6 +285,17 @@ function isAction(value: unknown): value is Action {
     value !== null &&
     typeof (value as { tool?: unknown }).tool === 'string'
   );
+}
+
+/**
+ * Heuristic for a response that was *trying* to produce an actions JSON block
+ * but failed to parse (truncated, malformed, or quoted badly). Only used to
+ * trigger a corrective retry, never as a hard signal.
+ */
+export function looksLikeBrokenActions(text: string): boolean {
+  if (!text) return false;
+  if (parseActionsJson(text).length > 0) return false;
+  return text.includes('"actions"') || text.includes('"tool"') || text.includes('{"');
 }
 
 function parseArguments(args: string): Record<string, unknown> {
