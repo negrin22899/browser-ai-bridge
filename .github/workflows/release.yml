@@ -51,6 +51,10 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      - name: Install desktop dependencies
+        working-directory: apps/desktop
+        run: npm ci
+
       - name: Build desktop app
         working-directory: apps/desktop
         run: |

@@ -77,7 +77,12 @@ function getAppPath(): string {
 }
 
 function getCliPath(): string {
-  return path.join(getAppPath(), 'apps', 'cli', 'dist', 'index.js');
+  if (app.isPackaged) {
+    // extraResources maps ../../apps/cli/dist → <resources>/cli
+    return path.join(process.resourcesPath, 'cli', 'index.js');
+  }
+  // Dev: apps/desktop/dist → ../cli/dist/index.js
+  return path.join(getAppPath(), '..', 'cli', 'dist', 'index.js');
 }
 
 // ─── Notifications ───────────────────────────────────────────────
