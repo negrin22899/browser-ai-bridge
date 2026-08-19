@@ -51,6 +51,7 @@
     "@bab/prompt-engine": "*",
     "@bab/runtime": "*",
     "@bab/playwright-provider": "*",
+    "@bab/plugin-sdk": "*",
     "@bab/tools-fs": "*",
     "@bab/tools-git": "*",
     "@bab/tools-shell": "*",

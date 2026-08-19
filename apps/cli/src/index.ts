@@ -10,6 +10,7 @@ import { PromptEngine } from '@bab/prompt-engine';
 import { Runtime } from '@bab/runtime';
 import { PlaywrightProvider } from '@bab/playwright-provider';
 import { ApiProvider } from '@bab/api-provider';
+import { PluginLoader, PluginMarketplace } from '@bab/plugin-sdk';
 import {
   FsReadTool,
   FsWriteTool,
@@ -509,6 +510,53 @@ team
     const auth = new TeamAuth();
     const ok = auth.revoke(id);
     console.log(ok ? `Revoked ${id}` : `Client ${id} not found`);
+  });
+
+// ── Plugin ────────────────────────────────────────────────────────
+
+const plugin = program
+  .command('plugin')
+  .description('Manage BAB plugins (marketplace + installed)');
+
+plugin
+  .command('list')
+  .description('List installed and available plugins')
+  .action(async () => {
+    const eventBus = new EventBus();
+    const loader = new PluginLoader(eventBus);
+    const manifests = await loader.discover();
+
+    console.log('\nInstalled plugins:');
+    if (manifests.length === 0) {
+      console.log('  (none discovered)');
+    } else {
+      for (const manifest of manifests) {
+        console.log(`  ${manifest.name}@${manifest.version} — ${manifest.description ?? ''}`);
+      }
+    }
+
+    const marketplace = new PluginMarketplace();
+    console.log('\nAvailable in marketplace:');
+    for (const entry of marketplace.available()) {
+      console.log(`  ${entry.id}@${entry.version} — ${entry.description}`);
+    }
+
+    console.log('\nInstall with: bab plugin install <id | local-dir | git-url>\n');
+  });
+
+plugin
+  .command('install <source>')
+  .description('Install a plugin from the marketplace, a local directory, or a git URL')
+  .action(async (source: string) => {
+    const marketplace = new PluginMarketplace();
+    console.log(`Installing ${source}...`);
+    try {
+      const result = await marketplace.install(source);
+      console.log(`Installed to ${result.installedTo}`);
+    } catch (error) {
+      console.error(`Install failed: ${error instanceof Error ? error.message : String(error)}`);
+      process.exit(1);
+    }
   });
 
 program.parse();
