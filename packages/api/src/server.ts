@@ -165,6 +165,17 @@ export function createServer(deps: ServerDeps): Hono<ServerEnv> {
     });
   });
 
+  // ── Response cache ───────────────────────────────────────────
+
+  app.get('/v1/cache', (c) => {
+    return c.json(responseCache.stats());
+  });
+
+  app.delete('/v1/cache', (c) => {
+    responseCache.clear();
+    return c.json({ cleared: true });
+  });
+
   // ── Chat Completions ─────────────────────────────────────────
 
   app.post('/v1/chat/completions', async (c) => {
@@ -326,7 +337,7 @@ export function createServer(deps: ServerDeps): Hono<ServerEnv> {
           session.addMessage(response.choices[0].message);
         }
 
-        if (cacheKey && !hasToolCalls(response)) {
+        if (cacheKey && !hasToolCalls(response) && responseCache.shouldCache(body.messages)) {
           responseCache.set(cacheKey, response);
         }
 
@@ -368,7 +379,7 @@ export function createServer(deps: ServerDeps): Hono<ServerEnv> {
             session.addMessage(fallbackResponse.choices[0].message);
           }
 
-          if (!hasToolCalls(fallbackResponse)) {
+          if (!hasToolCalls(fallbackResponse) && responseCache.shouldCache(body.messages)) {
             responseCache.set(fallbackCacheKey, fallbackResponse);
           }
 

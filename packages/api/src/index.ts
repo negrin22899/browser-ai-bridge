@@ -11,8 +11,10 @@ export { RateLimiter } from './rate-limiter.js';
 export type { RateLimitConfig, RateLimitInfo } from './rate-limiter.js';
 export { WebSocketHandler } from './websocket.js';
 export type { WebSocketMessage, WebSocketConfig } from './websocket.js';
-export { Cache, ResponseCache } from './cache.js';
+export { Cache } from './cache.js';
 export type { CacheConfig, CacheEntry } from './cache.js';
+export { ResponseCache } from './response-cache.js';
+export type { ResponseCacheOptions, ResponseCacheStats } from './response-cache.js';
 export {
   BABError,
   ProviderConnectionError,

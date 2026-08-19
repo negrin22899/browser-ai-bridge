@@ -4,7 +4,7 @@ import { Command } from 'commander';
 import * as os from 'node:os';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
-import { createServer, runToolLoop, StatePersistence, TeamAuth } from '@bab/api';
+import { createServer, runToolLoop, StatePersistence, TeamAuth, ResponseCache } from '@bab/api';
 import { ProviderManager, SessionManager, EventBus, Logger, ProviderRotation } from '@bab/core';
 import { PromptEngine } from '@bab/prompt-engine';
 import { Runtime } from '@bab/runtime';
@@ -124,12 +124,12 @@ program
 program
   .command('diagnose')
   .description('Collect diagnostic information for bug reports')
-  .option('-o, --output <file>', 'Output file path')
-  .action(async () => {
+  .option('-o, --output <file>', 'Output file path (single self-contained JSON)')
+  .action(async (options) => {
     console.log('\nCollecting diagnostic information...\n');
     const info = await runDiagnose();
     printDiagnosticSummary(info);
-    const filepath = await saveDiagnostic(info);
+    const filepath = await saveDiagnostic(info, options.output);
     console.log(`\nDiagnostic saved to: ${filepath}`);
     console.log('Attach this file to your bug report.\n');
   });
@@ -206,6 +206,7 @@ program
   .option('--accounts <n>', 'Number of browser accounts/profiles to rotate between (default: 1)')
   .option('--team', 'Enable team mode: require API keys on every request (multi-client RBAC)')
   .option('--team-admin-key <key>', 'Admin API key for team mode (or use BAB_ADMIN_KEY)')
+  .option('--cache <dir>', 'Persist verbatim response cache to a directory (repeats answered instantly)')
   .action(async (options) => {
     const eventBus = new EventBus();
     const logger = new Logger({
@@ -354,7 +355,9 @@ program
       logger.info(`Team mode enabled (${teamAuth.list().length} client(s))`);
     }
 
-    const app = createServer({ providerManager, sessionManager, logger, promptEngine, runtime, eventBus, teamAuth });
+    const responseCache = options.cache ? new ResponseCache({ cacheDir: options.cache }) : undefined;
+
+    const app = createServer({ providerManager, sessionManager, logger, promptEngine, runtime, eventBus, teamAuth, responseCache });
     const port = parseInt(options.port);
 
     serve({ fetch: app.fetch, port, hostname: options.host }, (info) => {

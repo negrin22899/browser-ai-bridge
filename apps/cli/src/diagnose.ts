@@ -141,10 +141,12 @@ export async function runDiagnose(): Promise<DiagnosticInfo> {
 /**
  * Save diagnostic info to file
  */
-export async function saveDiagnostic(info: DiagnosticInfo): Promise<string> {
-  const filename = `bab-diagnostic-${Date.now()}.json`;
-  const filepath = path.join(process.cwd(), filename);
+export async function saveDiagnostic(info: DiagnosticInfo, outputPath?: string): Promise<string> {
+  const filepath = outputPath
+    ? path.resolve(outputPath)
+    : path.join(process.cwd(), `bab-diagnostic-${Date.now()}.json`);
 
+  fs.mkdirSync(path.dirname(filepath), { recursive: true });
   fs.writeFileSync(filepath, JSON.stringify(info, null, 2));
 
   return filepath;
