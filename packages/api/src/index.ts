@@ -3,6 +3,8 @@ export { runToolLoop, runToolLoopStream, extractToolCalls, parseActionsJson } fr
 export type { ToolLoopOptions } from './tool-loop.js';
 export { ConfigStore, DEFAULT_CONFIG } from './config-store.js';
 export type { AppConfig } from './config-store.js';
+export { TeamAuth } from './team-auth.js';
+export type { ClientCredential, ClientIdentity, ClientRole } from './team-auth.js';
 export { StatePersistence } from './persistence.js';
 export type { PersistedSession, PersistedState } from './persistence.js';
 export { RateLimiter } from './rate-limiter.js';

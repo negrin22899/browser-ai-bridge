@@ -1,7 +1,7 @@
 import { Hono } from 'hono';
 import { cors } from 'hono/cors';
 import { randomUUID } from 'node:crypto';
-import type { EventBus, ProviderManager, SessionManager, Logger } from '@bab/core';
+import type { EventBus, ProviderManager, SessionManager, Session, Logger } from '@bab/core';
 import { detectIde } from '@bab/prompt-engine';
 import type { PromptEngine } from '@bab/prompt-engine';
 import type { Runtime } from '@bab/runtime';
@@ -21,6 +21,13 @@ import { ConfigStore } from './config-store.js';
 import { ResponseCache } from './response-cache.js';
 import { computeReliability } from './provider-reliability.js';
 import { MetricsCollector, createRequestMetrics } from './metrics.js';
+import { TeamAuth, type ClientIdentity } from './team-auth.js';
+
+type ServerEnv = {
+  Variables: {
+    client?: ClientIdentity;
+  };
+};
 
 interface ServerDeps {
   providerManager: ProviderManager;
@@ -34,17 +41,33 @@ interface ServerDeps {
   rateLimiter?: RateLimiter;
   validator?: RequestValidator;
   responseCache?: ResponseCache;
+  teamAuth?: TeamAuth;
 }
 
-export function createServer(deps: ServerDeps): Hono {
-  const app = new Hono();
+export function createServer(deps: ServerDeps): Hono<ServerEnv> {
+  const app = new Hono<ServerEnv>();
   const { providerManager, sessionManager, logger, promptEngine } = deps;
+  const teamAuth = deps.teamAuth;
   const rateLimiter = deps.rateLimiter ?? new RateLimiter();
   const validator = deps.validator ?? new RequestValidator();
   const configStore = deps.configStore ?? new ConfigStore();
   const metrics = deps.metrics ?? new MetricsCollector();
   const metricsHelpers = createRequestMetrics(metrics);
   const responseCache = deps.responseCache ?? new ResponseCache();
+
+  // RBAC helpers — used only when team mode is enabled.
+  const getClient = (c: any): ClientIdentity | null =>
+    (c.get('client') as ClientIdentity | undefined) ?? null;
+  const canAccessSession = (client: ClientIdentity | null, session: Session): boolean => {
+    if (!client || !teamAuth?.enabled) return true;
+    if (client.role === 'admin') return true;
+    return session.getMetadata<string>('clientId') === client.id;
+  };
+  const visibleSessions = (client: ClientIdentity | null): Session[] => {
+    const sessions = sessionManager.list();
+    if (!client || !teamAuth?.enabled || client.role === 'admin') return sessions;
+    return sessions.filter((s) => s.getMetadata<string>('clientId') === client.id);
+  };
 
   // CORS
   app.use('*', cors({
@@ -67,6 +90,30 @@ export function createServer(deps: ServerDeps): Hono {
     }
     return next();
   });
+
+  // Team auth — when enabled, every route except /health requires a valid key.
+  // Keys may be passed via Authorization header or ?token= (for EventSource).
+  if (teamAuth?.enabled) {
+    app.use('*', async (c, next) => {
+      if (c.req.path === '/health') return next();
+
+      const authHeader = c.req.header('authorization');
+      const queryToken = c.req.query('token');
+      const identity = teamAuth.authenticate(
+        authHeader ?? (queryToken ? `Bearer ${queryToken}` : undefined)
+      );
+
+      if (!identity) {
+        return c.json(
+          { error: { message: 'Unauthorized: valid Bearer API key required', type: 'unauthorized' } },
+          401
+        );
+      }
+
+      c.set('client', identity);
+      return next();
+    });
+  }
 
   // ── Health ───────────────────────────────────────────────────
 
@@ -186,21 +233,31 @@ export function createServer(deps: ServerDeps): Hono {
 
       // Create or get session. Clients may pass `session_id` to continue
       // an existing conversation history.
+      const client = getClient(c);
       let session;
       const requestedSessionId = (body as { session_id?: string; sessionId?: string }).session_id
         ?? (body as { sessionId?: string }).sessionId;
       if (requestedSessionId) {
         session = sessionManager.get(requestedSessionId);
-        if (!session) {
+        if (!session || !canAccessSession(client, session)) {
           return c.json({ error: { message: 'Session not found' } }, 404);
         }
         sessionManager.setActive(requestedSessionId);
+      } else if (client?.role === 'member') {
+        // Team mode: members never share the global active session — each
+        // request without an explicit session_id starts a fresh, isolated one.
+        session = sessionManager.create(provider.id, body.model);
       } else {
         try {
           session = sessionManager.getActive();
         } catch {
           session = sessionManager.create(provider.id, body.model);
         }
+      }
+
+      // Tag sessions with their owning client so members only see their own.
+      if (client && teamAuth?.enabled && !session.getMetadata('clientId')) {
+        session.setMetadata('clientId', client.id);
       }
 
       // Expose the session id so clients can continue the conversation.
@@ -395,7 +452,7 @@ export function createServer(deps: ServerDeps): Hono {
   // ── Sessions ─────────────────────────────────────────────────
 
   app.get('/v1/sessions', (c) => {
-    const sessions = sessionManager.list();
+    const sessions = visibleSessions(getClient(c));
     return c.json({ object: 'list', data: sessions.map((s) => s.toJSON()) });
   });
 
@@ -411,7 +468,7 @@ export function createServer(deps: ServerDeps): Hono {
   app.get('/v1/sessions/:id', (c) => {
     const id = c.req.param('id');
     const session = sessionManager.get(id);
-    if (!session) {
+    if (!session || !canAccessSession(getClient(c), session)) {
       return c.json({ error: { message: 'Session not found' } }, 404);
     }
     // Include the full message history in the detail view.
@@ -422,7 +479,7 @@ export function createServer(deps: ServerDeps): Hono {
   app.get('/v1/sessions/:id/export', (c) => {
     const id = c.req.param('id');
     const session = sessionManager.get(id);
-    if (!session) {
+    if (!session || !canAccessSession(getClient(c), session)) {
       return c.json({ error: { message: 'Session not found' } }, 404);
     }
 
@@ -445,7 +502,7 @@ export function createServer(deps: ServerDeps): Hono {
   app.delete('/v1/sessions/:id', (c) => {
     const id = c.req.param('id');
     const session = sessionManager.get(id);
-    if (!session) {
+    if (!session || !canAccessSession(getClient(c), session)) {
       return c.json({ error: { message: 'Session not found' } }, 404);
     }
     sessionManager.close(id);

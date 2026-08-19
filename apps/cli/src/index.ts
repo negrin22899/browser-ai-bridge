@@ -4,7 +4,7 @@ import { Command } from 'commander';
 import * as os from 'node:os';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
-import { createServer, runToolLoop, StatePersistence } from '@bab/api';
+import { createServer, runToolLoop, StatePersistence, TeamAuth } from '@bab/api';
 import { ProviderManager, SessionManager, EventBus, Logger, ProviderRotation } from '@bab/core';
 import { PromptEngine } from '@bab/prompt-engine';
 import { Runtime } from '@bab/runtime';
@@ -204,6 +204,8 @@ program
   .option('--api-model <model>', 'Model for the native API provider (default: provider id)')
   .option('--api-base-url <url>', 'Base URL for the native API provider')
   .option('--accounts <n>', 'Number of browser accounts/profiles to rotate between (default: 1)')
+  .option('--team', 'Enable team mode: require API keys on every request (multi-client RBAC)')
+  .option('--team-admin-key <key>', 'Admin API key for team mode (or use BAB_ADMIN_KEY)')
   .action(async (options) => {
     const eventBus = new EventBus();
     const logger = new Logger({
@@ -333,7 +335,26 @@ program
       }
     }
 
-    const app = createServer({ providerManager, sessionManager, logger, promptEngine, runtime, eventBus });
+    // Team mode: multi-client RBAC. Requires a key on every request except
+    // /health. Admin key comes from --team-admin-key / BAB_ADMIN_KEY, or is
+    // generated once and printed.
+    let teamAuth: TeamAuth | undefined;
+    if (options.team) {
+      teamAuth = new TeamAuth();
+      const adminKey = options.teamAdminKey ?? process.env.BAB_ADMIN_KEY;
+      if (adminKey) {
+        teamAuth.ensure('admin', 'admin', adminKey);
+      } else if (teamAuth.list().length === 0) {
+        const created = teamAuth.create('admin', 'admin');
+        console.log('');
+        console.log('Team mode enabled. Admin API key (store it now):');
+        console.log(`  ${created.key}`);
+        console.log('');
+      }
+      logger.info(`Team mode enabled (${teamAuth.list().length} client(s))`);
+    }
+
+    const app = createServer({ providerManager, sessionManager, logger, promptEngine, runtime, eventBus, teamAuth });
     const port = parseInt(options.port);
 
     serve({ fetch: app.fetch, port, hostname: options.host }, (info) => {
@@ -443,6 +464,48 @@ program
 
     await provider.disconnect();
     await runtime.stop();
+  });
+
+// ── Team ─────────────────────────────────────────────────────────
+
+const team = program
+  .command('team')
+  .description('Manage team-mode API keys (multi-client RBAC)');
+
+team
+  .command('list')
+  .description('List team clients')
+  .action(() => {
+    const auth = new TeamAuth();
+    const clients = auth.list();
+    if (clients.length === 0) {
+      console.log('No team clients. Add one with: bab team add <name>');
+      return;
+    }
+    for (const client of clients) {
+      console.log(`${client.id}  ${client.role.padEnd(6)}  ${client.name}  (${client.keyHint})`);
+    }
+  });
+
+team
+  .command('add <name>')
+  .description('Add a team client (key is printed once)')
+  .option('--role <role>', 'Role: admin or member', 'member')
+  .action((name: string, options: { role?: string }) => {
+    const role = options.role === 'admin' ? 'admin' : 'member';
+    const auth = new TeamAuth();
+    const { credential, key } = auth.create(name, role);
+    console.log(`Created ${role} client "${name}" (${credential.id})`);
+    console.log(`API key (store it now): ${key}`);
+  });
+
+team
+  .command('revoke <id>')
+  .description('Revoke a team client key')
+  .action((id: string) => {
+    const auth = new TeamAuth();
+    const ok = auth.revoke(id);
+    console.log(ok ? `Revoked ${id}` : `Client ${id} not found`);
   });
 
 program.parse();
