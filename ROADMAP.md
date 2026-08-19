@@ -24,13 +24,13 @@
 ## 1. В работе / ближайший горизонт
 
 ### Этапы (по порядку)
-- [ ] История чатов + экспорт (markdown/JSON) — API + дашборд.
-- [ ] Валидация + retry битого JSON `{"actions":[...]}` в tool-loop.
-- [ ] Детект AUTH_REQUIRED / rate-limit / CAPTCHA на уровне `/health` и ошибок API.
-- [ ] Файловое логирование + краш-репорты (opt-in).
-- [ ] Нативный API-режим как fallback (ключи → настоящий OpenAI-совместимый стрим).
-- [ ] Multi-provider сессии (Session Fabric: несколько AI параллельно).
-- [ ] AI Debugger в дашборде (timeline tool-loop / replay).
+- [x] История чатов + экспорт (markdown/JSON) — API + дашборд.
+- [x] Валидация + retry битого JSON `{"actions":[...]}` в tool-loop.
+- [x] Детект AUTH_REQUIRED / rate-limit / CAPTCHA на уровне `/health` и ошибок API.
+- [x] Файловое логирование + краш-репорты (opt-in).
+- [x] Нативный API-режим как fallback (ключи → настоящий OpenAI-совместимый стрим).
+- [x] Multi-provider сессии (Session Fabric: несколько AI параллельно).
+- [x] AI Debugger в дашборде (timeline tool-loop / replay).
 - [ ] npm-пакет `@bab/cli` + автосборка релизов в CI.
 - [ ] Онбординг/первый запуск: wizard «подключи провайдер → выбери модель → готово».
 - [ ] Desktop: глобальные хоткеи, системные уведомления, каналы обновлений stable/beta.
