@@ -1,5 +1,6 @@
 import { Hono } from 'hono';
 import { cors } from 'hono/cors';
+import { randomUUID } from 'node:crypto';
 import type { EventBus, ProviderManager, SessionManager, Logger } from '@bab/core';
 import type { PromptEngine } from '@bab/prompt-engine';
 import type { Runtime } from '@bab/runtime';
@@ -94,6 +95,22 @@ export function createServer(deps: ServerDeps): Hono {
   app.get('/models', listModels);
   app.get('/v1/models', listModels);
 
+  // ── Providers ────────────────────────────────────────────────
+
+  app.get('/v1/providers', (c) => {
+    const providers = providerManager.list();
+    return c.json({
+      object: 'list',
+      data: providers.map((p) => ({
+        id: p.id,
+        name: p.name,
+        type: p.type,
+        status: p.status,
+        capabilities: p.getCapabilities?.() ?? {},
+      })),
+    });
+  });
+
   // ── Chat Completions ─────────────────────────────────────────
 
   app.post('/v1/chat/completions', async (c) => {
@@ -118,6 +135,9 @@ export function createServer(deps: ServerDeps): Hono {
     logger.info('Chat completion request', { model: body.model });
 
     const finishRequest = metricsHelpers.startRequest();
+    const eventBus = deps.eventBus;
+    const requestId = randomUUID();
+    const startedAt = Date.now();
     let providerId = body.model;
 
     try {
@@ -130,6 +150,7 @@ export function createServer(deps: ServerDeps): Hono {
 
       providerId = provider.id;
       metricsHelpers.recordProviderRequest(provider.id);
+      eventBus?.emit('request.received', { requestId, model: body.model });
 
       // Inject system prompt with tool negotiation if tools available
       const tools = provider.getTools?.() ?? [];
@@ -160,6 +181,22 @@ export function createServer(deps: ServerDeps): Hono {
       // Expose the session id so clients can continue the conversation.
       c.header('X-Session-Id', session.id);
 
+      // Session Fabric: continue on the provider the conversation started with
+      // (if it is still registered), regardless of which model id the client sent.
+      const boundProvider = providerManager.get(session.providerId);
+      if (boundProvider) {
+        provider = boundProvider;
+        providerId = provider.id;
+        metricsHelpers.recordProviderRequest(provider.id);
+      }
+
+      // A browser provider can only run one conversation at a time. Return a
+      // retryable 429 instead of interleaving requests into the same DOM session.
+      if (provider.status === 'busy') {
+        c.header('Retry-After', '1');
+        return c.json({ error: { message: 'Provider is busy, retry shortly', type: 'provider_busy' } }, 429);
+      }
+
       const userMessage = body.messages[body.messages.length - 1];
       if (userMessage) {
         session.addMessage(userMessage);
@@ -173,27 +210,67 @@ export function createServer(deps: ServerDeps): Hono {
             logger,
             body,
             session.id,
-            (m) => session.addMessage(m)
+            (m) => session.addMessage(m),
+            eventBus
           );
         }
         return streamResponse(provider, body, logger);
       }
 
-      const response = deps.runtime
-        ? await runToolLoop(provider, deps.runtime, logger, body, session.id, {
-            onMessage: (m) => session.addMessage(m),
-          })
-        : await provider.send(body);
+      try {
+        const response = deps.runtime
+          ? await runToolLoop(provider, deps.runtime, logger, body, session.id, {
+              onMessage: (m) => session.addMessage(m),
+              eventBus,
+            })
+          : await provider.send(body);
 
-      if (response.choices[0]?.message && !deps.runtime) {
-        session.addMessage(response.choices[0].message);
+        if (response.choices[0]?.message && !deps.runtime) {
+          session.addMessage(response.choices[0].message);
+        }
+
+        eventBus?.emit('request.completed', { requestId, duration: Date.now() - startedAt });
+        return c.json({ ...response, session_id: session.id });
+      } catch (error) {
+        // Fallback: if the browser provider failed and a native API provider is
+        // available, retry once on the API instead of failing the request.
+        const apiProviders = providerManager
+          .getByType('api')
+          .filter((p) => p.status === 'connected' || p.status === 'busy');
+
+        if (provider.type === 'browser' && apiProviders.length > 0) {
+          const fallbackProvider = apiProviders[0];
+          logger.warn('Browser provider failed, falling back to native API', {
+            providerId: provider.id,
+            fallback: fallbackProvider.id,
+            error: error instanceof Error ? redactString(error.message) : String(error),
+          });
+          provider = fallbackProvider;
+          providerId = fallbackProvider.id;
+          metricsHelpers.recordProviderRequest(fallbackProvider.id);
+
+          const fallbackResponse = deps.runtime
+            ? await runToolLoop(provider, deps.runtime, logger, body, session.id, {
+                onMessage: (m) => session.addMessage(m),
+                eventBus,
+              })
+            : await provider.send(body);
+
+          if (fallbackResponse.choices[0]?.message && !deps.runtime) {
+            session.addMessage(fallbackResponse.choices[0].message);
+          }
+
+          eventBus?.emit('request.completed', { requestId, duration: Date.now() - startedAt });
+          return c.json({ ...fallbackResponse, session_id: session.id });
+        }
+
+        throw error;
       }
-
-      return c.json({ ...response, session_id: session.id });
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : 'Internal server error';
       metricsHelpers.recordError(errorMessage);
       metricsHelpers.recordProviderError(providerId, errorMessage);
+      eventBus?.emit('request.error', { requestId, error: redactString(errorMessage) });
       logger.error('Request failed', { error: redactString(errorMessage) });
       return c.json({ error: { message: redactString(errorMessage), type: 'server_error' } }, 500);
     } finally {
@@ -571,9 +648,10 @@ function streamToolLoopResponse(
   logger: Logger,
   request: ChatCompletionRequest,
   sessionId: string,
-  onMessage: (message: Message) => void
+  onMessage: (message: Message) => void,
+  eventBus?: EventBus
 ): Response {
-  const chunks = runToolLoopStream(provider, runtime, logger, request, sessionId, { onMessage });
+  const chunks = runToolLoopStream(provider, runtime, logger, request, sessionId, { onMessage, eventBus });
   return sseResponse(chunks, provider, logger);
 }
 

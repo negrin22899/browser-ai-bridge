@@ -7,12 +7,14 @@ import type {
 } from '@bab/protocol';
 import type { Provider } from '@bab/protocol';
 import type { Runtime } from '@bab/runtime';
-import type { Logger } from '@bab/core';
+import type { Logger, EventBus } from '@bab/core';
 
 export interface ToolLoopOptions {
   maxIterations?: number;
   /** Called for every message the loop appends (for session recording). */
   onMessage?: (message: Message) => void;
+  /** Emits loop.* lifecycle events for the dashboard debugger timeline. */
+  eventBus?: EventBus;
 }
 
 interface Action {
@@ -48,6 +50,13 @@ export async function runToolLoop(
   const messages: Message[] = [...request.messages];
   let lastResponse: ChatCompletionResponse | null = null;
   let repairs = 0;
+  const startedAt = Date.now();
+
+  options?.eventBus?.emit('loop.started', {
+    sessionId,
+    model: request.model,
+    messageCount: messages.length,
+  });
 
   for (let iteration = 0; iteration < maxIterations; iteration++) {
     const response = await provider.send({ ...request, messages });
@@ -55,6 +64,11 @@ export async function runToolLoop(
 
     const choice = response.choices[0];
     if (!choice?.message) {
+      options?.eventBus?.emit('loop.final', {
+        sessionId,
+        iterations: iteration + 1,
+        duration: Date.now() - startedAt,
+      });
       return response;
     }
 
@@ -71,6 +85,7 @@ export async function runToolLoop(
           iteration,
           repairs,
         });
+        options?.eventBus?.emit('loop.repair', { sessionId, iteration, repairs });
         messages.push({ ...choice.message });
         const repairMessage: Message = { role: 'user', content: REPAIR_PROMPT };
         messages.push(repairMessage);
@@ -80,12 +95,23 @@ export async function runToolLoop(
       }
 
       options?.onMessage?.({ ...choice.message });
+      options?.eventBus?.emit('loop.final', {
+        sessionId,
+        iterations: iteration + 1,
+        duration: Date.now() - startedAt,
+      });
       return response;
     }
 
     logger.info('Executing tool calls', {
       sessionId,
       iteration,
+      tools: calls.map((c) => c.function.name),
+    });
+    options?.eventBus?.emit('loop.iteration', {
+      sessionId,
+      iteration,
+      toolCount: calls.length,
       tools: calls.map((c) => c.function.name),
     });
 
@@ -140,6 +166,11 @@ export async function runToolLoop(
       (message.content ?? '') +
       '\n\n[Note: tool execution reached the maximum number of iterations.]';
   }
+  options?.eventBus?.emit('loop.final', {
+    sessionId,
+    iterations: maxIterations,
+    duration: Date.now() - startedAt,
+  });
   return response;
 }
 

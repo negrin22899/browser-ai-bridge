@@ -12,6 +12,13 @@ export type EventMap = {
   'tool.completed': { toolName: string; result: unknown; sessionId: string };
   'tool.error': { toolName: string; error: string; sessionId: string };
 
+  // Tool loop lifecycle (for the AI Debugger timeline)
+  'loop.started': { sessionId: string; model: string; messageCount: number };
+  'loop.iteration': { sessionId: string; iteration: number; toolCount: number; tools: string[] };
+  'loop.repair': { sessionId: string; iteration: number; repairs: number };
+  'loop.final': { sessionId: string; iterations: number; duration: number };
+  'loop.error': { sessionId: string; error: string };
+
   'permission.requested': { toolName: string; sessionId: string };
   'permission.granted': { toolName: string; sessionId: string };
   'permission.denied': { toolName: string; sessionId: string };

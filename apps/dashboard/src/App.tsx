@@ -8,6 +8,7 @@ import Sessions from './pages/Sessions';
 import RuntimePage from './pages/Runtime';
 import RuntimeInspector from './pages/RuntimeInspector';
 import Logs from './pages/Logs';
+import DebuggerPage from './pages/Debugger';
 import Extensions from './pages/Extensions';
 import Settings from './pages/Settings';
 import ConnectionInfo from './pages/ConnectionInfo';
@@ -24,6 +25,7 @@ function App() {
               <Route path="/sessions" element={<Sessions />} />
               <Route path="/runtime" element={<RuntimePage />} />
               <Route path="/inspector" element={<RuntimeInspector />} />
+              <Route path="/debugger" element={<DebuggerPage />} />
               <Route path="/logs" element={<Logs />} />
               <Route path="/extensions" element={<Extensions />} />
               <Route path="/settings" element={<Settings />} />

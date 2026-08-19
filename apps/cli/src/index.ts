@@ -9,6 +9,7 @@ import { ProviderManager, SessionManager, EventBus, Logger } from '@bab/core';
 import { PromptEngine } from '@bab/prompt-engine';
 import { Runtime } from '@bab/runtime';
 import { PlaywrightProvider } from '@bab/playwright-provider';
+import { ApiProvider } from '@bab/api-provider';
 import {
   FsReadTool,
   FsWriteTool,
@@ -198,6 +199,10 @@ program
   .option('--no-profile', 'Use new browser profile')
   .option('--allow <tools>', 'Comma-separated tools to allow without confirmation (e.g. fs.write,shell.exec)')
   .option('--interactive', 'Prompt for permission decisions via the API instead of denying immediately')
+  .option('--api <format>', 'Register a native API provider as fallback (openai, anthropic, google)')
+  .option('--api-key <key>', 'API key for the native API provider (or use OPENAI_API_KEY / ANTHROPIC_API_KEY / GOOGLE_API_KEY)')
+  .option('--api-model <model>', 'Model for the native API provider (default: provider id)')
+  .option('--api-base-url <url>', 'Base URL for the native API provider')
   .action(async (options) => {
     const eventBus = new EventBus();
     const logger = new Logger({
@@ -271,6 +276,34 @@ program
           error: error instanceof Error ? error.message : String(error),
         });
         process.exit(1);
+      }
+    }
+
+    if (options.api) {
+      const format = options.api.toLowerCase();
+      if (!['openai', 'anthropic', 'google'].includes(format)) {
+        logger.error(`Unknown API format: ${options.api}. Use openai, anthropic, or google.`);
+        process.exit(1);
+      }
+
+      const apiProvider = new ApiProvider({
+        id: `api-${format}`,
+        name: `Native ${format}`,
+        format: format as 'openai' | 'anthropic' | 'google',
+        apiKey: options.apiKey,
+        model: options.apiModel,
+        baseUrl: options.apiBaseUrl,
+      });
+      apiProvider.setTools(runtime.getToolDescriptions());
+      providerManager.register(apiProvider);
+
+      try {
+        await apiProvider.connect();
+        logger.info(`Native ${format} API provider registered (fallback)`);
+      } catch (error) {
+        logger.error('Failed to initialize API provider:', {
+          error: error instanceof Error ? error.message : String(error),
+        });
       }
     }
 

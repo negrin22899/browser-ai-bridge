@@ -6,7 +6,7 @@ import {
   parseActionsJson,
   looksLikeBrokenActions,
 } from './tool-loop.js';
-import type { Logger } from '@bab/core';
+import type { Logger, EventBus } from '@bab/core';
 import type {
   ChatCompletionChunk,
   ChatCompletionRequest,
@@ -354,6 +354,100 @@ describe('runToolLoop', () => {
 
     // After MAX_JSON_REPAIRS the loop stops repairing and returns the last answer.
     expect(response.choices[0].message.content).toContain('"actions"');
+  });
+
+  it('emits loop lifecycle events', async () => {
+    const provider = makeProvider([
+      {
+        id: 'resp-1',
+        object: 'chat.completion',
+        created: 1,
+        model: 'mock',
+        choices: [
+          {
+            index: 0,
+            message: {
+              role: 'assistant',
+              content: null,
+              tool_calls: [
+                {
+                  id: 'call-1',
+                  type: 'function',
+                  function: { name: 'fs.read', arguments: '{"path":"x"}' },
+                },
+              ],
+            },
+            finish_reason: 'tool_calls',
+          },
+        ],
+      },
+      {
+        id: 'resp-2',
+        object: 'chat.completion',
+        created: 2,
+        model: 'mock',
+        choices: [
+          { index: 0, message: { role: 'assistant', content: 'Done' }, finish_reason: 'stop' },
+        ],
+      },
+    ]);
+
+    const runtime = makeRuntime(() => ({ success: true, output: 'ok' }));
+    const emit = vi.fn();
+    const eventBus = { emit } as unknown as EventBus;
+
+    await runToolLoop(provider, runtime, makeLogger(), {
+      model: 'mock',
+      messages: [{ role: 'user', content: 'Read x' }],
+    }, 'session-1', { eventBus });
+
+    const events = emit.mock.calls.map((c) => c[0]);
+    expect(events).toContain('loop.started');
+    expect(events).toContain('loop.iteration');
+    expect(events).toContain('loop.final');
+    expect(emit.mock.calls.find((c) => c[0] === 'loop.iteration')?.[1]).toMatchObject({
+      sessionId: 'session-1',
+      iteration: 0,
+      tools: ['fs.read'],
+    });
+  });
+
+  it('emits loop.repair when malformed JSON is detected', async () => {
+    const provider = makeProvider([
+      {
+        id: 'resp-1',
+        object: 'chat.completion',
+        created: 1,
+        model: 'mock',
+        choices: [
+          {
+            index: 0,
+            message: { role: 'assistant', content: '{"actions":[{"tool":"fs.read"' },
+            finish_reason: 'stop',
+          },
+        ],
+      },
+      {
+        id: 'resp-2',
+        object: 'chat.completion',
+        created: 2,
+        model: 'mock',
+        choices: [
+          { index: 0, message: { role: 'assistant', content: 'Recovered' }, finish_reason: 'stop' },
+        ],
+      },
+    ]);
+
+    const runtime = makeRuntime(() => { throw new Error('should not execute'); });
+    const emit = vi.fn();
+    const eventBus = { emit } as unknown as EventBus;
+
+    await runToolLoop(provider, runtime, makeLogger(), {
+      model: 'mock',
+      messages: [{ role: 'user', content: 'Read x' }],
+    }, 'session-1', { eventBus });
+
+    expect(emit.mock.calls.map((c) => c[0])).toContain('loop.repair');
   });
 
   it('returns the response unchanged when there are no tool calls', async () => {

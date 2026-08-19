@@ -15,6 +15,7 @@ const translations: Record<Language, Record<string, string>> = {
     'nav.providers': 'Providers',
     'nav.sessions': 'Sessions',
     'nav.runtime': 'Runtime',
+    'nav.debugger': 'Debugger',
     'nav.logs': 'Logs',
     'nav.extensions': 'Extensions',
     'nav.settings': 'Settings',
@@ -98,6 +99,14 @@ const translations: Record<Language, Record<string, string>> = {
     'runtime.confirm': 'Confirm',
     'runtime.deny': 'Deny',
 
+    // Debugger
+    'debugger.title': 'AI Debugger',
+    'debugger.subtitle': 'Live tool-loop timeline — watch what the AI does step by step',
+    'debugger.pause': 'Pause',
+    'debugger.resume': 'Resume',
+    'debugger.clear': 'Clear',
+    'debugger.empty': 'No events yet. Send a chat request and watch the tool loop unfold here.',
+
     // Logs
     'logs.title': 'Logs',
     'logs.subtitle': 'Audit log and system events',
@@ -176,6 +185,7 @@ const translations: Record<Language, Record<string, string>> = {
     'nav.providers': 'Провайдеры',
     'nav.sessions': 'Сессии',
     'nav.runtime': 'Рантайм',
+    'nav.debugger': 'Отладчик',
     'nav.logs': 'Логи',
     'nav.extensions': 'Расширения',
     'nav.settings': 'Настройки',
@@ -258,6 +268,14 @@ const translations: Record<Language, Record<string, string>> = {
     'runtime.autoApprove': 'Авто-одобрение',
     'runtime.confirm': 'Подтверждение',
     'runtime.deny': 'Запрет',
+
+    // Debugger
+    'debugger.title': 'AI Отладчик',
+    'debugger.subtitle': 'Живой timeline tool-loop — смотри, что AI делает по шагам',
+    'debugger.pause': 'Пауза',
+    'debugger.resume': 'Продолжить',
+    'debugger.clear': 'Очистить',
+    'debugger.empty': 'Событий пока нет. Отправь запрос в чат и смотри, как разворачивается tool-loop.',
 
     // Logs
     'logs.title': 'Логи',

@@ -223,6 +223,7 @@ describe('Stage 6: OpenAI API Integration Tests', () => {
       logger,
       promptEngine,
       runtime,
+      eventBus,
     });
   });
 
@@ -601,6 +602,69 @@ describe('Stage 6: OpenAI API Integration Tests', () => {
     it('should return 404 when exporting an unknown session', async () => {
       const res = await app.request('/v1/sessions/nope/export?format=markdown');
       expect(res.status).toBe(404);
+    });
+  });
+
+  describe('Native API Fallback', () => {
+    class FailingBrowserProvider implements Provider {
+      readonly id = 'browser-fail';
+      readonly name = 'Browser Fail';
+      readonly type = 'browser' as const;
+      private _status: 'connected' = 'connected';
+      get status() { return this._status; }
+      async connect() {}
+      async disconnect() {}
+      async send(): Promise<ChatCompletionResponse> { throw new Error('browser blew up'); }
+      async *stream() { throw new Error('browser blew up'); }
+      async health(): Promise<HealthCheckResult> { return { healthy: true }; }
+      getCapabilities() { return {}; }
+      cancel() {}
+    }
+
+    it('falls back to a connected API provider when the browser provider fails', async () => {
+      const failing = new FailingBrowserProvider();
+      providerManager.register(failing);
+      providerManager.setActive(failing.id);
+
+      const seen: string[] = [];
+      const off = eventBus.onAny((event) => seen.push(event));
+
+      const res = await app.request('/v1/chat/completions', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          model: 'browser-fail',
+          messages: [{ role: 'user', content: 'Hello fallback' }],
+        }),
+      });
+
+      off();
+
+      expect(res.status).toBe(200);
+      const body = await res.json();
+      expect(body.choices[0].message.content).toContain('Hello fallback');
+      expect(seen).toContain('request.received');
+      expect(seen).toContain('request.completed');
+    });
+
+    it('returns the original error when no API provider is available', async () => {
+      // Unregister the API MockProvider temporarily so fallback has nowhere to go.
+      providerManager.unregister('mock-ai');
+
+      const res = await app.request('/v1/chat/completions', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          model: 'browser-fail',
+          messages: [{ role: 'user', content: 'Hello' }],
+        }),
+      });
+
+      expect(res.status).toBe(500);
+
+      // Re-register for the remaining tests.
+      providerManager.register(mockProvider);
+      await mockProvider.connect();
     });
   });
 
