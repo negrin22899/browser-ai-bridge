@@ -1,4 +1,16 @@
-import { app, BrowserWindow, ipcMain, shell, Tray, Menu, nativeImage, dialog, clipboard } from 'electron';
+import {
+  app,
+  BrowserWindow,
+  ipcMain,
+  shell,
+  Tray,
+  Menu,
+  nativeImage,
+  dialog,
+  clipboard,
+  globalShortcut,
+  Notification,
+} from 'electron';
 import path from 'path';
 import fs from 'fs';
 import { execSync, spawn, ChildProcess } from 'child_process';
@@ -15,6 +27,7 @@ const state = {
   provider: null as any,
   port: 3000,
   site: null as string | null,
+  updateChannel: (process.env.BAB_UPDATE_CHANNEL ?? 'stable') as 'stable' | 'beta',
 };
 
 // ─── Platform helpers ────────────────────────────────────────────
@@ -65,6 +78,51 @@ function getAppPath(): string {
 
 function getCliPath(): string {
   return path.join(getAppPath(), 'apps', 'cli', 'dist', 'index.js');
+}
+
+// ─── Notifications ───────────────────────────────────────────────
+
+function notify(title: string, body: string): void {
+  try {
+    if (!Notification.isSupported()) return;
+    const iconPath = path.join(__dirname, '../build/icon.png');
+    const notification = new Notification({
+      title,
+      body,
+      icon: fs.existsSync(iconPath) ? iconPath : undefined,
+    });
+    notification.on('click', () => {
+      mainWindow?.show();
+      mainWindow?.focus();
+    });
+    notification.show();
+  } catch (error) {
+    console.error('Notification failed:', error);
+  }
+}
+
+// ─── Global hotkeys ──────────────────────────────────────────────
+
+function registerHotkeys(): void {
+  // Toggle the main window.
+  globalShortcut.register('CommandOrControl+Shift+B', () => {
+    if (!mainWindow) return;
+    if (mainWindow.isVisible()) mainWindow.hide();
+    else {
+      mainWindow.show();
+      mainWindow.focus();
+    }
+  });
+
+  // Toggle the local API server.
+  globalShortcut.register('CommandOrControl+Shift+S', () => {
+    if (state.serverRunning) stopServer();
+    else startServer();
+  });
+}
+
+function unregisterHotkeys(): void {
+  globalShortcut.unregisterAll();
 }
 
 // ─── Window ──────────────────────────────────────────────────────
@@ -221,6 +279,7 @@ async function startServer(port = 3000): Promise<{ success: boolean; error?: str
     state.port = port;
     mainWindow?.webContents.send('server-status', { running: true, port });
     updateTray();
+    notify('Browser AI Bridge', `Server running at http://localhost:${port}`);
     return { success: true };
   } catch (error: any) {
     return { success: false, error: error.message };
@@ -232,6 +291,7 @@ function stopServer(): { success: boolean } {
   state.serverRunning = false;
   mainWindow?.webContents.send('server-status', { running: false });
   updateTray();
+  notify('Browser AI Bridge', 'Server stopped');
   return { success: true };
 }
 
@@ -276,6 +336,8 @@ async function setupAutoUpdater(): Promise<void> {
     autoUpdater = updater;
     autoUpdater.autoDownload = false;
     autoUpdater.autoInstallOnAppQuit = true;
+    autoUpdater.allowPrerelease = state.updateChannel === 'beta';
+    autoUpdater.channel = state.updateChannel === 'beta' ? 'beta' : 'latest';
 
     autoUpdater.on('checking-for-update', () => {
       mainWindow?.webContents.send('update-status', { status: 'checking' });
@@ -286,6 +348,7 @@ async function setupAutoUpdater(): Promise<void> {
         status: 'available', version: info.version,
         releaseDate: info.releaseDate, releaseName: info.releaseName,
       });
+      notify('Update available', `Browser AI Bridge ${info.version} is ready to download.`);
       dialog.showMessageBox(mainWindow!, {
         type: 'info', title: 'Update Available',
         message: `A new version (${info.version}) is available.`,
@@ -307,6 +370,7 @@ async function setupAutoUpdater(): Promise<void> {
 
     autoUpdater.on('update-downloaded', () => {
       mainWindow?.webContents.send('update-status', { status: 'downloaded' });
+      notify('Update ready', 'Restart Browser AI Bridge to apply the update.');
       dialog.showMessageBox(mainWindow!, {
         type: 'info', title: 'Update Ready',
         message: 'Update downloaded. Restart to apply?',
@@ -337,11 +401,29 @@ ipcMain.handle('check-for-updates', async () => {
   }
 });
 
+ipcMain.handle('set-update-channel', async (_e: any, channel: string) => {
+  if (channel !== 'stable' && channel !== 'beta') {
+    return { success: false, error: 'Channel must be stable or beta' };
+  }
+  state.updateChannel = channel;
+  if (autoUpdater) {
+    autoUpdater.allowPrerelease = channel === 'beta';
+    autoUpdater.channel = channel === 'beta' ? 'beta' : 'latest';
+    try {
+      await autoUpdater.checkForUpdates();
+    } catch {
+      // Ignore immediate check failures.
+    }
+  }
+  return { success: true, channel };
+});
+
 // ─── App lifecycle ───────────────────────────────────────────────
 
 app.whenReady().then(async () => {
   createWindow();
   createTray();
+  registerHotkeys();
   await setupAutoUpdater();
 
   setTimeout(async () => {
@@ -360,5 +442,6 @@ app.on('window-all-closed', () => {
 
 app.on('before-quit', () => {
   isQuitting = true;
+  unregisterHotkeys();
   stopServer();
 });

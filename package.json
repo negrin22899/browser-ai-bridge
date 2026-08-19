@@ -16,7 +16,7 @@
   },
   "scripts": {
     "setup": "node setup.js",
-    "build": "npm run build -w @bab/protocol -w @bab/core -w @bab/runtime -w @bab/prompt-engine -w @bab/playwright-provider -w @bab/api-provider -w @bab/plugin-sdk -w @bab/mcp-adapter -w @bab/tools-fs -w @bab/tools-git -w @bab/tools-shell -w @bab/api -w browser-ai-bridge -w @bab/dashboard -w @bab/plugin-example",
+    "build": "npm run build -w @bab/protocol -w @bab/core -w @bab/runtime -w @bab/prompt-engine -w @bab/playwright-provider -w @bab/api-provider -w @bab/plugin-sdk -w @bab/mcp-adapter -w @bab/tools-fs -w @bab/tools-git -w @bab/tools-shell -w @bab/api -w @bab/cli -w @bab/dashboard -w @bab/plugin-example",
     "build:desktop": "cd apps/desktop && npm run build:win",
     "build:desktop:mac": "cd apps/desktop && npm run build:mac",
     "build:desktop:linux": "cd apps/desktop && npm run build:linux",

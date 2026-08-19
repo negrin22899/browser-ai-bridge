@@ -142,6 +142,7 @@ export interface AppConfig {
   browser: { useExistingProfile: boolean; headless: boolean; defaultTimeout: number };
   security: { requireConfirmation: boolean; dangerousCommands: string[]; auditLog: boolean };
   tools: { workingDirectory: string; maxExecutionTime: number; shell: string };
+  onboarding?: { completed: boolean; provider?: string; model?: string };
 }
 
 // API methods

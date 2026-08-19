@@ -2,6 +2,7 @@ import { HashRouter as Router, Routes, Route } from 'react-router-dom';
 import { ThemeProvider } from './contexts/ThemeContext';
 import { LanguageProvider } from './contexts/LanguageContext';
 import Layout from './components/Layout';
+import Onboarding from './components/Onboarding';
 import Dashboard from './pages/Dashboard';
 import Providers from './pages/Providers';
 import Sessions from './pages/Sessions';
@@ -18,6 +19,7 @@ function App() {
     <ThemeProvider>
       <LanguageProvider>
         <Router>
+          <Onboarding />
           <Layout>
             <Routes>
               <Route path="/" element={<Dashboard />} />

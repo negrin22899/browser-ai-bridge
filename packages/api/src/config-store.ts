@@ -23,6 +23,11 @@ export interface AppConfig {
     maxExecutionTime: number;
     shell: string;
   };
+  onboarding: {
+    completed: boolean;
+    provider?: string;
+    model?: string;
+  };
 }
 
 export const DEFAULT_CONFIG: AppConfig = {
@@ -45,6 +50,9 @@ export const DEFAULT_CONFIG: AppConfig = {
     workingDirectory: os.homedir(),
     maxExecutionTime: 30000,
     shell: 'bash',
+  },
+  onboarding: {
+    completed: false,
   },
 };
 
@@ -99,5 +107,6 @@ function mergeConfig(base: AppConfig, partial: Partial<AppConfig>): AppConfig {
     browser: { ...base.browser, ...(partial.browser ?? {}) },
     security: { ...base.security, ...(partial.security ?? {}) },
     tools: { ...base.tools, ...(partial.tools ?? {}) },
+    onboarding: { ...base.onboarding, ...(partial.onboarding ?? {}) },
   };
 }

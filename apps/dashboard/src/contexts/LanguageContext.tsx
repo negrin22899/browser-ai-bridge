@@ -174,6 +174,19 @@ const translations: Record<Language, Record<string, string>> = {
     'permission.allowSession': 'This session',
     'permission.deny': 'Deny',
 
+    // Onboarding
+    'onboarding.welcomeTitle': 'Welcome to Browser AI Bridge',
+    'onboarding.welcomeText': 'Use your logged-in browser AI (Gemini, ChatGPT, Claude, DeepSeek) instead of paying for API keys — right inside your favorite IDE.',
+    'onboarding.getStarted': 'Get started',
+    'onboarding.chooseProvider': 'Choose a provider',
+    'onboarding.chooseProviderText': 'Pick the AI you already use. You can add more later.',
+    'onboarding.chooseModel': 'Choose a model',
+    'onboarding.chooseModelText': 'This will be your default model.',
+    'onboarding.model': 'Model',
+    'onboarding.modelPlaceholder': 'e.g. gpt-4o',
+    'onboarding.back': 'Back',
+    'onboarding.done': 'Finish',
+
     // Status
     'status.serverRunning': 'Server running',
     'status.success': 'success',
@@ -343,6 +356,19 @@ const translations: Record<Language, Record<string, string>> = {
     'permission.allowOnce': 'Разрешить (1 раз)',
     'permission.allowSession': 'На сессию',
     'permission.deny': 'Отклонить',
+
+    // Onboarding
+    'onboarding.welcomeTitle': 'Добро пожаловать в Browser AI Bridge',
+    'onboarding.welcomeText': 'Используй залогиненный браузерный AI (Gemini, ChatGPT, Claude, DeepSeek) вместо оплаты API-ключей — прямо внутри твоей IDE.',
+    'onboarding.getStarted': 'Начать',
+    'onboarding.chooseProvider': 'Выбери провайдера',
+    'onboarding.chooseProviderText': 'Выбери AI, которым уже пользуешься. Потом можно добавить ещё.',
+    'onboarding.chooseModel': 'Выбери модель',
+    'onboarding.chooseModelText': 'Это будет твоя модель по умолчанию.',
+    'onboarding.model': 'Модель',
+    'onboarding.modelPlaceholder': 'например, gpt-4o',
+    'onboarding.back': 'Назад',
+    'onboarding.done': 'Готово',
 
     // Status
     'status.serverRunning': 'Сервер работает',

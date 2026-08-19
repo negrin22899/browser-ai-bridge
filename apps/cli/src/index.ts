@@ -310,8 +310,8 @@ program
     const app = createServer({ providerManager, sessionManager, logger, promptEngine, runtime, eventBus });
     const port = parseInt(options.port);
 
-    serve({ fetch: app.fetch, port }, (info) => {
-      logger.info(`Browser AI Bridge running at http://localhost:${info.port}`);
+    serve({ fetch: app.fetch, port, hostname: options.host }, (info) => {
+      logger.info(`Browser AI Bridge running at http://${options.host}:${info.port}`);
       logger.info('Endpoints:');
       logger.info('  POST /v1/chat/completions - Chat completions');
       logger.info('  POST /v1/responses - Responses API');
