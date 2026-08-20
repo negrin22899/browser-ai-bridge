@@ -3,7 +3,11 @@
   "version": "1.1.0",
   "private": true,
   "description": "Desktop application for Browser AI Bridge",
-  "author": "Browser AI Bridge Team",
+  "author": {
+    "name": "Browser AI Bridge Team",
+    "email": "negrin22899@users.noreply.github.com"
+  },
+  "homepage": "https://github.com/negrin22899/browser-ai-bridge",
   "license": "MIT",
   "main": "dist/main.js",
   "scripts": {
