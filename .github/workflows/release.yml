@@ -87,8 +87,12 @@ jobs:
         with:
           name: desktop-${{ matrix.artifact }}
           path: |
-            apps/desktop/release/*
-            !apps/desktop/release/*.blockmap
+            apps/desktop/release/*.exe
+            apps/desktop/release/*.dmg
+            apps/desktop/release/*.zip
+            apps/desktop/release/*.AppImage
+            apps/desktop/release/*.deb
+            apps/desktop/release/*.yml
           if-no-files-found: warn
 
   release:
