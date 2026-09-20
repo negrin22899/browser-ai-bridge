@@ -1,5 +1,13 @@
 import { useState, useEffect, useCallback } from 'react';
 
+export interface BrowserInfo {
+  id: 'chrome' | 'edge' | 'brave' | 'opera' | 'vivaldi' | 'chromium';
+  name: string;
+  executablePath: string;
+  userDataDir: string;
+  installed: boolean;
+}
+
 interface ElectronAPI {
   minimizeWindow: () => void;
   maximizeWindow: () => void;
@@ -29,6 +37,10 @@ interface ElectronAPI {
   getDetectedProviders: () => Promise<Array<{ id: string; name: string; type: string; status: string }>>;
   loadSettings: () => Promise<any>;
   saveSettings: (settings: any) => Promise<boolean>;
+  mergeSettings: (patch: Record<string, any>) => Promise<Record<string, any> | null>;
+  listBrowsers: () => Promise<Array<BrowserInfo>>;
+  detectInstalledBrowsers: () => Promise<Array<BrowserInfo>>;
+  setActiveProvider: (id: string) => Promise<{ success: boolean; error?: string; provider?: string }>;
   onServerStatus: (callback: (status: { running: boolean; port?: number }) => void) => void;
   onAppStatus: (callback: (status: any) => void) => void;
   onWindowMaximized: (callback: (maximized: boolean) => void) => void;
@@ -58,10 +70,17 @@ export function useElectron() {
 
     const api = window.electronAPI!;
 
+    // Prime port from persisted settings first so "Copy API URL" isn't
+    // wrong for a beat before getStatus() resolves.
+    api.loadSettings?.().then((s) => {
+      const p = s?.general?.serverPort ?? s?.serverPort;
+      if (typeof p === 'number' && p > 0) setServerPort(p);
+    }).catch(() => {});
+
     // Get initial status
     api.getStatus().then((status) => {
       setServerRunning(status.serverRunning);
-      setServerPort(status.port);
+      if (status.port) setServerPort(status.port);
       setIsReady(true);
     });
 

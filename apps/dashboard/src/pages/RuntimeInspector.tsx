@@ -10,36 +10,32 @@ import {
   Loader2,
   RefreshCw,
 } from 'lucide-react';
-import { useTheme } from '../contexts/ThemeContext';
 import { useRuntimeState } from '../hooks/useRuntimeState';
 
 export default function RuntimeInspector() {
-  const { theme } = useTheme();
   const state = useRuntimeState();
 
-  const cardClass = `rounded-xl border ${
-    theme === 'dark' ? 'bg-gray-800 border-gray-700' : 'bg-white border-gray-200'
-  }`;
+  const cardClass = 'rounded-xl glass';
 
   const getStatusIcon = (status: string) => {
     switch (status) {
       case 'connected':
-        return <CheckCircle className="w-4 h-4 text-green-500" />;
+        return <CheckCircle className="w-4 h-4 text-success" />;
       case 'busy':
       case 'running':
-        return <Loader2 className="w-4 h-4 text-yellow-500 animate-spin" />;
+        return <Loader2 className="w-4 h-4 text-warning animate-spin" />;
       case 'error':
-        return <XCircle className="w-4 h-4 text-red-500" />;
+        return <XCircle className="w-4 h-4 text-danger" />;
       default:
-        return <XCircle className="w-4 h-4 text-gray-400" />;
+        return <XCircle className="w-4 h-4 text-text-subtle" />;
     }
   };
 
   const getPermissionColor = (mode: string) => {
     switch (mode) {
-      case 'auto': return 'bg-green-50 text-green-700';
-      case 'confirm': return 'bg-yellow-50 text-yellow-700';
-      case 'deny': return 'bg-red-50 text-red-700';
+      case 'auto': return 'bg-success/15 text-success';
+      case 'confirm': return 'bg-warning/15 text-warning';
+      case 'deny': return 'bg-danger/15 text-danger';
       default: return '';
     }
   };
@@ -55,18 +51,16 @@ export default function RuntimeInspector() {
     <div>
       <div className="flex items-center justify-between mb-8">
         <div>
-          <h1 className={`text-2xl font-bold ${theme === 'dark' ? 'text-white' : 'text-gray-900'}`}>
+          <h1 className={`text-2xl font-bold text-text`}>
             Runtime Inspector
           </h1>
-          <p className={theme === 'dark' ? 'text-gray-400' : 'text-gray-600'}>
+          <p className="text-text-muted">
             Real-time runtime state and debugging
           </p>
         </div>
         <button
           onClick={() => window.location.reload()}
-          className={`flex items-center gap-2 px-4 py-2.5 rounded-lg ${
-            theme === 'dark' ? 'bg-gray-700 text-gray-300 hover:bg-gray-600' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-          }`}
+          className="flex items-center gap-2 px-4 py-2.5 rounded-lg bg-surface-inset text-text-muted hover:text-accent hover:bg-accent-soft transition-colors"
         >
           <RefreshCw className="w-4 h-4" />
           Refresh
@@ -78,31 +72,31 @@ export default function RuntimeInspector() {
         <div className="space-y-6">
           {/* Provider Status */}
           <div className={cardClass}>
-            <div className={`px-6 py-4 border-b ${theme === 'dark' ? 'border-gray-700' : 'border-gray-200'}`}>
-              <h2 className={`text-lg font-semibold flex items-center gap-2 ${theme === 'dark' ? 'text-white' : 'text-gray-900'}`}>
+            <div className={`px-6 py-4 border-b border-border`}>
+              <h2 className={`text-lg font-semibold flex items-center gap-2 text-text`}>
                 <Server className="w-5 h-5" />
                 Provider
               </h2>
             </div>
             <div className="p-6 space-y-4">
               <div className="flex items-center justify-between">
-                <span className={theme === 'dark' ? 'text-gray-300' : 'text-gray-600'}>Name</span>
-                <span className={`font-medium ${theme === 'dark' ? 'text-white' : 'text-gray-900'}`}>
+                <span className="text-text-muted">Name</span>
+                <span className={`font-medium text-text`}>
                   {state.provider.name}
                 </span>
               </div>
               <div className="flex items-center justify-between">
-                <span className={theme === 'dark' ? 'text-gray-300' : 'text-gray-600'}>Status</span>
+                <span className="text-text-muted">Status</span>
                 <div className="flex items-center gap-2">
                   {getStatusIcon(state.provider.status)}
-                  <span className={`font-medium capitalize ${theme === 'dark' ? 'text-white' : 'text-gray-900'}`}>
+                  <span className={`font-medium capitalize text-text`}>
                     {state.provider.status}
                   </span>
                 </div>
               </div>
               <div className="flex items-center justify-between">
-                <span className={theme === 'dark' ? 'text-gray-300' : 'text-gray-600'}>Latency</span>
-                <span className={`font-mono ${theme === 'dark' ? 'text-white' : 'text-gray-900'}`}>
+                <span className="text-text-muted">Latency</span>
+                <span className={`font-mono text-text`}>
                   {Math.round(state.provider.latency)} ms
                 </span>
               </div>
@@ -111,15 +105,15 @@ export default function RuntimeInspector() {
 
           {/* Browser Status */}
           <div className={cardClass}>
-            <div className={`px-6 py-4 border-b ${theme === 'dark' ? 'border-gray-700' : 'border-gray-200'}`}>
-              <h2 className={`text-lg font-semibold flex items-center gap-2 ${theme === 'dark' ? 'text-white' : 'text-gray-900'}`}>
+            <div className={`px-6 py-4 border-b border-border`}>
+              <h2 className={`text-lg font-semibold flex items-center gap-2 text-text`}>
                 <Activity className="w-5 h-5" />
                 Browser
               </h2>
             </div>
             <div className="p-6 space-y-4">
               <div className="flex items-center justify-between">
-                <span className={theme === 'dark' ? 'text-gray-300' : 'text-gray-600'}>Connected</span>
+                <span className="text-text-muted">Connected</span>
                 {state.browser.connected ? (
                   <CheckCircle className="w-5 h-5 text-green-500" />
                 ) : (
@@ -127,8 +121,8 @@ export default function RuntimeInspector() {
                 )}
               </div>
               <div className="flex items-center justify-between">
-                <span className={theme === 'dark' ? 'text-gray-300' : 'text-gray-600'}>URL</span>
-                <span className={`text-sm truncate ml-2 ${theme === 'dark' ? 'text-gray-400' : 'text-gray-500'}`}>
+                <span className="text-text-muted">URL</span>
+                <span className={`text-sm truncate ml-2 text-text-muted`}>
                   {state.browser.url || 'Not connected'}
                 </span>
               </div>
@@ -137,22 +131,22 @@ export default function RuntimeInspector() {
 
           {/* Session */}
           <div className={cardClass}>
-            <div className={`px-6 py-4 border-b ${theme === 'dark' ? 'border-gray-700' : 'border-gray-200'}`}>
-              <h2 className={`text-lg font-semibold flex items-center gap-2 ${theme === 'dark' ? 'text-white' : 'text-gray-900'}`}>
+            <div className={`px-6 py-4 border-b border-border`}>
+              <h2 className={`text-lg font-semibold flex items-center gap-2 text-text`}>
                 <MessageSquare className="w-5 h-5" />
                 Session
               </h2>
             </div>
             <div className="p-6 space-y-4">
               <div className="flex items-center justify-between">
-                <span className={theme === 'dark' ? 'text-gray-300' : 'text-gray-600'}>ID</span>
-                <span className={`font-mono ${theme === 'dark' ? 'text-white' : 'text-gray-900'}`}>
+                <span className="text-text-muted">ID</span>
+                <span className={`font-mono text-text`}>
                   {state.session.id || 'No active session'}
                 </span>
               </div>
               <div className="flex items-center justify-between">
-                <span className={theme === 'dark' ? 'text-gray-300' : 'text-gray-600'}>Messages</span>
-                <span className={`font-medium ${theme === 'dark' ? 'text-white' : 'text-gray-900'}`}>
+                <span className="text-text-muted">Messages</span>
+                <span className={`font-medium text-text`}>
                   {state.session.messageCount}
                 </span>
               </div>
@@ -164,8 +158,8 @@ export default function RuntimeInspector() {
         <div className="space-y-6">
           {/* Current Tool */}
           <div className={cardClass}>
-            <div className={`px-6 py-4 border-b ${theme === 'dark' ? 'border-gray-700' : 'border-gray-200'}`}>
-              <h2 className={`text-lg font-semibold flex items-center gap-2 ${theme === 'dark' ? 'text-white' : 'text-gray-900'}`}>
+            <div className={`px-6 py-4 border-b border-border`}>
+              <h2 className={`text-lg font-semibold flex items-center gap-2 text-text`}>
                 <Terminal className="w-5 h-5" />
                 Current Tool
               </h2>
@@ -175,20 +169,21 @@ export default function RuntimeInspector() {
                 <>
                   <div className="flex items-center gap-3 mb-4">
                     {getStatusIcon(state.currentTool.status)}
-                    <span className={`text-xl font-mono ${theme === 'dark' ? 'text-white' : 'text-gray-900'}`}>
+                    <span className={`text-xl font-mono text-text`}>
                       {state.currentTool.name}()
                     </span>
                   </div>
                   {state.queue.length > 0 && (
                     <div>
-                      <p className={`text-sm mb-2 ${theme === 'dark' ? 'text-gray-400' : 'text-gray-500'}`}>
+                      <p className={`text-sm mb-2 text-text-muted`}>
                         Queue:
                       </p>
                       <div className="space-y-1">
                         {state.queue.map((tool, i) => (
-                          <div key={i} className={`text-sm font-mono px-3 py-1.5 rounded ${
-                            theme === 'dark' ? 'bg-gray-700 text-gray-300' : 'bg-gray-100 text-gray-600'
-                          }`}>
+                          <div
+                            key={i}
+                            className="text-sm font-mono px-3 py-1.5 rounded bg-surface-inset text-text-muted"
+                          >
                             {tool}()
                           </div>
                         ))}
@@ -197,7 +192,7 @@ export default function RuntimeInspector() {
                   )}
                 </>
               ) : (
-                <p className={theme === 'dark' ? 'text-gray-400' : 'text-gray-500'}>
+                <p className="text-text-muted">
                   No tool executing
                 </p>
               )}
@@ -206,28 +201,28 @@ export default function RuntimeInspector() {
 
           {/* Performance */}
           <div className={cardClass}>
-            <div className={`px-6 py-4 border-b ${theme === 'dark' ? 'border-gray-700' : 'border-gray-200'}`}>
-              <h2 className={`text-lg font-semibold flex items-center gap-2 ${theme === 'dark' ? 'text-white' : 'text-gray-900'}`}>
+            <div className={`px-6 py-4 border-b border-border`}>
+              <h2 className={`text-lg font-semibold flex items-center gap-2 text-text`}>
                 <Clock className="w-5 h-5" />
                 Latency
               </h2>
             </div>
             <div className="p-6 space-y-4">
               <div className="flex items-center justify-between">
-                <span className={theme === 'dark' ? 'text-gray-300' : 'text-gray-600'}>Provider</span>
-                <span className={`font-mono ${theme === 'dark' ? 'text-white' : 'text-gray-900'}`}>
+                <span className="text-text-muted">Provider</span>
+                <span className={`font-mono text-text`}>
                   {Math.round(state.performance.providerLatency)} ms
                 </span>
               </div>
               <div className="flex items-center justify-between">
-                <span className={theme === 'dark' ? 'text-gray-300' : 'text-gray-600'}>Runtime</span>
-                <span className={`font-mono ${theme === 'dark' ? 'text-white' : 'text-gray-900'}`}>
+                <span className="text-text-muted">Runtime</span>
+                <span className={`font-mono text-text`}>
                   {state.performance.runtimeLatency} ms
                 </span>
               </div>
               <div className="flex items-center justify-between">
-                <span className={theme === 'dark' ? 'text-gray-300' : 'text-gray-600'}>Tool</span>
-                <span className={`font-mono ${theme === 'dark' ? 'text-white' : 'text-gray-900'}`}>
+                <span className="text-text-muted">Tool</span>
+                <span className={`font-mono text-text`}>
                   {state.performance.toolLatency} ms
                 </span>
               </div>
@@ -236,8 +231,8 @@ export default function RuntimeInspector() {
 
           {/* System */}
           <div className={cardClass}>
-            <div className={`px-6 py-4 border-b ${theme === 'dark' ? 'border-gray-700' : 'border-gray-200'}`}>
-              <h2 className={`text-lg font-semibold flex items-center gap-2 ${theme === 'dark' ? 'text-white' : 'text-gray-900'}`}>
+            <div className={`px-6 py-4 border-b border-border`}>
+              <h2 className={`text-lg font-semibold flex items-center gap-2 text-text`}>
                 <Cpu className="w-5 h-5" />
                 System
               </h2>
@@ -245,35 +240,35 @@ export default function RuntimeInspector() {
             <div className="p-6 space-y-4">
               <div>
                 <div className="flex items-center justify-between mb-1">
-                  <span className={theme === 'dark' ? 'text-gray-300' : 'text-gray-600'}>CPU</span>
-                  <span className={`font-mono ${theme === 'dark' ? 'text-white' : 'text-gray-900'}`}>
+                  <span className="text-text-muted">CPU</span>
+                  <span className={`font-mono text-text`}>
                     {Math.round(state.system.cpu)}%
                   </span>
                 </div>
-                <div className={`h-2 rounded-full ${theme === 'dark' ? 'bg-gray-700' : 'bg-gray-200'}`}>
+                <div className="h-2 rounded-full bg-surface-inset">
                   <div
-                    className="h-full bg-primary-500 rounded-full transition-all"
+                    className="h-full bg-accent rounded-full transition-all"
                     style={{ width: `${state.system.cpu}%` }}
                   />
                 </div>
               </div>
               <div>
                 <div className="flex items-center justify-between mb-1">
-                  <span className={theme === 'dark' ? 'text-gray-300' : 'text-gray-600'}>Memory</span>
-                  <span className={`font-mono ${theme === 'dark' ? 'text-white' : 'text-gray-900'}`}>
+                  <span className="text-text-muted">Memory</span>
+                  <span className={`font-mono text-text`}>
                     {Math.round(state.system.memory)}%
                   </span>
                 </div>
-                <div className={`h-2 rounded-full ${theme === 'dark' ? 'bg-gray-700' : 'bg-gray-200'}`}>
+                <div className="h-2 rounded-full bg-surface-inset">
                   <div
-                    className="h-full bg-green-500 rounded-full transition-all"
+                    className="h-full bg-success rounded-full transition-all"
                     style={{ width: `${state.system.memory}%` }}
                   />
                 </div>
               </div>
               <div className="flex items-center justify-between">
-                <span className={theme === 'dark' ? 'text-gray-300' : 'text-gray-600'}>Uptime</span>
-                <span className={`font-mono ${theme === 'dark' ? 'text-white' : 'text-gray-900'}`}>
+                <span className="text-text-muted">Uptime</span>
+                <span className={`font-mono text-text`}>
                   {formatUptime(state.system.uptime)}
                 </span>
               </div>
@@ -285,15 +280,15 @@ export default function RuntimeInspector() {
         <div className="space-y-6">
           {/* Permissions */}
           <div className={cardClass}>
-            <div className={`px-6 py-4 border-b ${theme === 'dark' ? 'border-gray-700' : 'border-gray-200'}`}>
-              <h2 className={`text-lg font-semibold ${theme === 'dark' ? 'text-white' : 'text-gray-900'}`}>
+            <div className={`px-6 py-4 border-b border-border`}>
+              <h2 className={`text-lg font-semibold text-text`}>
                 Permissions
               </h2>
             </div>
-            <div className={`divide-y ${theme === 'dark' ? 'divide-gray-700' : 'divide-gray-100'}`}>
+            <div className={`divide-y divide-border`}>
               {state.permissions.map((perm) => (
                 <div key={perm.tool} className="px-6 py-3 flex items-center justify-between">
-                  <span className={`font-mono text-sm ${theme === 'dark' ? 'text-gray-300' : 'text-gray-600'}`}>
+                  <span className={`font-mono text-sm text-text-muted`}>
                     {perm.tool}
                   </span>
                   <span className={`text-xs px-2 py-1 rounded-full ${getPermissionColor(perm.mode)}`}>
@@ -306,8 +301,8 @@ export default function RuntimeInspector() {
 
           {/* Logs */}
           <div className={cardClass}>
-            <div className={`px-6 py-4 border-b ${theme === 'dark' ? 'border-gray-700' : 'border-gray-200'}`}>
-              <h2 className={`text-lg font-semibold ${theme === 'dark' ? 'text-white' : 'text-gray-900'}`}>
+            <div className={`px-6 py-4 border-b border-border`}>
+              <h2 className={`text-lg font-semibold text-text`}>
                 Logs
               </h2>
             </div>
@@ -316,24 +311,24 @@ export default function RuntimeInspector() {
                 state.logs.map((log, i) => (
                   <div key={i} className="mb-2 last:mb-0">
                     <div className="flex items-start gap-2">
-                      <span className={`text-xs ${theme === 'dark' ? 'text-gray-500' : 'text-gray-400'}`}>
+                      <span className={`text-xs text-text-subtle`}>
                         {new Date(log.timestamp).toLocaleTimeString()}
                       </span>
                       <span className={`text-xs px-1.5 py-0.5 rounded ${
-                        log.level === 'error' ? 'bg-red-50 text-red-700' :
-                        log.level === 'warn' ? 'bg-yellow-50 text-yellow-700' :
-                        'bg-blue-50 text-blue-700'
+                        log.level === 'error' ? 'bg-danger/15 text-danger' :
+                        log.level === 'warn' ? 'bg-warning/15 text-warning' :
+                        'bg-accent-soft text-accent'
                       }`}>
                         {log.level}
                       </span>
-                      <span className={`text-sm ${theme === 'dark' ? 'text-gray-300' : 'text-gray-600'}`}>
+                      <span className={`text-sm text-text-muted`}>
                         {log.message}
                       </span>
                     </div>
                   </div>
                 ))
               ) : (
-                <p className={theme === 'dark' ? 'text-gray-400' : 'text-gray-500'}>
+                <p className="text-text-muted">
                   No logs yet
                 </p>
               )}

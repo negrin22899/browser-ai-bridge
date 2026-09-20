@@ -35,9 +35,9 @@
 
 | Платформа | Скачать |
 |-----------|---------|
-| 🪟 Windows | [⬇️ Скачать установщик (.exe)](https://github.com/negrin22899/browser-ai-bridge/releases/download/v1.0.0/Browser.AI.Bridge.Setup.1.0.0.exe) |
-| 🍎 macOS | [⬇️ Скачать установщик (.dmg)](https://github.com/negrin22899/browser-ai-bridge/releases/download/v1.0.0/Browser.AI.Bridge-1.0.0.dmg) |
-| 🐧 Linux | [⬇️ Скачать установщик (.AppImage)](https://github.com/negrin22899/browser-ai-bridge/releases/download/v1.0.0/Browser.AI.Bridge-1.0.0.AppImage) |
+| 🪟 Windows | [⬇️ Скачать установщик (.exe)](https://github.com/negrin22899/browser-ai-bridge/releases/download/v1.1.0/Browser.AI.Bridge.Setup.1.1.0.exe) |
+| 🍎 macOS | [⬇️ Скачать установщик (.dmg)](https://github.com/negrin22899/browser-ai-bridge/releases/download/v1.1.0/Browser.AI.Bridge-1.1.0-arm64.dmg) |
+| 🐧 Linux | [⬇️ Скачать установщик (.AppImage)](https://github.com/negrin22899/browser-ai-bridge/releases/download/v1.1.0/Browser.AI.Bridge-1.1.0.AppImage) |
 
 **Установка:**
 1. Скачайте установщик для вашей ОС

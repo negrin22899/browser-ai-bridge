@@ -23,8 +23,10 @@ const translations: Record<Language, Record<string, string>> = {
     'dashboard.title': 'Dashboard',
     'dashboard.welcome': 'Welcome to Browser AI Bridge',
     'dashboard.totalRequests': 'Total Requests',
+    'dashboard.messages': 'Messages',
     'dashboard.activeSessions': 'Active Sessions',
     'dashboard.activeProviders': 'Active Providers',
+    'dashboard.runtime': 'Runtime',
     'dashboard.uptime': 'Uptime',
     'dashboard.recentActivity': 'Recent Activity',
     'dashboard.systemStatus': 'System Status',
@@ -54,6 +56,8 @@ const translations: Record<Language, Record<string, string>> = {
     'sessions.title': 'Sessions',
     'sessions.subtitle': 'Manage conversation sessions',
     'sessions.new': 'New Session',
+    'sessions.newSession': 'New Session',
+    'sessions.model': 'Model',
     'sessions.active': 'Active',
     'sessions.closed': 'Closed',
     'sessions.messages': 'Messages',
@@ -131,6 +135,7 @@ const translations: Record<Language, Record<string, string>> = {
     'settings.language': 'Language',
     'settings.lightTheme': 'Light',
     'settings.darkTheme': 'Dark',
+    'settings.brandTheme': 'Brand',
     'settings.english': 'English',
     'settings.russian': 'Russian',
 
@@ -138,6 +143,13 @@ const translations: Record<Language, Record<string, string>> = {
     'status.serverRunning': 'Server running',
     'status.success': 'success',
     'status.viewAll': 'View all',
+
+    // Common
+    'common.cancel': 'Cancel',
+    'common.create': 'Create',
+    'common.save': 'Save',
+    'common.delete': 'Delete',
+    'common.close': 'Close',
   },
   ru: {
     // Navigation
@@ -153,8 +165,10 @@ const translations: Record<Language, Record<string, string>> = {
     'dashboard.title': 'Главная',
     'dashboard.welcome': 'Добро пожаловать в Browser AI Bridge',
     'dashboard.totalRequests': 'Всего запросов',
+    'dashboard.messages': 'Сообщений',
     'dashboard.activeSessions': 'Активные сессии',
     'dashboard.activeProviders': 'Активные провайдеры',
+    'dashboard.runtime': 'Рантайм',
     'dashboard.uptime': 'Время работы',
     'dashboard.recentActivity': 'Недавняя активность',
     'dashboard.systemStatus': 'Состояние системы',
@@ -184,6 +198,8 @@ const translations: Record<Language, Record<string, string>> = {
     'sessions.title': 'Сессии',
     'sessions.subtitle': 'Управление сессиями разговоров',
     'sessions.new': 'Новая сессия',
+    'sessions.newSession': 'Новая сессия',
+    'sessions.model': 'Модель',
     'sessions.active': 'Активные',
     'sessions.closed': 'Закрытые',
     'sessions.messages': 'Сообщений',
@@ -261,6 +277,7 @@ const translations: Record<Language, Record<string, string>> = {
     'settings.language': 'Язык',
     'settings.lightTheme': 'Светлая',
     'settings.darkTheme': 'Тёмная',
+    'settings.brandTheme': 'Фирменная',
     'settings.english': 'Английский',
     'settings.russian': 'Русский',
 
@@ -268,6 +285,13 @@ const translations: Record<Language, Record<string, string>> = {
     'status.serverRunning': 'Сервер работает',
     'status.success': 'успешно',
     'status.viewAll': 'Показать все',
+
+    // Common
+    'common.cancel': 'Отмена',
+    'common.create': 'Создать',
+    'common.save': 'Сохранить',
+    'common.delete': 'Удалить',
+    'common.close': 'Закрыть',
   },
 };
 
@@ -309,10 +333,8 @@ export function LanguageProvider({ children }: { children: ReactNode }) {
     const saveLanguage = async () => {
       try {
         localStorage.setItem('language', language);
-        if (isElectron()) {
-          const settings = await window.electronAPI!.loadSettings() || {};
-          settings.language = language;
-          await window.electronAPI!.saveSettings(settings);
+        if (isElectron() && window.electronAPI?.mergeSettings) {
+          await window.electronAPI.mergeSettings({ language });
         }
       } catch (e) {
         console.error('Failed to save language:', e);

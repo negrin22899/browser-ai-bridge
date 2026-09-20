@@ -9,5 +9,9 @@ coverage/
 .env.*
 tmp/
 .mimocode/
+.freebuff/
 apps/desktop/release/
 package-lock.json
+
+# CLI diagnostic dumps (bab diagnose --output)
+bab-diagnostic-*.json

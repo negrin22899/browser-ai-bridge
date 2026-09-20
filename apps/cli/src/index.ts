@@ -112,8 +112,9 @@ program
   .option('--site <url>', 'AI site URL or provider name (gemini, chatgpt, claude, deepseek)')
   .option('--headless', 'Run browser in headless mode (no visible window)', true)
   .option('--no-headless', 'Show browser window')
-  .option('--profile', 'Use existing Chrome profile (for logged-in sessions)', true)
+  .option('--profile', 'Use existing browser profile (for logged-in sessions)', true)
   .option('--no-profile', 'Use new browser profile')
+  .option('--browser <name>', 'Browser to drive: chrome | edge | brave | opera | vivaldi | chromium', 'chrome')
   .action(async (options) => {
     const eventBus = new EventBus();
     const logger = new Logger({ level: 'info', format: 'text', context: 'CLI' });
@@ -132,13 +133,14 @@ program
         adapter,
         headless: options.headless,
         useExistingProfile: options.profile,
+        browser: options.browser,
       });
 
       provider.setTools(toolDispatcher.getDescriptions());
       providerManager.register(provider);
       providerManager.setActive(providerId);
 
-      logger.info(`Connecting to ${options.site}...`);
+      logger.info(`Connecting to ${options.site} via ${options.browser}...`);
       try {
         await provider.connect();
         logger.info('Connected to browser AI');
@@ -172,8 +174,9 @@ program
   .option('--site <url>', 'AI site URL or provider name', 'gemini')
   .option('--headless', 'Run browser in headless mode (no visible window)', true)
   .option('--no-headless', 'Show browser window')
-  .option('--profile', 'Use existing Chrome profile', true)
+  .option('--profile', 'Use existing browser profile', true)
   .option('--no-profile', 'Use new browser profile')
+  .option('--browser <name>', 'Browser to drive: chrome | edge | brave | opera | vivaldi | chromium', 'chrome')
   .action(async (message, options) => {
     const logger = new Logger({ level: 'info', format: 'text', context: 'Chat' });
     const eventBus = new EventBus();
@@ -188,11 +191,12 @@ program
       adapter,
       headless: options.headless,
       useExistingProfile: options.profile,
+      browser: options.browser,
     });
 
     provider.setTools(toolDispatcher.getDescriptions());
 
-    logger.info(`Connecting to ${options.site}...`);
+    logger.info(`Connecting to ${options.site} via ${options.browser}...`);
     try {
       await provider.connect();
       logger.info('Connected!');

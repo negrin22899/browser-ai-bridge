@@ -1,250 +1,299 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import {
   Server,
   Globe,
   Zap,
   CheckCircle,
-  Plus,
+  XCircle,
   ExternalLink,
-  Chrome,
+  Loader2,
+  RefreshCw,
 } from 'lucide-react';
-import { useTheme } from '../contexts/ThemeContext';
 import { useLanguage } from '../contexts/LanguageContext';
-import { useElectron } from '../hooks/useElectron';
+import { isElectron } from '../hooks/useElectron';
+import { api, waitForProviderHealthy } from '../lib/api';
+import { humanizeError } from '../lib/errors';
+import { NumberPopIn, TextStatesSwap } from '../components/motion';
 
-interface ProviderInfo {
+interface ProviderCatalogEntry {
   id: string;
   name: string;
   siteUrl: string;
-  status: 'connected' | 'available';
   icon: typeof Globe;
 }
 
-const PROVIDERS: ProviderInfo[] = [
-  { id: 'gemini', name: 'Google Gemini', siteUrl: 'https://gemini.google.com', status: 'available', icon: Globe },
-  { id: 'chatgpt', name: 'ChatGPT', siteUrl: 'https://chatgpt.com', status: 'available', icon: Zap },
-  { id: 'claude', name: 'Claude', siteUrl: 'https://claude.ai', status: 'available', icon: Globe },
-  { id: 'deepseek', name: 'DeepSeek', siteUrl: 'https://chat.deepseek.com', status: 'available', icon: Globe },
+const CATALOG: ProviderCatalogEntry[] = [
+  { id: 'gemini',   name: 'Google Gemini', siteUrl: 'https://gemini.google.com', icon: Globe },
+  { id: 'chatgpt',  name: 'ChatGPT',       siteUrl: 'https://chatgpt.com',        icon: Zap },
+  { id: 'claude',   name: 'Claude',        siteUrl: 'https://claude.ai',          icon: Globe },
+  { id: 'deepseek', name: 'DeepSeek',      siteUrl: 'https://chat.deepseek.com',  icon: Globe },
 ];
 
-export default function Providers() {
-  const { theme } = useTheme();
-  const { t } = useLanguage();
-  const { isElectron, openProviderSignin } = useElectron();
-  const [providers, setProviders] = useState<ProviderInfo[]>(PROVIDERS);
-  const [showAddModal, setShowAddModal] = useState(false);
-  const [connectingProvider, setConnectingProvider] = useState<string | null>(null);
+type HealthRow = { healthy: boolean; latency?: number; error?: string };
 
-  useEffect(() => {
-    // Load saved providers from localStorage
+export default function Providers() {
+  const { t, language } = useLanguage();
+  const [health, setHealth] = useState<Record<string, HealthRow>>({});
+  const [activeId, setActiveId] = useState<string | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [switching, setSwitching] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  const loadStatus = useCallback(async () => {
+    setError(null);
     try {
-      const saved = localStorage.getItem('bab-connected-providers');
-      if (saved) {
-        const connectedIds = JSON.parse(saved) as string[];
-        setProviders(PROVIDERS.map(p => ({
-          ...p,
-          status: connectedIds.includes(p.id) ? 'connected' : 'available',
-        })));
-      }
-    } catch (e) {
-      console.error('Failed to load providers:', e);
+      const h = await api.getHealth();
+      setHealth(h.providers || {});
+      // Active provider is whichever backend reports (the CLI --site).
+      const activeCandidate = Object.keys(h.providers || {})[0] || null;
+      setActiveId(activeCandidate);
+    } catch (err) {
+      setError(humanizeError(err, language));
+      setHealth({});
+      setActiveId(null);
+    } finally {
+      setLoading(false);
     }
+    // language is only read inside the catch; humanizeError picks the string
+    // per-call. Not adding it as a dep to avoid tearing down the 10s interval
+    // whenever the language toggle flips.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  const cardClass = `rounded-xl border ${
-    theme === 'dark' ? 'bg-gray-800 border-gray-700' : 'bg-white border-gray-200'
-  }`;
+  useEffect(() => {
+    loadStatus();
+    const interval = setInterval(loadStatus, 10000);
+    return () => clearInterval(interval);
+  }, [loadStatus]);
 
-  const connectedCount = providers.filter(p => p.status === 'connected').length;
-
-  const handleConnect = async (providerId: string) => {
-    const provider = providers.find(p => p.id === providerId);
-    if (!provider) return;
-
-    setConnectingProvider(providerId);
-
+  const switchProvider = async (id: string) => {
+    if (!isElectron() || !window.electronAPI?.setActiveProvider) {
+      // In pure browser dev we can't restart the server ourselves.
+      window.alert(
+        language === 'ru'
+          ? `Для переключения провайдера перезапустите сервер вручную: bab serve --site ${id}`
+          : `To switch provider, restart the server: bab serve --site ${id}`,
+      );
+      return;
+    }
+    setSwitching(id);
+    setError(null);
     try {
-      if (isElectron) {
-        await openProviderSignin(provider.siteUrl);
-      } else {
-        window.open(provider.siteUrl, '_blank');
-      }
-    } catch (e) {
-      console.error('Failed to open URL:', e);
+      const result = await window.electronAPI.setActiveProvider(id);
+      if (!result.success) throw new Error(result.error || 'Switch failed');
+      // Poll /health until the new provider reports healthy (or 20s elapses).
+      await waitForProviderHealthy(id, { timeoutMs: 20000 });
+      await loadStatus();
+    } catch (err) {
+      setError(humanizeError(err, language));
+    } finally {
+      setSwitching(null);
     }
   };
 
-  const handleMarkConnected = (providerId: string) => {
-    setProviders(prev => prev.map(p =>
-      p.id === providerId ? { ...p, status: 'connected' } : p
-    ));
-
-    // Save to localStorage
-    const connected = providers
-      .filter(p => p.status === 'connected' || p.id === providerId)
-      .map(p => p.id);
-    localStorage.setItem('bab-connected-providers', JSON.stringify(connected));
-
-    setConnectingProvider(null);
+  const openSignin = (siteUrl: string) => {
+    if (isElectron() && window.electronAPI?.openProviderSignin) {
+      window.electronAPI.openProviderSignin(siteUrl);
+    } else {
+      window.open(siteUrl, '_blank');
+    }
   };
 
-  const handleDisconnect = (providerId: string) => {
-    setProviders(prev => prev.map(p =>
-      p.id === providerId ? { ...p, status: 'available' } : p
-    ));
+  const cardClass = 'rounded-xl glass';
 
-    const connected = providers
-      .filter(p => p.status === 'connected' && p.id !== providerId)
-      .map(p => p.id);
-    localStorage.setItem('bab-connected-providers', JSON.stringify(connected));
-  };
+  const activeRow = activeId ? health[activeId] : undefined;
+  const connectedCount = Object.values(health).filter((h) => h.healthy).length;
 
   return (
     <div>
       <div className="flex items-center justify-between mb-8">
         <div>
-          <h1 className={`text-2xl font-bold ${theme === 'dark' ? 'text-white' : 'text-gray-900'}`}>
+          <h1 className="text-2xl font-display leading-none text-text">
             {t('providers.title')}
           </h1>
-          <p className={theme === 'dark' ? 'text-gray-400' : 'text-gray-600'}>
-            {t('providers.subtitle')}
+          <p className="text-text-muted mt-2">
+            {language === 'ru'
+              ? 'Одновременно активен один провайдер. Переключение перезапускает сервер.'
+              : 'One provider is active at a time. Switching restarts the server.'}
           </p>
         </div>
         <button
-          onClick={() => setShowAddModal(true)}
-          className="flex items-center gap-2 px-4 py-2.5 bg-primary-500 text-white rounded-lg hover:bg-primary-600 transition-colors"
+          onClick={loadStatus}
+          disabled={loading}
+          className="p-2 rounded-lg transition-colors hover:bg-surface-inset disabled:opacity-60"
+          title={language === 'ru' ? 'Обновить' : 'Refresh'}
         >
-          <Plus className="w-4 h-4" />
-          {t('providers.add')}
+          <RefreshCw className={`w-5 h-5 text-text-muted ${loading ? 'animate-spin' : ''}`} />
         </button>
       </div>
 
-      {/* Chrome Info */}
-      {isElectron && (
-        <div className={`mb-6 p-4 rounded-lg ${
-          theme === 'dark' ? 'bg-blue-900/20 border border-blue-800' : 'bg-blue-50 border border-blue-200'
-        }`}>
-          <div className="flex items-center gap-3">
-            <Chrome className="w-5 h-5 text-blue-500" />
-            <p className={`text-sm ${theme === 'dark' ? 'text-blue-300' : 'text-blue-700'}`}>
-              Click "Connect" to open provider in browser, sign in, then click "I'm Signed In".
-            </p>
-          </div>
+      {error && (
+        <div className="mb-6 p-4 rounded-lg text-sm bg-danger/10 border border-danger/30 text-danger">
+          {error}
         </div>
       )}
 
       {/* Stats */}
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
         <div className={`${cardClass} p-4`}>
           <div className="flex items-center gap-3">
-            <div className={`w-10 h-10 rounded-lg flex items-center justify-center ${
-              theme === 'dark' ? 'bg-green-900' : 'bg-green-50'
-            }`}>
-              <CheckCircle className={`w-5 h-5 ${theme === 'dark' ? 'text-green-400' : 'text-green-600'}`} />
+            <div
+              className={`w-10 h-10 rounded-lg flex items-center justify-center ${
+                activeRow?.healthy
+                  ? 'bg-success/15 text-success'
+                  : 'bg-surface-inset text-text-subtle'
+              }`}
+            >
+              {activeRow?.healthy ? <CheckCircle className="w-5 h-5" /> : <XCircle className="w-5 h-5" />}
             </div>
             <div>
-              <p className={`text-2xl font-bold ${theme === 'dark' ? 'text-white' : 'text-gray-900'}`}>
-                {connectedCount}
+              <p className="text-lg font-display leading-none text-text">
+                <TextStatesSwap
+                  value={
+                    activeId
+                      ? activeId.charAt(0).toUpperCase() + activeId.slice(1)
+                      : language === 'ru' ? 'Нет' : 'None'
+                  }
+                />
               </p>
-              <p className={`text-sm ${theme === 'dark' ? 'text-gray-400' : 'text-gray-600'}`}>
-                Connected
+              <p className="text-sm text-text-muted mt-1">
+                {language === 'ru' ? 'Активный провайдер' : 'Active provider'}
               </p>
             </div>
           </div>
         </div>
         <div className={`${cardClass} p-4`}>
           <div className="flex items-center gap-3">
-            <div className={`w-10 h-10 rounded-lg flex items-center justify-center ${
-              theme === 'dark' ? 'bg-blue-900' : 'bg-blue-50'
-            }`}>
-              <Server className={`w-5 h-5 ${theme === 'dark' ? 'text-blue-400' : 'text-blue-600'}`} />
+            <div className="w-10 h-10 rounded-lg flex items-center justify-center bg-accent-soft text-accent">
+              <Server className="w-5 h-5" />
             </div>
             <div>
-              <p className={`text-2xl font-bold ${theme === 'dark' ? 'text-white' : 'text-gray-900'}`}>
-                {providers.length}
+              <p className="text-2xl font-display leading-none text-text">
+                <NumberPopIn value={connectedCount} />/
+                {Object.keys(health).length || '—'}
               </p>
-              <p className={`text-sm ${theme === 'dark' ? 'text-gray-400' : 'text-gray-600'}`}>
-                Available
+              <p className="text-sm text-text-muted mt-1">
+                {language === 'ru' ? 'Подключено' : 'Connected'}
+              </p>
+            </div>
+          </div>
+        </div>
+        <div className={`${cardClass} p-4`}>
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 rounded-lg flex items-center justify-center bg-warning/15 text-warning">
+              <Globe className="w-5 h-5" />
+            </div>
+            <div>
+              <p className="text-2xl font-display leading-none text-text">
+                {activeRow?.latency ? (
+                  <>
+                    <NumberPopIn value={activeRow.latency} />
+                    <span className="text-base text-text-muted"> ms</span>
+                  </>
+                ) : (
+                  '—'
+                )}
+              </p>
+              <p className="text-sm text-text-muted mt-1">
+                {language === 'ru' ? 'Задержка' : 'Latency'}
               </p>
             </div>
           </div>
         </div>
       </div>
 
-      {/* Provider List */}
-      <div className="space-y-4">
-        {providers.map((provider) => {
-          const Icon = provider.icon;
+      {/* Provider list */}
+      <div className="space-y-3">
+        {CATALOG.map((p) => {
+          const Icon = p.icon;
+          const isActive = p.id === activeId;
+          const row = health[p.id];
+          const isHealthy = row?.healthy === true;
+          const isSwitchingThis = switching === p.id;
+
           return (
-            <div key={provider.id} className={`${cardClass} p-6`}>
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-4">
-                  <div className={`w-12 h-12 rounded-xl flex items-center justify-center ${
-                    provider.status === 'connected' ? 'bg-green-500' : 'bg-blue-500'
-                  }`}>
-                    <Icon className="w-6 h-6 text-white" />
+            <div
+              key={p.id}
+              className={`${cardClass} p-5 transition-shadow ${
+                isActive ? 'ring-2 ring-accent shadow-glass' : ''
+              }`}
+            >
+              <div className="flex items-center justify-between gap-4">
+                <div className="flex items-center gap-4 min-w-0">
+                  <div
+                    className={`w-12 h-12 rounded-xl flex items-center justify-center flex-shrink-0 ${
+                      isHealthy
+                        ? 'bg-success text-white'
+                        : isActive
+                          ? 'bg-warning text-white'
+                          : 'bg-surface-inset text-text-subtle'
+                    }`}
+                  >
+                    <Icon className="w-6 h-6" />
                   </div>
-                  <div>
-                    <h3 className={`text-lg font-semibold ${theme === 'dark' ? 'text-white' : 'text-gray-900'}`}>
-                      {provider.name}
-                    </h3>
+                  <div className="min-w-0">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <h3 className="text-lg font-semibold text-text">{p.name}</h3>
+                      {isActive && (
+                        <span
+                          className={`text-xs px-2 py-0.5 rounded-full font-medium ${
+                            isHealthy
+                              ? 'bg-success/15 text-success'
+                              : 'bg-warning/15 text-warning'
+                          }`}
+                        >
+                          {isHealthy
+                            ? language === 'ru'
+                              ? 'Активен · подключён'
+                              : 'Active · connected'
+                            : language === 'ru'
+                              ? 'Активен · нет входа'
+                              : 'Active · not signed in'}
+                        </span>
+                      )}
+                    </div>
                     <a
-                      href={provider.siteUrl}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className={`text-xs flex items-center gap-1 mt-1 ${
-                        theme === 'dark' ? 'text-blue-400' : 'text-blue-600'
-                      }`}
+                      href={p.siteUrl}
+                      onClick={(e) => {
+                        e.preventDefault();
+                        openSignin(p.siteUrl);
+                      }}
+                      className="text-xs flex items-center gap-1 mt-1 text-accent hover:opacity-80"
                     >
-                      {provider.siteUrl}
+                      {p.siteUrl}
                       <ExternalLink className="w-3 h-3" />
                     </a>
+                    {isActive && !isHealthy && row?.error && (
+                      <p className="text-xs mt-1 text-danger">{row.error}</p>
+                    )}
                   </div>
                 </div>
 
-                <div className="flex items-center gap-3">
-                  {provider.status === 'connected' ? (
-                    <>
-                      <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-sm font-medium bg-green-50 text-green-700">
-                        <CheckCircle className="w-4 h-4" />
-                        Connected
-                      </span>
-                      <button
-                        onClick={() => handleDisconnect(provider.id)}
-                        className={`px-3 py-1.5 rounded-lg text-sm ${
-                          theme === 'dark' ? 'bg-gray-700 text-gray-300 hover:bg-gray-600' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-                        }`}
-                      >
-                        Disconnect
-                      </button>
-                    </>
-                  ) : connectingProvider === provider.id ? (
-                    <div className="flex items-center gap-2">
-                      <span className={`text-sm ${theme === 'dark' ? 'text-yellow-400' : 'text-yellow-600'}`}>
-                        Sign in, then:
-                      </span>
-                      <button
-                        onClick={() => handleMarkConnected(provider.id)}
-                        className="px-3 py-1.5 bg-green-600 text-white rounded-lg hover:bg-green-700 text-sm"
-                      >
-                        I'm Signed In
-                      </button>
-                      <button
-                        onClick={() => setConnectingProvider(null)}
-                        className={`px-3 py-1.5 rounded-lg text-sm ${
-                          theme === 'dark' ? 'bg-gray-700 text-gray-300' : 'bg-gray-100 text-gray-700'
-                        }`}
-                      >
-                        Cancel
-                      </button>
-                    </div>
-                  ) : (
+                <div className="flex items-center gap-2 flex-shrink-0">
+                  {isActive && !isHealthy && (
                     <button
-                      onClick={() => handleConnect(provider.id)}
-                      className="flex items-center gap-2 px-4 py-2 bg-primary-500 text-white rounded-lg hover:bg-primary-600 text-sm"
+                      onClick={() => openSignin(p.siteUrl)}
+                      className="px-3 py-1.5 rounded-lg text-sm bg-warning/15 text-warning hover:bg-warning/25 transition-colors"
                     >
-                      <ExternalLink className="w-4 h-4" />
-                      Connect
+                      {language === 'ru' ? 'Войти в аккаунт' : 'Sign in'}
+                    </button>
+                  )}
+                  {!isActive && (
+                    <button
+                      onClick={() => switchProvider(p.id)}
+                      disabled={isSwitchingThis || switching !== null}
+                      className="flex items-center gap-2 px-4 py-2 bg-accent text-accent-fg rounded-lg hover:opacity-90 text-sm disabled:opacity-60 transition-opacity"
+                    >
+                      {isSwitchingThis ? (
+                        <>
+                          <Loader2 className="w-4 h-4 animate-spin" />
+                          {language === 'ru' ? 'Переключаем…' : 'Switching…'}
+                        </>
+                      ) : language === 'ru' ? (
+                        'Сделать активным'
+                      ) : (
+                        'Make active'
+                      )}
                     </button>
                   )}
                 </div>
@@ -254,47 +303,13 @@ export default function Providers() {
         })}
       </div>
 
-      {/* Add Provider Modal */}
-      {showAddModal && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-          <div className={`${cardClass} p-6 max-w-md w-full mx-4`}>
-            <h2 className={`text-xl font-bold mb-4 ${theme === 'dark' ? 'text-white' : 'text-gray-900'}`}>
-              Add AI Provider
-            </h2>
-            <div className="space-y-2">
-              {providers.filter(p => p.status !== 'connected').map((provider) => {
-                const Icon = provider.icon;
-                return (
-                  <button
-                    key={provider.id}
-                    onClick={() => {
-                      handleConnect(provider.id);
-                      setShowAddModal(false);
-                    }}
-                    className={`w-full flex items-center gap-3 p-3 rounded-lg ${
-                      theme === 'dark' ? 'bg-gray-700 hover:bg-gray-600 text-white' : 'bg-gray-50 hover:bg-gray-100 text-gray-900'
-                    }`}
-                  >
-                    <Icon className="w-5 h-5 text-blue-500" />
-                    <div className="text-left">
-                      <p className="font-medium">{provider.name}</p>
-                      <p className={`text-xs ${theme === 'dark' ? 'text-gray-400' : 'text-gray-500'}`}>
-                        {provider.siteUrl}
-                      </p>
-                    </div>
-                  </button>
-                );
-              })}
-            </div>
-            <button
-              onClick={() => setShowAddModal(false)}
-              className={`w-full mt-4 py-2 rounded-lg ${
-                theme === 'dark' ? 'bg-gray-700 hover:bg-gray-600 text-white' : 'bg-gray-100 hover:bg-gray-200 text-gray-900'
-              }`}
-            >
-              Close
-            </button>
-          </div>
+      {!loading && Object.keys(health).length === 0 && !error && (
+        <div className={`${cardClass} mt-6 p-6 text-center`}>
+          <p className="text-sm text-text-muted">
+            {language === 'ru'
+              ? 'Сервер работает, но ни один провайдер не подключён. Выберите провайдера кнопкой «Сделать активным».'
+              : 'Server is running but no provider is connected. Pick one with "Make active".'}
+          </p>
         </div>
       )}
     </div>

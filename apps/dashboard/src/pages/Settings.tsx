@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import {
   Save,
   Globe,
@@ -8,52 +8,116 @@ import {
   Terminal,
   Sun,
   Moon,
+  Sparkles,
   Languages,
 } from 'lucide-react';
 import { useTheme } from '../contexts/ThemeContext';
 import { useLanguage } from '../contexts/LanguageContext';
+import { isElectron, type BrowserInfo } from '../hooks/useElectron';
+import { Toggle, TextStatesSwap } from '../components/motion';
+
+const DEFAULT_SETTINGS = {
+  general: {
+    serverPort: 3000,
+    autoStart: true,
+    minimizeToTray: true,
+  },
+  browser: {
+    id: 'chrome' as BrowserInfo['id'],
+    useExistingProfile: true,
+    headless: false,
+    defaultTimeout: 30000,
+  },
+  security: {
+    requireConfirmation: true,
+    dangerousCommands: ['rm -rf', 'sudo', 'format'],
+    auditLog: true,
+  },
+  tools: {
+    workingDirectory: '~',
+    maxExecutionTime: 30000,
+    shell: 'bash',
+  },
+};
 
 export default function Settings() {
   const { theme, setTheme } = useTheme();
   const { language, setLanguage, t } = useLanguage();
   const [activeSection, setActiveSection] = useState('general');
-  const [settings, setSettings] = useState({
-    general: {
-      serverPort: 3000,
-      autoStart: true,
-      minimizeToTray: true,
-    },
-    browser: {
-      useExistingProfile: true,
-      headless: false,
-      defaultTimeout: 30000,
-    },
-    security: {
-      requireConfirmation: true,
-      dangerousCommands: ['rm -rf', 'sudo', 'format'],
-      auditLog: true,
-    },
-    tools: {
-      workingDirectory: '~',
-      maxExecutionTime: 30000,
-      shell: 'bash',
-    },
-  });
+  const [settings, setSettings] = useState(DEFAULT_SETTINGS);
+  const [saveState, setSaveState] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle');
+  const [browsers, setBrowsers] = useState<BrowserInfo[]>([]);
+
+  useEffect(() => {
+    if (isElectron() && window.electronAPI?.listBrowsers) {
+      window.electronAPI.listBrowsers().then(setBrowsers).catch(() => setBrowsers([]));
+    }
+  }, []);
+
+  useEffect(() => {
+    async function load() {
+      if (isElectron() && window.electronAPI?.loadSettings) {
+        try {
+          const loaded = await window.electronAPI.loadSettings();
+          if (loaded && typeof loaded === 'object') {
+            setSettings((prev) => ({
+              general: { ...prev.general, ...(loaded.general || {}) },
+              browser: { ...prev.browser, ...(loaded.browser || {}) },
+              security: { ...prev.security, ...(loaded.security || {}) },
+              tools: { ...prev.tools, ...(loaded.tools || {}) },
+            }));
+          }
+        } catch {
+          // Keep defaults on error
+        }
+      } else {
+        const raw = localStorage.getItem('bab-settings');
+        if (raw) {
+          try {
+            const parsed = JSON.parse(raw);
+            setSettings((prev) => ({ ...prev, ...parsed }));
+          } catch {
+            // Ignore malformed value
+          }
+        }
+      }
+    }
+    load();
+  }, []);
 
   const sections = [
     { id: 'general', title: t('settings.general'), description: t('settings.generalDesc'), icon: Monitor },
     { id: 'browser', title: t('settings.browser'), description: t('settings.browserDesc'), icon: Globe },
     { id: 'security', title: t('settings.security'), description: t('settings.securityDesc'), icon: Shield },
     { id: 'tools', title: t('settings.tools'), description: t('settings.toolsDesc'), icon: Terminal },
-    { id: 'appearance', title: t('settings.appearance'), description: t('settings.appearanceDesc'), icon: theme === 'dark' ? Moon : Sun },
+    { id: 'appearance', title: t('settings.appearance'), description: t('settings.appearanceDesc'), icon: theme === 'dark' ? Moon : theme === 'brand' ? Sparkles : Sun },
   ];
 
-  const handleSave = () => {
-    localStorage.setItem('bab-settings', JSON.stringify(settings));
-    alert(language === 'ru' ? 'Настройки сохранены!' : 'Settings saved!');
+  const handleSave = async () => {
+    setSaveState('saving');
+    try {
+      if (isElectron() && window.electronAPI?.saveSettings) {
+        const ok = await window.electronAPI.saveSettings(settings);
+        if (!ok) throw new Error('IPC save returned false');
+      } else {
+        localStorage.setItem('bab-settings', JSON.stringify(settings));
+      }
+      setSaveState('saved');
+      setTimeout(() => setSaveState('idle'), 2000);
+    } catch (err) {
+      console.error('Save settings failed:', err);
+      setSaveState('error');
+      setTimeout(() => setSaveState('idle'), 3000);
+    }
   };
 
-  const inputClass = `w-full px-4 py-2.5 border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500 ${
+  const saveButtonLabel =
+    saveState === 'saving' ? (language === 'ru' ? 'Сохраняем…' : 'Saving…')
+      : saveState === 'saved' ? (language === 'ru' ? 'Сохранено ✓' : 'Saved ✓')
+      : saveState === 'error' ? (language === 'ru' ? 'Ошибка' : 'Error')
+      : t('settings.save');
+
+  const inputClass = `w-full px-4 py-2.5 border rounded-lg focus:outline-none focus:ring-2 focus:ring-accent ${
     theme === 'dark'
       ? 'bg-gray-700 border-gray-600 text-white'
       : 'bg-white border-gray-200 text-gray-900'
@@ -69,19 +133,24 @@ export default function Settings() {
     <div>
       <div className="flex items-center justify-between mb-8">
         <div>
-          <h1 className={`text-2xl font-bold ${theme === 'dark' ? 'text-white' : 'text-gray-900'}`}>
+          <h1 className={`text-2xl font-bold text-text`}>
             {t('settings.title')}
           </h1>
-          <p className={theme === 'dark' ? 'text-gray-400' : 'text-gray-600'}>
+          <p className="text-text-muted">
             {t('settings.subtitle')}
           </p>
         </div>
         <button
           onClick={handleSave}
-          className="flex items-center gap-2 px-4 py-2.5 bg-primary-500 text-white rounded-lg hover:bg-primary-600 transition-colors"
+          disabled={saveState === 'saving'}
+          className={`flex items-center gap-2 px-4 py-2.5 rounded-lg text-accent-fg transition-colors duration-[var(--dur-base)] ease-soft ${
+            saveState === 'error' ? 'bg-danger hover:opacity-90'
+              : saveState === 'saved' ? 'bg-success'
+              : 'bg-accent hover:opacity-90 disabled:opacity-60'
+          }`}
         >
           <Save className="w-4 h-4" />
-          {t('settings.save')}
+          <TextStatesSwap value={saveButtonLabel} />
         </button>
       </div>
 
@@ -96,8 +165,8 @@ export default function Settings() {
                 className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg text-left transition-colors ${
                   activeSection === section.id
                     ? theme === 'dark'
-                      ? 'bg-primary-900 text-primary-300'
-                      : 'bg-primary-50 text-primary-700'
+                      ? 'bg-accent-soft text-accent'
+                      : 'bg-accent-soft text-accent'
                     : theme === 'dark'
                       ? 'text-gray-300 hover:bg-gray-700'
                       : 'text-gray-700 hover:bg-gray-100'
@@ -106,7 +175,7 @@ export default function Settings() {
                 <section.icon className="w-5 h-5" />
                 <div>
                   <p className="font-medium">{section.title}</p>
-                  <p className={`text-xs ${theme === 'dark' ? 'text-gray-500' : 'text-gray-500'}`}>
+                  <p className={`text-xs text-text-subtle`}>
                     {section.description}
                   </p>
                 </div>
@@ -120,12 +189,12 @@ export default function Settings() {
           <div className={cardClass}>
             {activeSection === 'general' && (
               <div className="space-y-6">
-                <h2 className={`text-lg font-semibold ${theme === 'dark' ? 'text-white' : 'text-gray-900'}`}>
+                <h2 className={`text-lg font-semibold text-text`}>
                   {t('settings.general')}
                 </h2>
 
                 <div>
-                  <label className={`block text-sm font-medium mb-2 ${theme === 'dark' ? 'text-gray-300' : 'text-gray-700'}`}>
+                  <label className={`block text-sm font-medium mb-2 text-text-muted`}>
                     {t('settings.serverPort')}
                   </label>
                   <input
@@ -143,198 +212,180 @@ export default function Settings() {
 
                 <div className="flex items-center justify-between">
                   <div>
-                    <p className={`font-medium ${theme === 'dark' ? 'text-white' : 'text-gray-900'}`}>
-                      {t('settings.autoStart')}
-                    </p>
-                    <p className={`text-sm ${theme === 'dark' ? 'text-gray-400' : 'text-gray-600'}`}>
-                      {t('settings.autoStartDesc')}
-                    </p>
+                    <p className="font-medium text-text">{t('settings.autoStart')}</p>
+                    <p className="text-sm text-text-muted">{t('settings.autoStartDesc')}</p>
                   </div>
-                  <button
-                    onClick={() =>
-                      setSettings(prev => ({
-                        ...prev,
-                        general: { ...prev.general, autoStart: !prev.general.autoStart },
-                      }))
+                  <Toggle
+                    checked={settings.general.autoStart}
+                    onChange={(v) =>
+                      setSettings((prev) => ({ ...prev, general: { ...prev.general, autoStart: v } }))
                     }
-                    className={`relative w-12 h-6 rounded-full transition-colors ${
-                      settings.general.autoStart ? 'bg-primary-500' : theme === 'dark' ? 'bg-gray-600' : 'bg-gray-300'
-                    }`}
-                  >
-                    <div
-                      className={`absolute top-1 w-4 h-4 bg-white rounded-full transition-transform ${
-                        settings.general.autoStart ? 'translate-x-7' : 'translate-x-1'
-                      }`}
-                    />
-                  </button>
+                    ariaLabel={t('settings.autoStart')}
+                  />
                 </div>
 
                 <div className="flex items-center justify-between">
                   <div>
-                    <p className={`font-medium ${theme === 'dark' ? 'text-white' : 'text-gray-900'}`}>
-                      {t('settings.minimizeToTray')}
-                    </p>
-                    <p className={`text-sm ${theme === 'dark' ? 'text-gray-400' : 'text-gray-600'}`}>
-                      {t('settings.minimizeToTrayDesc')}
-                    </p>
+                    <p className="font-medium text-text">{t('settings.minimizeToTray')}</p>
+                    <p className="text-sm text-text-muted">{t('settings.minimizeToTrayDesc')}</p>
                   </div>
-                  <button
-                    onClick={() =>
-                      setSettings(prev => ({
-                        ...prev,
-                        general: { ...prev.general, minimizeToTray: !prev.general.minimizeToTray },
-                      }))
+                  <Toggle
+                    checked={settings.general.minimizeToTray}
+                    onChange={(v) =>
+                      setSettings((prev) => ({ ...prev, general: { ...prev.general, minimizeToTray: v } }))
                     }
-                    className={`relative w-12 h-6 rounded-full transition-colors ${
-                      settings.general.minimizeToTray ? 'bg-primary-500' : theme === 'dark' ? 'bg-gray-600' : 'bg-gray-300'
-                    }`}
-                  >
-                    <div
-                      className={`absolute top-1 w-4 h-4 bg-white rounded-full transition-transform ${
-                        settings.general.minimizeToTray ? 'translate-x-7' : 'translate-x-1'
-                      }`}
-                    />
-                  </button>
+                    ariaLabel={t('settings.minimizeToTray')}
+                  />
                 </div>
               </div>
             )}
 
             {activeSection === 'browser' && (
               <div className="space-y-6">
-                <h2 className={`text-lg font-semibold ${theme === 'dark' ? 'text-white' : 'text-gray-900'}`}>
+                <h2 className={`text-lg font-semibold text-text`}>
                   {t('settings.browser')}
                 </h2>
 
-                <div className="flex items-center justify-between">
-                  <div>
-                    <p className={`font-medium ${theme === 'dark' ? 'text-white' : 'text-gray-900'}`}>
-                      {t('settings.useExistingProfile')}
-                    </p>
-                    <p className={`text-sm ${theme === 'dark' ? 'text-gray-400' : 'text-gray-600'}`}>
-                      {t('settings.useExistingProfileDesc')}
-                    </p>
-                  </div>
-                  <button
-                    onClick={() =>
-                      setSettings(prev => ({
-                        ...prev,
-                        browser: { ...prev.browser, useExistingProfile: !prev.browser.useExistingProfile },
-                      }))
-                    }
-                    className={`relative w-12 h-6 rounded-full transition-colors ${
-                      settings.browser.useExistingProfile ? 'bg-primary-500' : theme === 'dark' ? 'bg-gray-600' : 'bg-gray-300'
-                    }`}
-                  >
-                    <div
-                      className={`absolute top-1 w-4 h-4 bg-white rounded-full transition-transform ${
-                        settings.browser.useExistingProfile ? 'translate-x-7' : 'translate-x-1'
-                      }`}
-                    />
-                  </button>
+                <div>
+                  <label className={`block text-sm font-medium mb-2 text-text-muted`}>
+                    {language === 'ru' ? 'Через какой браузер подключаться' : 'Which browser to use'}
+                  </label>
+                  <p className={`text-xs mb-3 text-text-subtle`}>
+                    {language === 'ru'
+                      ? 'Используется ваш уже залогиненный профиль. Не установленные браузеры отключены.'
+                      : 'Uses your already-signed-in profile. Browsers not installed are disabled.'}
+                  </p>
+                  {browsers.length === 0 ? (
+                    <div className={`p-3 rounded-lg text-sm ${
+                      theme === 'dark' ? 'bg-yellow-900/30 text-yellow-300 border border-yellow-800' : 'bg-yellow-50 text-yellow-800 border border-yellow-200'
+                    }`}>
+                      {language === 'ru'
+                        ? 'Ни одного поддерживаемого браузера не найдено. Установите Chrome, Edge, Brave, Opera или Vivaldi.'
+                        : 'No supported browsers detected. Install Chrome, Edge, Brave, Opera, or Vivaldi.'}
+                    </div>
+                  ) : (
+                    <div className="grid grid-cols-2 gap-2">
+                      {browsers.map((b) => {
+                        const active = settings.browser.id === b.id;
+                        return (
+                          <button
+                            key={b.id}
+                            disabled={!b.installed}
+                            onClick={() => setSettings(prev => ({
+                              ...prev,
+                              browser: { ...prev.browser, id: b.id },
+                            }))}
+                            className={`flex items-center justify-between px-3 py-2.5 rounded-lg border-2 text-sm transition-colors text-left ${
+                              !b.installed
+                                ? theme === 'dark'
+                                  ? 'border-gray-700 bg-gray-800 text-gray-600 cursor-not-allowed'
+                                  : 'border-gray-200 bg-gray-100 text-gray-400 cursor-not-allowed'
+                                : active
+                                  ? 'border-accent bg-accent-soft text-accent dark:bg-accent-soft dark:text-accent'
+                                  : theme === 'dark'
+                                    ? 'border-gray-700 bg-gray-800 text-gray-200 hover:border-gray-600'
+                                    : 'border-gray-200 bg-white text-gray-900 hover:border-gray-300'
+                            }`}
+                          >
+                            <span className="font-medium">{b.name}</span>
+                            {!b.installed && (
+                              <span className="text-xs opacity-70">
+                                {language === 'ru' ? 'не установлен' : 'not installed'}
+                              </span>
+                            )}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  )}
                 </div>
 
                 <div className="flex items-center justify-between">
                   <div>
-                    <p className={`font-medium ${theme === 'dark' ? 'text-white' : 'text-gray-900'}`}>
-                      {t('settings.headlessMode')}
-                    </p>
-                    <p className={`text-sm ${theme === 'dark' ? 'text-gray-400' : 'text-gray-600'}`}>
-                      {t('settings.headlessModeDesc')}
-                    </p>
+                    <p className="font-medium text-text">{t('settings.useExistingProfile')}</p>
+                    <p className="text-sm text-text-muted">{t('settings.useExistingProfileDesc')}</p>
                   </div>
-                  <button
-                    onClick={() =>
-                      setSettings(prev => ({
+                  <Toggle
+                    checked={settings.browser.useExistingProfile}
+                    onChange={(v) =>
+                      setSettings((prev) => ({
                         ...prev,
-                        browser: { ...prev.browser, headless: !prev.browser.headless },
+                        browser: { ...prev.browser, useExistingProfile: v },
                       }))
                     }
-                    className={`relative w-12 h-6 rounded-full transition-colors ${
-                      settings.browser.headless ? 'bg-primary-500' : theme === 'dark' ? 'bg-gray-600' : 'bg-gray-300'
-                    }`}
-                  >
-                    <div
-                      className={`absolute top-1 w-4 h-4 bg-white rounded-full transition-transform ${
-                        settings.browser.headless ? 'translate-x-7' : 'translate-x-1'
-                      }`}
-                    />
-                  </button>
+                    ariaLabel={t('settings.useExistingProfile')}
+                  />
+                </div>
+
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="font-medium text-text">{t('settings.headlessMode')}</p>
+                    <p className="text-sm text-text-muted">{t('settings.headlessModeDesc')}</p>
+                  </div>
+                  <Toggle
+                    checked={settings.browser.headless}
+                    onChange={(v) =>
+                      setSettings((prev) => ({
+                        ...prev,
+                        browser: { ...prev.browser, headless: v },
+                      }))
+                    }
+                    ariaLabel={t('settings.headlessMode')}
+                  />
                 </div>
               </div>
             )}
 
             {activeSection === 'security' && (
               <div className="space-y-6">
-                <h2 className={`text-lg font-semibold ${theme === 'dark' ? 'text-white' : 'text-gray-900'}`}>
+                <h2 className={`text-lg font-semibold text-text`}>
                   {t('settings.security')}
                 </h2>
 
                 <div className="flex items-center justify-between">
                   <div>
-                    <p className={`font-medium ${theme === 'dark' ? 'text-white' : 'text-gray-900'}`}>
-                      {t('settings.requireConfirmation')}
-                    </p>
-                    <p className={`text-sm ${theme === 'dark' ? 'text-gray-400' : 'text-gray-600'}`}>
-                      {t('settings.requireConfirmationDesc')}
-                    </p>
+                    <p className="font-medium text-text">{t('settings.requireConfirmation')}</p>
+                    <p className="text-sm text-text-muted">{t('settings.requireConfirmationDesc')}</p>
                   </div>
-                  <button
-                    onClick={() =>
-                      setSettings(prev => ({
+                  <Toggle
+                    checked={settings.security.requireConfirmation}
+                    onChange={(v) =>
+                      setSettings((prev) => ({
                         ...prev,
-                        security: { ...prev.security, requireConfirmation: !prev.security.requireConfirmation },
+                        security: { ...prev.security, requireConfirmation: v },
                       }))
                     }
-                    className={`relative w-12 h-6 rounded-full transition-colors ${
-                      settings.security.requireConfirmation ? 'bg-primary-500' : theme === 'dark' ? 'bg-gray-600' : 'bg-gray-300'
-                    }`}
-                  >
-                    <div
-                      className={`absolute top-1 w-4 h-4 bg-white rounded-full transition-transform ${
-                        settings.security.requireConfirmation ? 'translate-x-7' : 'translate-x-1'
-                      }`}
-                    />
-                  </button>
+                    ariaLabel={t('settings.requireConfirmation')}
+                  />
                 </div>
 
                 <div className="flex items-center justify-between">
                   <div>
-                    <p className={`font-medium ${theme === 'dark' ? 'text-white' : 'text-gray-900'}`}>
-                      {t('settings.auditLog')}
-                    </p>
-                    <p className={`text-sm ${theme === 'dark' ? 'text-gray-400' : 'text-gray-600'}`}>
-                      {t('settings.auditLogDesc')}
-                    </p>
+                    <p className="font-medium text-text">{t('settings.auditLog')}</p>
+                    <p className="text-sm text-text-muted">{t('settings.auditLogDesc')}</p>
                   </div>
-                  <button
-                    onClick={() =>
-                      setSettings(prev => ({
+                  <Toggle
+                    checked={settings.security.auditLog}
+                    onChange={(v) =>
+                      setSettings((prev) => ({
                         ...prev,
-                        security: { ...prev.security, auditLog: !prev.security.auditLog },
+                        security: { ...prev.security, auditLog: v },
                       }))
                     }
-                    className={`relative w-12 h-6 rounded-full transition-colors ${
-                      settings.security.auditLog ? 'bg-primary-500' : theme === 'dark' ? 'bg-gray-600' : 'bg-gray-300'
-                    }`}
-                  >
-                    <div
-                      className={`absolute top-1 w-4 h-4 bg-white rounded-full transition-transform ${
-                        settings.security.auditLog ? 'translate-x-7' : 'translate-x-1'
-                      }`}
-                    />
-                  </button>
+                    ariaLabel={t('settings.auditLog')}
+                  />
                 </div>
               </div>
             )}
 
             {activeSection === 'tools' && (
               <div className="space-y-6">
-                <h2 className={`text-lg font-semibold ${theme === 'dark' ? 'text-white' : 'text-gray-900'}`}>
+                <h2 className={`text-lg font-semibold text-text`}>
                   {t('settings.tools')}
                 </h2>
 
                 <div>
-                  <label className={`block text-sm font-medium mb-2 ${theme === 'dark' ? 'text-gray-300' : 'text-gray-700'}`}>
+                  <label className={`block text-sm font-medium mb-2 text-text-muted`}>
                     {t('settings.workingDirectory')}
                   </label>
                   <div className="flex gap-2">
@@ -358,7 +409,7 @@ export default function Settings() {
                 </div>
 
                 <div>
-                  <label className={`block text-sm font-medium mb-2 ${theme === 'dark' ? 'text-gray-300' : 'text-gray-700'}`}>
+                  <label className={`block text-sm font-medium mb-2 text-text-muted`}>
                     {t('settings.maxExecutionTime')}
                   </label>
                   <input
@@ -375,7 +426,7 @@ export default function Settings() {
                 </div>
 
                 <div>
-                  <label className={`block text-sm font-medium mb-2 ${theme === 'dark' ? 'text-gray-300' : 'text-gray-700'}`}>
+                  <label className={`block text-sm font-medium mb-2 text-text-muted`}>
                     {t('settings.defaultShell')}
                   </label>
                   <select
@@ -399,60 +450,65 @@ export default function Settings() {
 
             {activeSection === 'appearance' && (
               <div className="space-y-6">
-                <h2 className={`text-lg font-semibold ${theme === 'dark' ? 'text-white' : 'text-gray-900'}`}>
+                <h2 className={`text-lg font-semibold text-text`}>
                   {t('settings.appearance')}
                 </h2>
 
-                {/* Theme Selection */}
+                {/* Theme Selection — three Feral-UI palettes */}
                 <div>
-                  <label className={`block text-sm font-medium mb-3 ${theme === 'dark' ? 'text-gray-300' : 'text-gray-700'}`}>
+                  <label className={`block text-sm font-medium mb-3 text-text-muted`}>
                     {t('settings.theme')}
                   </label>
-                  <div className="grid grid-cols-2 gap-3">
-                    <button
-                      onClick={() => setTheme('light')}
-                      className={`flex items-center gap-3 p-4 rounded-lg border-2 transition-colors ${
-                        theme === 'light'
-                          ? 'border-primary-500 bg-primary-50'
-                          : theme === 'dark'
-                            ? 'border-gray-600 bg-gray-700 hover:border-gray-500'
-                            : 'border-gray-200 bg-white hover:border-gray-300'
-                      }`}
-                    >
-                      <Sun className={`w-6 h-6 ${theme === 'light' ? 'text-primary-600' : theme === 'dark' ? 'text-gray-400' : 'text-gray-600'}`} />
-                      <div className="text-left">
-                        <p className={`font-medium ${theme === 'light' ? 'text-primary-700' : theme === 'dark' ? 'text-white' : 'text-gray-900'}`}>
-                          {t('settings.lightTheme')}
-                        </p>
-                        <div className={`mt-1 w-full h-2 rounded-full ${theme === 'light' ? 'bg-gray-200' : 'bg-gray-600'}`}>
-                          <div className="w-1/2 h-full bg-white rounded-full shadow-sm" />
-                        </div>
-                      </div>
-                    </button>
-                    <button
-                      onClick={() => setTheme('dark')}
-                      className={`flex items-center gap-3 p-4 rounded-lg border-2 transition-colors ${
-                        theme === 'dark'
-                          ? 'border-primary-500 bg-primary-900'
-                          : 'border-gray-200 bg-white hover:border-gray-300'
-                      }`}
-                    >
-                      <Moon className={`w-6 h-6 ${theme === 'dark' ? 'text-primary-400' : 'text-gray-600'}`} />
-                      <div className="text-left">
-                        <p className={`font-medium ${theme === 'dark' ? 'text-primary-300' : 'text-gray-900'}`}>
-                          {t('settings.darkTheme')}
-                        </p>
-                        <div className={`mt-1 w-full h-2 rounded-full ${theme === 'dark' ? 'bg-gray-700' : 'bg-gray-200'}`}>
-                          <div className={`w-1/2 h-full rounded-full shadow-sm ml-auto ${theme === 'dark' ? 'bg-gray-500' : 'bg-gray-400'}`} />
-                        </div>
-                      </div>
-                    </button>
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                    {([
+                      {
+                        id: 'brand' as const,
+                        label: t('settings.brandTheme'),
+                        icon: Sparkles,
+                        preview: 'linear-gradient(135deg, #EAF4FC 0%, #A5B7A5 55%, #5B6F57 100%)',
+                      },
+                      {
+                        id: 'light' as const,
+                        label: t('settings.lightTheme'),
+                        icon: Sun,
+                        preview: 'linear-gradient(135deg, #DDDBE0 0%, #A5B7A5 100%)',
+                      },
+                      {
+                        id: 'dark' as const,
+                        label: t('settings.darkTheme'),
+                        icon: Moon,
+                        preview: 'linear-gradient(135deg, #0D0D0D 0%, #707070 100%)',
+                      },
+                    ]).map((opt) => {
+                      const Icon = opt.icon;
+                      const active = theme === opt.id;
+                      return (
+                        <button
+                          key={opt.id}
+                          onClick={() => setTheme(opt.id)}
+                          className={`group flex flex-col gap-3 p-4 rounded-xl border-2 transition-all text-left ${
+                            active
+                              ? 'border-accent shadow-glass'
+                              : 'border-border hover:border-border-strong'
+                          }`}
+                        >
+                          <div
+                            className="h-16 w-full rounded-lg shadow-inner"
+                            style={{ backgroundImage: opt.preview }}
+                          />
+                          <div className="flex items-center gap-2">
+                            <Icon className="w-4 h-4 text-accent" />
+                            <span className="font-medium text-text">{opt.label}</span>
+                          </div>
+                        </button>
+                      );
+                    })}
                   </div>
                 </div>
 
                 {/* Language Selection */}
                 <div>
-                  <label className={`block text-sm font-medium mb-3 ${theme === 'dark' ? 'text-gray-300' : 'text-gray-700'}`}>
+                  <label className={`block text-sm font-medium mb-3 text-text-muted`}>
                     {t('settings.language')}
                   </label>
                   <div className="grid grid-cols-2 gap-3">
@@ -460,18 +516,18 @@ export default function Settings() {
                       onClick={() => setLanguage('en')}
                       className={`flex items-center gap-3 p-4 rounded-lg border-2 transition-colors ${
                         language === 'en'
-                          ? 'border-primary-500 bg-primary-50 dark:bg-primary-900'
+                          ? 'border-accent bg-accent-soft dark:bg-accent-soft'
                           : theme === 'dark'
                             ? 'border-gray-600 bg-gray-700 hover:border-gray-500'
                             : 'border-gray-200 bg-white hover:border-gray-300'
                       }`}
                     >
-                      <Languages className={`w-6 h-6 ${language === 'en' ? 'text-primary-600' : theme === 'dark' ? 'text-gray-400' : 'text-gray-600'}`} />
+                      <Languages className={`w-6 h-6 ${language === 'en' ? 'text-accent' : 'text-text-muted'}`} />
                       <div className="text-left">
-                        <p className={`font-medium ${language === 'en' ? 'text-primary-700 dark:text-primary-300' : theme === 'dark' ? 'text-white' : 'text-gray-900'}`}>
+                        <p className={`font-medium ${language === 'en' ? 'text-accent' : 'text-text'}`}>
                           English
                         </p>
-                        <p className={`text-xs ${theme === 'dark' ? 'text-gray-400' : 'text-gray-500'}`}>
+                        <p className={`text-xs text-text-muted`}>
                           EN
                         </p>
                       </div>
@@ -480,18 +536,18 @@ export default function Settings() {
                       onClick={() => setLanguage('ru')}
                       className={`flex items-center gap-3 p-4 rounded-lg border-2 transition-colors ${
                         language === 'ru'
-                          ? 'border-primary-500 bg-primary-50 dark:bg-primary-900'
+                          ? 'border-accent bg-accent-soft dark:bg-accent-soft'
                           : theme === 'dark'
                             ? 'border-gray-600 bg-gray-700 hover:border-gray-500'
                             : 'border-gray-200 bg-white hover:border-gray-300'
                       }`}
                     >
-                      <Languages className={`w-6 h-6 ${language === 'ru' ? 'text-primary-600' : theme === 'dark' ? 'text-gray-400' : 'text-gray-600'}`} />
+                      <Languages className={`w-6 h-6 ${language === 'ru' ? 'text-accent' : 'text-text-muted'}`} />
                       <div className="text-left">
-                        <p className={`font-medium ${language === 'ru' ? 'text-primary-700 dark:text-primary-300' : theme === 'dark' ? 'text-white' : 'text-gray-900'}`}>
+                        <p className={`font-medium ${language === 'ru' ? 'text-accent' : 'text-text'}`}>
                           Русский
                         </p>
-                        <p className={`text-xs ${theme === 'dark' ? 'text-gray-400' : 'text-gray-500'}`}>
+                        <p className={`text-xs text-text-muted`}>
                           RU
                         </p>
                       </div>

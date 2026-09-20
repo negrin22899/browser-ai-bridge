@@ -18,7 +18,6 @@ contextBridge.exposeInMainWorld('electronAPI', {
   getStatus: () => ipcRenderer.invoke('get-status'),
 
   // ── Browser ──────────────────────────────────────────────────
-  openChrome: (url) => ipcRenderer.invoke('open-chrome', url),
   openExternal: (url) => ipcRenderer.invoke('open-external', url),
 
   // ── Updates ──────────────────────────────────────────────────
@@ -33,6 +32,14 @@ contextBridge.exposeInMainWorld('electronAPI', {
   // ── Settings ─────────────────────────────────────────────────
   loadSettings: () => ipcRenderer.invoke('load-settings'),
   saveSettings: (settings) => ipcRenderer.invoke('save-settings', settings),
+  mergeSettings: (patch) => ipcRenderer.invoke('merge-settings', patch),
+
+  // ── Browsers (multi-browser support) ─────────────────────────
+  listBrowsers: () => ipcRenderer.invoke('list-browsers'),
+  detectInstalledBrowsers: () => ipcRenderer.invoke('detect-installed-browsers'),
+
+  // ── Active provider ──────────────────────────────────────────
+  setActiveProvider: (id) => ipcRenderer.invoke('set-active-provider', id),
 
   // ── Events ───────────────────────────────────────────────────
   onServerStatus: (callback) => {
@@ -40,9 +47,6 @@ contextBridge.exposeInMainWorld('electronAPI', {
   },
   onAppStatus: (callback) => {
     ipcRenderer.on('app-status', (_e, data) => callback(data));
-  },
-  onConnectionStatus: (callback) => {
-    ipcRenderer.on('connection-status', (_e, data) => callback(data));
   },
   onWindowMaximized: (callback) => {
     ipcRenderer.on('window-maximized', (_e, maximized) => callback(maximized));

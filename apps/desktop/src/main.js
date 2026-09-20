@@ -1,10 +1,11 @@
 const { app, BrowserWindow, ipcMain, shell, Tray, Menu, nativeImage, dialog, clipboard } = require('electron');
 const path = require('path');
 const fs = require('fs');
+const { spawn, execSync } = require('child_process');
 
 let mainWindow = null;
 let tray = null;
-let httpServer = null;
+let serverProcess = null;
 let isQuitting = false;
 
 // App state
@@ -14,7 +15,52 @@ const state = {
   provider: null,
   port: 3000,
   site: null,
+  serverError: null,
 };
+
+function resolveCliEntry() {
+  const candidates = app.isPackaged
+    ? [path.join(process.resourcesPath, 'cli', 'index.js')]
+    : [
+        path.join(__dirname, '..', '..', 'cli', 'dist', 'index.js'),
+        path.join(__dirname, '..', '..', '..', 'apps', 'cli', 'dist', 'index.js'),
+      ];
+  for (const p of candidates) {
+    if (fs.existsSync(p)) return p;
+  }
+  return null;
+}
+
+function loadBrowserDetector() {
+  const candidates = app.isPackaged
+    ? [
+        path.join(process.resourcesPath, 'node_modules', '@bab', 'playwright-provider', 'dist', 'browsers.js'),
+        path.join(process.resourcesPath, 'packages', 'playwright-provider', 'dist', 'browsers.js'),
+      ]
+    : [
+        path.join(__dirname, '..', '..', '..', 'packages', 'playwright-provider', 'dist', 'browsers.js'),
+      ];
+  for (const p of candidates) {
+    if (fs.existsSync(p)) {
+      try {
+        return require(p);
+      } catch (err) {
+        console.error('[browsers] Failed to load detector at', p, err);
+      }
+    }
+  }
+  return null;
+}
+
+function broadcastServerStatus() {
+  if (!mainWindow || mainWindow.isDestroyed()) return;
+  mainWindow.webContents.send('server-status', {
+    running: state.serverRunning,
+    port: state.port,
+    site: state.site,
+    error: state.serverError,
+  });
+}
 
 // Settings storage path
 const settingsPath = path.join(app.getPath('userData'), 'settings.json');
@@ -238,60 +284,8 @@ function createWindow() {
     }
   }
 
-  // Inject window controls after dashboard loads
-  mainWindow.webContents.on('did-finish-load', () => {
-    mainWindow.webContents.executeJavaScript(`
-      // Check if title bar already exists
-      if (!document.getElementById('electron-title-bar')) {
-        const titleBar = document.createElement('div');
-        titleBar.id = 'electron-title-bar';
-        titleBar.style.cssText = 'position:fixed;top:0;left:0;right:0;height:32px;background:#0f0f23;display:flex;align-items:center;justify-content:space-between;padding:0 8px;z-index:99999;-webkit-app-region:drag;user-select:none;';
-        
-        const title = document.createElement('span');
-        title.style.cssText = 'font-size:12px;color:#888;margin-left:8px;font-family:system-ui;';
-        title.textContent = 'Browser AI Bridge';
-        
-        const controls = document.createElement('div');
-        controls.style.cssText = 'display:flex;gap:2px;-webkit-app-region:no-drag;';
-        
-        const btnStyle = 'width:36px;height:28px;border:none;background:transparent;color:#aaa;font-size:14px;cursor:pointer;display:flex;align-items:center;justify-content:center;border-radius:4px;';
-        
-        const minBtn = document.createElement('button');
-        minBtn.innerHTML = '&#x2500;';
-        minBtn.style.cssText = btnStyle;
-        minBtn.title = 'Minimize';
-        minBtn.onmouseover = () => minBtn.style.background = '#333';
-        minBtn.onmouseout = () => minBtn.style.background = 'transparent';
-        minBtn.onclick = () => window.electronAPI?.minimizeWindow();
-        
-        const maxBtn = document.createElement('button');
-        maxBtn.innerHTML = '&#x25A1;';
-        maxBtn.style.cssText = btnStyle;
-        maxBtn.title = 'Maximize';
-        maxBtn.onmouseover = () => maxBtn.style.background = '#333';
-        maxBtn.onmouseout = () => maxBtn.style.background = 'transparent';
-        maxBtn.onclick = () => window.electronAPI?.maximizeWindow();
-        
-        const closeBtn = document.createElement('button');
-        closeBtn.innerHTML = '&#x2715;';
-        closeBtn.style.cssText = btnStyle;
-        closeBtn.title = 'Close';
-        closeBtn.onmouseover = () => { closeBtn.style.background = '#e81123'; closeBtn.style.color = '#fff'; };
-        closeBtn.onmouseout = () => { closeBtn.style.background = 'transparent'; closeBtn.style.color = '#aaa'; };
-        closeBtn.onclick = () => window.electronAPI?.closeWindow();
-        
-        controls.appendChild(minBtn);
-        controls.appendChild(maxBtn);
-        controls.appendChild(closeBtn);
-        titleBar.appendChild(title);
-        titleBar.appendChild(controls);
-        document.body.insertBefore(titleBar, document.body.firstChild);
-        
-        // Add padding to body so content isn't hidden behind title bar
-        document.body.style.paddingTop = '32px';
-      }
-    `).catch(() => {});
-  });
+  // Title bar is rendered by the React app (components/TitleBar.tsx) —
+  // no runtime injection here, otherwise we get double 32px offset.
 
   // Prevent close — minimize to tray instead
   mainWindow.on('close', (e) => {
@@ -396,137 +390,118 @@ function updateTray() {
 }
 
 // ─── Server ──────────────────────────────────────────────────────
+// Forks the real BAB CLI (apps/cli/dist/index.js) as a subprocess
+// using Electron as Node (ELECTRON_RUN_AS_NODE=1). This gives us the
+// full stack: ProviderManager + Playwright provider + real routes.
 
-async function startServer(port = 3000) {
-  if (state.serverRunning) {
+async function startServer(port) {
+  if (state.serverRunning || serverProcess) {
     return { success: true, message: 'Server already running' };
   }
 
-  try {
-    const http = require('http');
+  const settings = loadSettings() || {};
+  const general = settings.general || {};
+  const browserSettings = settings.browser || {};
+  const chosenPort = port || general.serverPort || settings.serverPort || 3000;
+  const site = settings.provider || 'gemini';
+  const headless = browserSettings.headless ?? settings.headless ?? false;
+  const useProfile = browserSettings.useExistingProfile ?? settings.useExistingProfile ?? true;
+  const browser =
+    (typeof settings.browser === 'string' ? settings.browser : browserSettings.id) || 'chrome';
 
-    // Simple OpenAI-compatible API server
-    const requestHandler = (req, res) => {
-      // CORS headers
-      res.setHeader('Access-Control-Allow-Origin', '*');
-      res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
-      res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
-
-      if (req.method === 'OPTIONS') {
-        res.writeHead(200);
-        res.end();
-        return;
-      }
-
-      const url = new URL(req.url, `http://localhost:${port}`);
-
-      // Health endpoint
-      if (url.pathname === '/health') {
-        res.writeHead(200, { 'Content-Type': 'application/json' });
-        res.end(JSON.stringify({
-          status: 'ok',
-          timestamp: Date.now(),
-          providers: {}
-        }));
-        return;
-      }
-
-      // Models endpoint
-      if (url.pathname === '/models' || url.pathname === '/v1/models') {
-        res.writeHead(200, { 'Content-Type': 'application/json' });
-        res.end(JSON.stringify({
-          object: 'list',
-          data: [
-            { id: 'gemini', object: 'model', created: 0, owned_by: 'Google' },
-            { id: 'chatgpt', object: 'model', created: 0, owned_by: 'OpenAI' },
-            { id: 'claude', object: 'model', created: 0, owned_by: 'Anthropic' },
-            { id: 'deepseek', object: 'model', created: 0, owned_by: 'DeepSeek' },
-          ]
-        }));
-        return;
-      }
-
-      // Sessions endpoint
-      if (url.pathname === '/v1/sessions') {
-        res.writeHead(200, { 'Content-Type': 'application/json' });
-        res.end(JSON.stringify({ object: 'list', data: [] }));
-        return;
-      }
-
-      // Tools endpoint
-      if (url.pathname === '/v1/tools') {
-        res.writeHead(200, { 'Content-Type': 'application/json' });
-        res.end(JSON.stringify([]));
-        return;
-      }
-
-      // Chat completions endpoint
-      if (url.pathname === '/v1/chat/completions' && req.method === 'POST') {
-        let body = '';
-        req.on('data', chunk => body += chunk);
-        req.on('end', () => {
-          try {
-            const request = JSON.parse(body);
-            const response = {
-              id: `chatcmpl-${Date.now()}`,
-              object: 'chat.completion',
-              created: Math.floor(Date.now() / 1000),
-              model: request.model || 'gemini',
-              choices: [{
-                index: 0,
-                message: {
-                  role: 'assistant',
-                  content: 'Server is running in standalone mode. To use AI providers, please sign in to your AI provider in Chrome and restart with --site flag.'
-                },
-                finish_reason: 'stop'
-              }]
-            };
-            res.writeHead(200, { 'Content-Type': 'application/json' });
-            res.end(JSON.stringify(response));
-          } catch (e) {
-            res.writeHead(400, { 'Content-Type': 'application/json' });
-            res.end(JSON.stringify({ error: { message: 'Invalid JSON' } }));
-          }
-        });
-        return;
-      }
-
-      // 404
-      res.writeHead(404, { 'Content-Type': 'application/json' });
-      res.end(JSON.stringify({ error: { message: 'Not found' } }));
-    };
-
-    httpServer = http.createServer(requestHandler);
-
-    httpServer.listen(port, 'localhost', () => {
-      console.log(`[server] Running at http://localhost:${port}`);
-      state.serverRunning = true;
-      state.port = port;
-      mainWindow?.webContents.send('server-status', { running: true, port });
-      updateTray();
-    });
-
-    httpServer.on('error', (err) => {
-      console.error('[server] Error:', err);
-      state.serverRunning = false;
-      mainWindow?.webContents.send('server-status', { running: false });
-      updateTray();
-    });
-
-    return { success: true };
-  } catch (error) {
-    console.error('[server] Exception:', error);
-    return { success: false, error: error.message };
+  const cliEntry = resolveCliEntry();
+  if (!cliEntry) {
+    const error = 'CLI entry not found. Run "npm run build" in apps/cli.';
+    console.error('[server]', error);
+    state.serverError = error;
+    broadcastServerStatus();
+    return { success: false, error };
   }
+
+  const args = [
+    cliEntry,
+    'serve',
+    '--port', String(chosenPort),
+    '--site', site,
+    '--browser', browser,
+    headless ? '--headless' : '--no-headless',
+    useProfile ? '--profile' : '--no-profile',
+  ];
+
+  console.log('[server] Spawning:', process.execPath, args.join(' '));
+
+  serverProcess = spawn(process.execPath, args, {
+    env: { ...process.env, ELECTRON_RUN_AS_NODE: '1' },
+    stdio: ['ignore', 'pipe', 'pipe'],
+  });
+
+  state.serverError = null;
+  state.port = chosenPort;
+  state.site = site;
+
+  const READY_RE = /running at http:\/\/localhost:(\d+)/i;
+
+  serverProcess.stdout.on('data', (buf) => {
+    const text = buf.toString();
+    process.stdout.write(`[bab-server] ${text}`);
+    const match = text.match(READY_RE);
+    if (match && !state.serverRunning) {
+      state.serverRunning = true;
+      state.port = parseInt(match[1], 10) || chosenPort;
+      broadcastServerStatus();
+      updateTray();
+    }
+  });
+
+  serverProcess.stderr.on('data', (buf) => {
+    process.stderr.write(`[bab-server] ${buf.toString()}`);
+  });
+
+  serverProcess.on('exit', (code, signal) => {
+    console.log(`[server] Exited (code=${code}, signal=${signal})`);
+    const wasRunning = state.serverRunning;
+    state.serverRunning = false;
+    serverProcess = null;
+    if (code !== 0 && code !== null) {
+      state.serverError = `Server exited with code ${code}`;
+    }
+    if (wasRunning) {
+      broadcastServerStatus();
+      updateTray();
+    }
+  });
+
+  serverProcess.on('error', (err) => {
+    console.error('[server] Spawn error:', err);
+    state.serverError = err.message;
+    state.serverRunning = false;
+    serverProcess = null;
+    broadcastServerStatus();
+    updateTray();
+  });
+
+  return { success: true, port: chosenPort, site };
 }
 
 function stopServer() {
-  if (httpServer) {
-    httpServer.close();
-    httpServer = null;
+  if (!serverProcess) {
+    state.serverRunning = false;
+    broadcastServerStatus();
+    updateTray();
+    return { success: true };
   }
+  try {
+    if (process.platform === 'win32') {
+      execSync(`taskkill /pid ${serverProcess.pid} /T /F`);
+    } else {
+      serverProcess.kill('SIGTERM');
+    }
+  } catch (err) {
+    console.error('[server] Kill failed:', err);
+  }
+  serverProcess = null;
   state.serverRunning = false;
-  mainWindow?.webContents.send('server-status', { running: false });
+  broadcastServerStatus();
   updateTray();
   return { success: true };
 }
@@ -676,6 +651,63 @@ ipcMain.handle('get-detected-providers', async () => {
   return detected;
 });
 
+// ─── IPC: Active provider ────────────────────────────────────────
+
+ipcMain.handle('set-active-provider', async (_event, providerId) => {
+  const allowed = ['gemini', 'chatgpt', 'claude', 'deepseek'];
+  if (!allowed.includes(providerId)) {
+    return { success: false, error: 'Unknown provider' };
+  }
+  const settings = loadSettings() || {};
+  settings.provider = providerId;
+  saveSettings(settings);
+  // Restart server so the new provider is picked up
+  if (state.serverRunning || serverProcess) {
+    stopServer();
+    // Wait a moment for port release
+    await new Promise((r) => setTimeout(r, 500));
+  }
+  const result = await startServer();
+  return { success: result.success, error: result.error, provider: providerId };
+});
+
+// ─── IPC: Browsers (multi-browser support) ───────────────────────
+
+ipcMain.handle('list-browsers', async () => {
+  const detector = loadBrowserDetector();
+  if (!detector) {
+    // Detector module not built yet — return Chrome fallback so UI still works.
+    return [{
+      id: 'chrome',
+      name: 'Google Chrome',
+      executablePath: getChromeExecutablePath(),
+      userDataDir: getChromeUserDataDir(),
+      installed: isChromeInstalled(),
+    }];
+  }
+  try {
+    return detector.listAllBrowsers();
+  } catch (err) {
+    console.error('[browsers] listAllBrowsers failed:', err);
+    return [];
+  }
+});
+
+ipcMain.handle('detect-installed-browsers', async () => {
+  const detector = loadBrowserDetector();
+  if (!detector) {
+    return isChromeInstalled()
+      ? [{ id: 'chrome', name: 'Google Chrome', installed: true, executablePath: getChromeExecutablePath(), userDataDir: getChromeUserDataDir() }]
+      : [];
+  }
+  try {
+    return detector.detectInstalledBrowsers();
+  } catch (err) {
+    console.error('[browsers] detectInstalledBrowsers failed:', err);
+    return [];
+  }
+});
+
 // ─── IPC: Settings ───────────────────────────────────────────────
 
 ipcMain.handle('load-settings', async () => {
@@ -684,6 +716,15 @@ ipcMain.handle('load-settings', async () => {
 
 ipcMain.handle('save-settings', async (_event, settings) => {
   return saveSettings(settings);
+});
+
+// Atomic partial merge — avoids theme/lang races where two writers each
+// read the file and clobber the other's field.
+ipcMain.handle('merge-settings', async (_event, patch) => {
+  const current = loadSettings() || {};
+  const next = { ...current, ...(patch || {}) };
+  const ok = saveSettings(next);
+  return ok ? next : null;
 });
 
 // ─── IPC: Tray actions ───────────────────────────────────────────

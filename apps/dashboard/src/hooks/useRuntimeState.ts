@@ -107,7 +107,7 @@ export function useRuntimeState(): RuntimeState {
           },
           browser: {
             connected: connectedProviders.length > 0,
-            url: providerData?.details?.url as string ?? '',
+            url: '',
           },
           performance: {
             providerLatency: providerData?.latency ?? 0,
