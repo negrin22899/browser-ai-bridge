@@ -64,6 +64,24 @@ class MockProvider implements Provider {
       };
     }
 
+    if (userMessage.includes('results')) {
+      this._status = 'connected';
+      return {
+        id: `mock-${Date.now()}`,
+        object: 'chat.completion',
+        created: Date.now(),
+        model: request.model,
+        choices: [{
+          index: 0,
+          message: {
+            role: 'assistant',
+            content: 'Tool execution complete',
+          },
+          finish_reason: 'stop',
+        }],
+      };
+    }
+
     if (userMessage.includes('git status') || userMessage.includes('гит статус')) {
       this._status = 'connected';
       return {
@@ -204,6 +222,7 @@ describe('Stage 6: OpenAI API Integration Tests', () => {
       sessionManager,
       logger,
       promptEngine,
+      runtime,
     });
   });
 
@@ -294,7 +313,7 @@ describe('Stage 6: OpenAI API Integration Tests', () => {
   });
 
   describe('Tool Calls via API', () => {
-    it('should handle tool call request', async () => {
+    it('should execute fs.read tool calls and return the final answer', async () => {
       const res = await app.request('/v1/chat/completions', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -307,12 +326,11 @@ describe('Stage 6: OpenAI API Integration Tests', () => {
       expect(res.status).toBe(200);
 
       const body = await res.json();
-      expect(body.choices[0].finish_reason).toBe('tool_calls');
-      expect(body.choices[0].message.tool_calls).toHaveLength(1);
-      expect(body.choices[0].message.tool_calls[0].function.name).toBe('fs.read');
+      expect(body.choices[0].finish_reason).toBe('stop');
+      expect(body.choices[0].message.content).toBe('Tool execution complete');
     });
 
-    it('should handle git status tool call', async () => {
+    it('should execute git status tool calls', async () => {
       const res = await app.request('/v1/chat/completions', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -325,8 +343,8 @@ describe('Stage 6: OpenAI API Integration Tests', () => {
       expect(res.status).toBe(200);
 
       const body = await res.json();
-      expect(body.choices[0].finish_reason).toBe('tool_calls');
-      expect(body.choices[0].message.tool_calls[0].function.name).toBe('git.status');
+      expect(body.choices[0].finish_reason).toBe('stop');
+      expect(body.choices[0].message.content).toBe('Tool execution complete');
     });
   });
 

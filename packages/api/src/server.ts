@@ -2,16 +2,23 @@ import { Hono } from 'hono';
 import { cors } from 'hono/cors';
 import type { ProviderManager, SessionManager, Logger } from '@bab/core';
 import type { PromptEngine } from '@bab/prompt-engine';
+import type { Runtime } from '@bab/runtime';
 import type { ChatCompletionRequest, Provider } from '@bab/protocol';
 import { RateLimiter } from './rate-limiter.js';
 import { redactString } from './redaction.js';
 import { RequestValidator } from './validation.js';
+import { runToolLoop } from './tool-loop.js';
+import { ConfigStore } from './config-store.js';
+import { MetricsCollector, createRequestMetrics } from './metrics.js';
 
 interface ServerDeps {
   providerManager: ProviderManager;
   sessionManager: SessionManager;
   logger: Logger;
   promptEngine: PromptEngine;
+  runtime?: Runtime;
+  configStore?: ConfigStore;
+  metrics?: MetricsCollector;
   rateLimiter?: RateLimiter;
   validator?: RequestValidator;
 }
@@ -21,6 +28,9 @@ export function createServer(deps: ServerDeps): Hono {
   const { providerManager, sessionManager, logger, promptEngine } = deps;
   const rateLimiter = deps.rateLimiter ?? new RateLimiter();
   const validator = deps.validator ?? new RequestValidator();
+  const configStore = deps.configStore ?? new ConfigStore();
+  const metrics = deps.metrics ?? new MetricsCollector();
+  const metricsHelpers = createRequestMetrics(metrics);
 
   // CORS
   app.use('*', cors({
@@ -98,6 +108,9 @@ export function createServer(deps: ServerDeps): Hono {
 
     logger.info('Chat completion request', { model: body.model });
 
+    const finishRequest = metricsHelpers.startRequest();
+    let providerId = body.model;
+
     try {
       let provider: Provider;
       try {
@@ -105,6 +118,9 @@ export function createServer(deps: ServerDeps): Hono {
       } catch {
         return c.json({ error: { message: 'No provider available' } }, 503);
       }
+
+      providerId = provider.id;
+      metricsHelpers.recordProviderRequest(provider.id);
 
       // Inject system prompt with tool negotiation if tools available
       const tools = provider.getTools?.() ?? [];
@@ -130,17 +146,25 @@ export function createServer(deps: ServerDeps): Hono {
         return streamResponse(provider, body, logger);
       }
 
-      const response = await provider.send(body);
+      const response = deps.runtime
+        ? await runToolLoop(provider, deps.runtime, logger, body, session.id, {
+            onMessage: (m) => session.addMessage(m),
+          })
+        : await provider.send(body);
 
-      if (response.choices[0]?.message) {
+      if (response.choices[0]?.message && !deps.runtime) {
         session.addMessage(response.choices[0].message);
       }
 
       return c.json(response);
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : 'Internal server error';
+      metricsHelpers.recordError(errorMessage);
+      metricsHelpers.recordProviderError(providerId, errorMessage);
       logger.error('Request failed', { error: redactString(errorMessage) });
       return c.json({ error: { message: redactString(errorMessage), type: 'server_error' } }, 500);
+    } finally {
+      finishRequest();
     }
   });
 
@@ -228,6 +252,16 @@ export function createServer(deps: ServerDeps): Hono {
     return c.json(session.toJSON());
   });
 
+  app.delete('/v1/sessions/:id', (c) => {
+    const id = c.req.param('id');
+    const session = sessionManager.get(id);
+    if (!session) {
+      return c.json({ error: { message: 'Session not found' } }, 404);
+    }
+    sessionManager.close(id);
+    return c.json({ deleted: true, id });
+  });
+
   // ── Tools ────────────────────────────────────────────────────
 
   app.get('/v1/tools', (c) => {
@@ -240,18 +274,101 @@ export function createServer(deps: ServerDeps): Hono {
     }
   });
 
+  // ── Config ──────────────────────────────────────────────────
+
+  app.get('/v1/config', (c) => {
+    return c.json(configStore.get());
+  });
+
+  app.put('/v1/config', async (c) => {
+    let body: unknown;
+    try {
+      body = await c.req.json();
+    } catch {
+      return c.json({ error: { message: 'Invalid JSON body' } }, 400);
+    }
+
+    if (!body || typeof body !== 'object' || Array.isArray(body)) {
+      return c.json({ error: { message: 'Config must be an object' } }, 400);
+    }
+
+    return c.json(configStore.set(body as Partial<import('./config-store.js').AppConfig>));
+  });
+
+  // ── Extensions ───────────────────────────────────────────────
+
+  app.get('/v1/extensions', (c) => {
+    const data: Array<Record<string, unknown>> = [];
+
+    for (const provider of providerManager.list()) {
+      data.push({
+        id: `provider-${provider.id}`,
+        name: provider.name,
+        type: 'provider',
+        providerId: provider.id,
+        enabled: true,
+        status: provider.status,
+      });
+    }
+
+    if (deps.runtime) {
+      for (const tool of deps.runtime.getToolDescriptions()) {
+        data.push({
+          id: `tool-${tool.name}`,
+          name: tool.name,
+          type: 'tool',
+          enabled: true,
+          description: tool.description,
+        });
+      }
+    }
+
+    return c.json({ object: 'list', data });
+  });
+
+  // ── Audit ───────────────────────────────────────────────────
+
+  app.get('/v1/audit', (c) => {
+    const entries: Array<Record<string, unknown>> = [];
+
+    if (deps.runtime) {
+      for (const session of sessionManager.list()) {
+        for (const entry of deps.runtime.getAuditLog(session.id)) {
+          entries.push({
+            id: `${entry.timestamp}-${entry.toolName}-${entries.length}`,
+            timestamp: entry.timestamp,
+            sessionId: entry.sessionId,
+            toolName: entry.toolName,
+            result: entry.result,
+            reason: entry.reason,
+          });
+        }
+      }
+    }
+
+    entries.sort((a, b) => (b.timestamp as number) - (a.timestamp as number));
+    return c.json({ object: 'list', data: entries });
+  });
+
   // ── Metrics ──────────────────────────────────────────────────
 
   app.get('/metrics', (c) => {
     const providers = providerManager.list();
     const lines: string[] = [];
 
-    lines.push('# HELP bab_providers_total Total number of providers');
+    for (const metric of metrics.getMetrics()) {
+      const name = metric.name.replace(/\./g, '_');
+      const labelStr = metric.labels
+        ? '{' + Object.entries(metric.labels).map(([k, v]) => `${k}="${v}"`).join(',') + '}'
+        : '';
+      lines.push(`# TYPE ${name} ${metric.name.endsWith('total') ? 'counter' : 'gauge'}`);
+      lines.push(`${name}${labelStr} ${metric.value}`);
+    }
+
     lines.push('# TYPE bab_providers_total gauge');
     lines.push(`bab_providers_total ${providers.length}`);
 
     for (const provider of providers) {
-      lines.push('# HELP bab_provider_status Provider status (1=connected, 0=disconnected)');
       lines.push('# TYPE bab_provider_status gauge');
       lines.push(`bab_provider_status{provider="${provider.id}"} ${provider.status === 'connected' ? 1 : 0}`);
     }
@@ -281,6 +398,13 @@ function streamResponse(provider: Provider, request: ChatCompletionRequest, logg
           error: error instanceof Error ? error.message : String(error),
         });
         controller.error(error);
+      }
+    },
+    cancel() {
+      try {
+        provider.cancel();
+      } catch {
+        // Ignore cancel errors
       }
     },
   });

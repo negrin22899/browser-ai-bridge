@@ -3,6 +3,21 @@
 > Статус: ЧЕРНОВИК — ожидаем дополнения от пользователя
 > Дата: 2026-08-10
 
+## STATUS UPDATE (2026-08-18)
+
+Нижеприведённый план частично устарел — часть пунктов уже выполнена. Актуальное состояние:
+
+- ✅ Tool execution loop подключён к `/v1/chat/completions` (tool_calls/actions → PermissionEngine → ToolDispatcher → результат обратно), CLI `chat` и `serve` используют его; добавлен флаг `--allow`.
+- ✅ Dashboard: Dashboard/Chat/Sessions/Runtime уже на реальном API; переписаны Providers (health/models), Logs (`/v1/audit`), Extensions (`/v1/extensions`), Settings (`/v1/config`); Integrations уже был подключён к `/health`.
+- ✅ Добавлены `DELETE /v1/sessions/:id`, `/v1/audit`, `/v1/config`, `/v1/extensions`.
+- ✅ `BrowserManager` дедуплицирован: 4 копии в плагинах удалены (используется `@bab/playwright-provider`).
+- ✅ `cancel()` реализован (ResponseReader → PlaywrightAdapter → PlaywrightProvider) и подключён к abort HTTP-стрима.
+- ✅ Graceful shutdown в CLI (SIGINT/SIGTERM, uncaughtException/unhandledRejection).
+- ✅ Полные метрики (`requests_total`, `requests_duration`, `provider_requests`, `provider_errors`) в `/metrics`.
+- ✅ CI падает при падении тестов; добавлен deterministic integration-джоб; исправлены тест-скрипты и устаревшие тесты.
+
+Осталось (не сделано): npm-пакет, Docker/WSL/SSH runtime providers, plugin marketplace, CDP/Extension adapters, OAuth-интеграции, E2E для ChatGPT/Claude/DeepSeek.
+
 ---
 
 ## БЛОК 1: Убираем всё fake/mock/заглушка → делаем реальным

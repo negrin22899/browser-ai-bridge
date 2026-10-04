@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { RateLimiter } from '../rate-limiter.js';
+import { RateLimiter } from './rate-limiter.js';
 
 describe('RateLimiter', () => {
   it('should allow requests within limit', () => {

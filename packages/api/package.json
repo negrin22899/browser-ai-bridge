@@ -15,6 +15,7 @@
     "@bab/core": "*",
     "@bab/protocol": "*",
     "@bab/prompt-engine": "*",
+    "@bab/runtime": "*",
     "hono": "^4.0.0",
     "@hono/node-server": "^1.0.0"
   },

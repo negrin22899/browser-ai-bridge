@@ -1,103 +1,106 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import {
   Server,
   Globe,
   Zap,
   CheckCircle,
-  Plus,
+  XCircle,
   ExternalLink,
   Chrome,
+  RefreshCw,
+  Loader2,
 } from 'lucide-react';
 import { useTheme } from '../contexts/ThemeContext';
 import { useLanguage } from '../contexts/LanguageContext';
 import { useElectron } from '../hooks/useElectron';
+import { api } from '../lib/api';
 
 interface ProviderInfo {
   id: string;
   name: string;
   siteUrl: string;
-  status: 'connected' | 'available';
-  icon: typeof Globe;
+  status: 'connected' | 'disconnected';
+  latency?: number;
+  error?: string;
 }
 
-const PROVIDERS: ProviderInfo[] = [
-  { id: 'gemini', name: 'Google Gemini', siteUrl: 'https://gemini.google.com', status: 'available', icon: Globe },
-  { id: 'chatgpt', name: 'ChatGPT', siteUrl: 'https://chatgpt.com', status: 'available', icon: Zap },
-  { id: 'claude', name: 'Claude', siteUrl: 'https://claude.ai', status: 'available', icon: Globe },
-  { id: 'deepseek', name: 'DeepSeek', siteUrl: 'https://chat.deepseek.com', status: 'available', icon: Globe },
-];
+// Static metadata for known providers. Live status comes from /health.
+const PROVIDER_META: Record<string, { name: string; siteUrl: string }> = {
+  gemini: { name: 'Google Gemini', siteUrl: 'https://gemini.google.com' },
+  chatgpt: { name: 'ChatGPT', siteUrl: 'https://chatgpt.com' },
+  claude: { name: 'Claude', siteUrl: 'https://claude.ai' },
+  deepseek: { name: 'DeepSeek', siteUrl: 'https://chat.deepseek.com' },
+};
+
+function getProviderIcon(id: string) {
+  if (id === 'chatgpt') return Zap;
+  return Globe;
+}
 
 export default function Providers() {
   const { theme } = useTheme();
   const { t } = useLanguage();
-  const { isElectron, openProviderSignin } = useElectron();
-  const [providers, setProviders] = useState<ProviderInfo[]>(PROVIDERS);
-  const [showAddModal, setShowAddModal] = useState(false);
-  const [connectingProvider, setConnectingProvider] = useState<string | null>(null);
+  const { isElectron } = useElectron();
+  const [providers, setProviders] = useState<ProviderInfo[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [connectingId, setConnectingId] = useState<string | null>(null);
 
-  useEffect(() => {
-    // Load saved providers from localStorage
+  const loadProviders = useCallback(async () => {
     try {
-      const saved = localStorage.getItem('bab-connected-providers');
-      if (saved) {
-        const connectedIds = JSON.parse(saved) as string[];
-        setProviders(PROVIDERS.map(p => ({
-          ...p,
-          status: connectedIds.includes(p.id) ? 'connected' : 'available',
-        })));
-      }
-    } catch (e) {
-      console.error('Failed to load providers:', e);
+      const [health, models] = await Promise.all([api.getHealth(), api.getModels()]);
+
+      const providerIds = models.data?.length
+        ? models.data.map((m) => m.id)
+        : Object.keys(health.providers);
+
+      const list: ProviderInfo[] = providerIds.map((id) => {
+        const meta = PROVIDER_META[id] ?? { name: id, siteUrl: '' };
+        const healthData = health.providers[id];
+        return {
+          id,
+          name: meta.name,
+          siteUrl: meta.siteUrl,
+          status: healthData?.healthy ? 'connected' : 'disconnected',
+          latency: healthData?.latency,
+          error: healthData?.error,
+        };
+      });
+
+      setProviders(list);
+    } catch {
+      setProviders([]);
+    } finally {
+      setLoading(false);
     }
   }, []);
+
+  useEffect(() => {
+    loadProviders();
+    const interval = setInterval(loadProviders, 5000);
+    return () => clearInterval(interval);
+  }, [loadProviders]);
+
+  const handleConnect = async (providerId: string) => {
+    const provider = providers.find((p) => p.id === providerId);
+    if (!provider || !provider.siteUrl) return;
+
+    setConnectingId(providerId);
+    // In Electron, window.open is intercepted by setWindowOpenHandler
+    // and opens in the system browser. In the web dashboard it opens a tab.
+    window.open(provider.siteUrl, '_blank');
+
+    // Give the user a moment to sign in, then refresh status.
+    setTimeout(() => {
+      loadProviders();
+      setConnectingId(null);
+    }, 3000);
+  };
 
   const cardClass = `rounded-xl border ${
     theme === 'dark' ? 'bg-gray-800 border-gray-700' : 'bg-white border-gray-200'
   }`;
 
-  const connectedCount = providers.filter(p => p.status === 'connected').length;
-
-  const handleConnect = async (providerId: string) => {
-    const provider = providers.find(p => p.id === providerId);
-    if (!provider) return;
-
-    setConnectingProvider(providerId);
-
-    try {
-      if (isElectron) {
-        await openProviderSignin(provider.siteUrl);
-      } else {
-        window.open(provider.siteUrl, '_blank');
-      }
-    } catch (e) {
-      console.error('Failed to open URL:', e);
-    }
-  };
-
-  const handleMarkConnected = (providerId: string) => {
-    setProviders(prev => prev.map(p =>
-      p.id === providerId ? { ...p, status: 'connected' } : p
-    ));
-
-    // Save to localStorage
-    const connected = providers
-      .filter(p => p.status === 'connected' || p.id === providerId)
-      .map(p => p.id);
-    localStorage.setItem('bab-connected-providers', JSON.stringify(connected));
-
-    setConnectingProvider(null);
-  };
-
-  const handleDisconnect = (providerId: string) => {
-    setProviders(prev => prev.map(p =>
-      p.id === providerId ? { ...p, status: 'available' } : p
-    ));
-
-    const connected = providers
-      .filter(p => p.status === 'connected' && p.id !== providerId)
-      .map(p => p.id);
-    localStorage.setItem('bab-connected-providers', JSON.stringify(connected));
-  };
+  const connectedCount = providers.filter((p) => p.status === 'connected').length;
 
   return (
     <div>
@@ -111,15 +114,17 @@ export default function Providers() {
           </p>
         </div>
         <button
-          onClick={() => setShowAddModal(true)}
-          className="flex items-center gap-2 px-4 py-2.5 bg-primary-500 text-white rounded-lg hover:bg-primary-600 transition-colors"
+          onClick={loadProviders}
+          className={`p-2 rounded-lg transition-colors ${
+            theme === 'dark' ? 'hover:bg-gray-700' : 'hover:bg-gray-100'
+          }`}
         >
-          <Plus className="w-4 h-4" />
-          {t('providers.add')}
+          <RefreshCw className={`w-5 h-5 ${loading ? 'animate-spin' : ''} ${
+            theme === 'dark' ? 'text-gray-400' : 'text-gray-600'
+          }`} />
         </button>
       </div>
 
-      {/* Chrome Info */}
       {isElectron && (
         <div className={`mb-6 p-4 rounded-lg ${
           theme === 'dark' ? 'bg-blue-900/20 border border-blue-800' : 'bg-blue-50 border border-blue-200'
@@ -127,7 +132,7 @@ export default function Providers() {
           <div className="flex items-center gap-3">
             <Chrome className="w-5 h-5 text-blue-500" />
             <p className={`text-sm ${theme === 'dark' ? 'text-blue-300' : 'text-blue-700'}`}>
-              Click "Connect" to open provider in browser, sign in, then click "I'm Signed In".
+              Click "Connect" to open the provider in your browser and sign in. Status updates automatically.
             </p>
           </div>
         </div>
@@ -172,129 +177,87 @@ export default function Providers() {
       </div>
 
       {/* Provider List */}
-      <div className="space-y-4">
-        {providers.map((provider) => {
-          const Icon = provider.icon;
-          return (
-            <div key={provider.id} className={`${cardClass} p-6`}>
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-4">
-                  <div className={`w-12 h-12 rounded-xl flex items-center justify-center ${
-                    provider.status === 'connected' ? 'bg-green-500' : 'bg-blue-500'
-                  }`}>
-                    <Icon className="w-6 h-6 text-white" />
+      {loading && providers.length === 0 ? (
+        <div className="flex items-center justify-center h-40">
+          <Loader2 className="w-8 h-8 animate-spin text-primary-500" />
+        </div>
+      ) : providers.length === 0 ? (
+        <div className={`${cardClass} p-12 text-center`}>
+          <p className={theme === 'dark' ? 'text-gray-400' : 'text-gray-600'}>
+            No providers configured. Start the server with --site flag.
+          </p>
+        </div>
+      ) : (
+        <div className="space-y-4">
+          {providers.map((provider) => {
+            const Icon = getProviderIcon(provider.id);
+            return (
+              <div key={provider.id} className={`${cardClass} p-6`}>
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-4">
+                    <div className={`w-12 h-12 rounded-xl flex items-center justify-center ${
+                      provider.status === 'connected' ? 'bg-green-500' : 'bg-blue-500'
+                    }`}>
+                      <Icon className="w-6 h-6 text-white" />
+                    </div>
+                    <div>
+                      <h3 className={`text-lg font-semibold ${theme === 'dark' ? 'text-white' : 'text-gray-900'}`}>
+                        {provider.name}
+                      </h3>
+                      <div className="flex items-center gap-2 mt-1">
+                        {provider.siteUrl && (
+                          <a
+                            href={provider.siteUrl}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className={`text-xs flex items-center gap-1 ${
+                              theme === 'dark' ? 'text-blue-400' : 'text-blue-600'
+                            }`}
+                          >
+                            {provider.siteUrl}
+                            <ExternalLink className="w-3 h-3" />
+                          </a>
+                        )}
+                        {provider.latency !== undefined && (
+                          <span className={`text-xs ${theme === 'dark' ? 'text-gray-500' : 'text-gray-400'}`}>
+                            {provider.latency}ms
+                          </span>
+                        )}
+                      </div>
+                    </div>
                   </div>
-                  <div>
-                    <h3 className={`text-lg font-semibold ${theme === 'dark' ? 'text-white' : 'text-gray-900'}`}>
-                      {provider.name}
-                    </h3>
-                    <a
-                      href={provider.siteUrl}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className={`text-xs flex items-center gap-1 mt-1 ${
-                        theme === 'dark' ? 'text-blue-400' : 'text-blue-600'
-                      }`}
-                    >
-                      {provider.siteUrl}
-                      <ExternalLink className="w-3 h-3" />
-                    </a>
-                  </div>
-                </div>
 
-                <div className="flex items-center gap-3">
-                  {provider.status === 'connected' ? (
-                    <>
+                  <div className="flex items-center gap-3">
+                    {provider.status === 'connected' ? (
                       <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-sm font-medium bg-green-50 text-green-700">
                         <CheckCircle className="w-4 h-4" />
                         Connected
                       </span>
-                      <button
-                        onClick={() => handleDisconnect(provider.id)}
-                        className={`px-3 py-1.5 rounded-lg text-sm ${
-                          theme === 'dark' ? 'bg-gray-700 text-gray-300 hover:bg-gray-600' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-                        }`}
-                      >
-                        Disconnect
-                      </button>
-                    </>
-                  ) : connectingProvider === provider.id ? (
-                    <div className="flex items-center gap-2">
-                      <span className={`text-sm ${theme === 'dark' ? 'text-yellow-400' : 'text-yellow-600'}`}>
-                        Sign in, then:
+                    ) : (
+                      <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-sm font-medium bg-gray-50 text-gray-600">
+                        <XCircle className="w-4 h-4" />
+                        {provider.error ? 'Error' : 'Disconnected'}
                       </span>
+                    )}
+                    {provider.status !== 'connected' && (
                       <button
-                        onClick={() => handleMarkConnected(provider.id)}
-                        className="px-3 py-1.5 bg-green-600 text-white rounded-lg hover:bg-green-700 text-sm"
+                        onClick={() => handleConnect(provider.id)}
+                        disabled={connectingId === provider.id}
+                        className="flex items-center gap-2 px-4 py-2 bg-primary-500 text-white rounded-lg hover:bg-primary-600 text-sm disabled:opacity-50"
                       >
-                        I'm Signed In
+                        {connectingId === provider.id ? (
+                          <Loader2 className="w-4 h-4 animate-spin" />
+                        ) : (
+                          <ExternalLink className="w-4 h-4" />
+                        )}
+                        Connect
                       </button>
-                      <button
-                        onClick={() => setConnectingProvider(null)}
-                        className={`px-3 py-1.5 rounded-lg text-sm ${
-                          theme === 'dark' ? 'bg-gray-700 text-gray-300' : 'bg-gray-100 text-gray-700'
-                        }`}
-                      >
-                        Cancel
-                      </button>
-                    </div>
-                  ) : (
-                    <button
-                      onClick={() => handleConnect(provider.id)}
-                      className="flex items-center gap-2 px-4 py-2 bg-primary-500 text-white rounded-lg hover:bg-primary-600 text-sm"
-                    >
-                      <ExternalLink className="w-4 h-4" />
-                      Connect
-                    </button>
-                  )}
+                    )}
+                  </div>
                 </div>
               </div>
-            </div>
-          );
-        })}
-      </div>
-
-      {/* Add Provider Modal */}
-      {showAddModal && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-          <div className={`${cardClass} p-6 max-w-md w-full mx-4`}>
-            <h2 className={`text-xl font-bold mb-4 ${theme === 'dark' ? 'text-white' : 'text-gray-900'}`}>
-              Add AI Provider
-            </h2>
-            <div className="space-y-2">
-              {providers.filter(p => p.status !== 'connected').map((provider) => {
-                const Icon = provider.icon;
-                return (
-                  <button
-                    key={provider.id}
-                    onClick={() => {
-                      handleConnect(provider.id);
-                      setShowAddModal(false);
-                    }}
-                    className={`w-full flex items-center gap-3 p-3 rounded-lg ${
-                      theme === 'dark' ? 'bg-gray-700 hover:bg-gray-600 text-white' : 'bg-gray-50 hover:bg-gray-100 text-gray-900'
-                    }`}
-                  >
-                    <Icon className="w-5 h-5 text-blue-500" />
-                    <div className="text-left">
-                      <p className="font-medium">{provider.name}</p>
-                      <p className={`text-xs ${theme === 'dark' ? 'text-gray-400' : 'text-gray-500'}`}>
-                        {provider.siteUrl}
-                      </p>
-                    </div>
-                  </button>
-                );
-              })}
-            </div>
-            <button
-              onClick={() => setShowAddModal(false)}
-              className={`w-full mt-4 py-2 rounded-lg ${
-                theme === 'dark' ? 'bg-gray-700 hover:bg-gray-600 text-white' : 'bg-gray-100 hover:bg-gray-200 text-gray-900'
-              }`}
-            >
-              Close
-            </button>
-          </div>
+            );
+          })}
         </div>
       )}
     </div>

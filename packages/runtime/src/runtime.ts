@@ -27,6 +27,11 @@ export interface RuntimeConfig {
     enabled: boolean;
     maxEntries: number;
   };
+  /**
+   * Tools that are auto-granted a permissive scope for every session.
+   * Useful for headless servers where interactive confirmation is unavailable.
+   */
+  autoGrant?: string[];
 }
 
 export class Runtime implements IRuntime {
@@ -40,10 +45,12 @@ export class Runtime implements IRuntime {
   private config: RuntimeConfig;
   private eventBus: EventBus;
   private started = false;
+  private autoGrantTools: Set<string>;
 
   constructor(eventBus: EventBus, config: RuntimeConfig) {
     this.eventBus = eventBus;
     this.config = config;
+    this.autoGrantTools = new Set(config.autoGrant ?? []);
 
     this.toolDispatcher = new ToolDispatcher(eventBus);
     this.permissionEngine = new PermissionEngine(eventBus, config.permissions);
@@ -137,6 +144,10 @@ export class Runtime implements IRuntime {
 
   // Convenience methods for common operations
   async executeTool(name: string, params: Record<string, unknown>, sessionId: string): Promise<ToolResult> {
+    if (this.autoGrantTools.has(name)) {
+      this.grantPermission(name, this.getAutoGrantScope(), sessionId);
+    }
+
     const context: ToolContext = {
       sessionId,
       workingDirectory: this.config.workingDirectory,
@@ -145,6 +156,18 @@ export class Runtime implements IRuntime {
     };
 
     return this.tools.execute(name, params, context);
+  }
+
+  private getAutoGrantScope(): ToolScope {
+    return {
+      allowedPaths: [
+        this.config.workingDirectory,
+        ...this.config.permissions.defaultScope.allowedPaths,
+      ],
+      allowedCommands: [],
+      deniedCommands: this.config.permissions.defaultScope.deniedCommands,
+      maxExecutionTime: this.config.permissions.defaultScope.maxExecutionTime,
+    };
   }
 
   grantPermission(toolName: string, scope: ToolScope, sessionId: string): void {

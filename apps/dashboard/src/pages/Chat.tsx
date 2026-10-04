@@ -85,15 +85,6 @@ export default function Chat() {
     }
   };
 
-  const getProviderColor = (id: string) => {
-    switch (id) {
-      case 'gemini': return 'bg-blue-500';
-      case 'chatgpt': return 'bg-green-500';
-      case 'claude': return 'bg-orange-500';
-      default: return 'bg-gray-500';
-    }
-  };
-
   const handleSend = async () => {
     if (!input.trim() || isLoading) return;
 

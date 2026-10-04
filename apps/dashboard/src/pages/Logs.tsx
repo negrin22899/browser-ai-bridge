@@ -1,8 +1,7 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import {
   FileText,
   Download,
-  Trash2,
   CheckCircle,
   XCircle,
   Clock,
@@ -10,83 +9,46 @@ import {
 } from 'lucide-react';
 import { useTheme } from '../contexts/ThemeContext';
 import { useLanguage } from '../contexts/LanguageContext';
-import { api, type Session } from '../lib/api';
+import { api, type AuditEntry } from '../lib/api';
 
-interface LogEntry {
-  id: string;
-  timestamp: number;
-  type: 'tool' | 'permission' | 'session';
-  toolName?: string;
-  sessionId?: string;
-  result: 'allowed' | 'denied' | 'error';
-  reason?: string;
-}
+type Filter = 'all' | 'allowed' | 'denied' | 'error';
 
 export default function Logs() {
   const { theme } = useTheme();
   const { t } = useLanguage();
-  const [logs, setLogs] = useState<LogEntry[]>([]);
+  const [logs, setLogs] = useState<AuditEntry[]>([]);
   const [loading, setLoading] = useState(true);
-  const [filter, setFilter] = useState<'all' | 'tool' | 'permission' | 'session'>('all');
+  const [error, setError] = useState<string | null>(null);
+  const [filter, setFilter] = useState<Filter>('all');
 
-  async function loadLogs() {
+  const loadLogs = useCallback(async () => {
     setLoading(true);
+    setError(null);
     try {
-      // Load sessions to show recent activity
-      const sessionsData = await api.getSessions();
-      const sessions = sessionsData.data || [];
-      
-      // Generate log entries from sessions
-      const logEntries: LogEntry[] = sessions.flatMap((session: Session) => {
-        const entries: LogEntry[] = [];
-        
-        // Add session creation log
-        entries.push({
-          id: `session-${session.id}`,
-          timestamp: session.createdAt,
-          type: 'session',
-          sessionId: session.id,
-          result: 'allowed',
-        });
-
-        // Add message logs
-        session.messages?.forEach((_, idx) => {
-          entries.push({
-            id: `msg-${session.id}-${idx}`,
-            timestamp: session.createdAt + (idx + 1) * 1000,
-            type: 'tool',
-            toolName: 'chat.message',
-            sessionId: session.id,
-            result: 'allowed',
-          });
-        });
-
-        return entries;
-      });
-
-      setLogs(logEntries.sort((a, b) => b.timestamp - a.timestamp));
-    } catch {
-      setLogs([]);
+      const data = await api.getAudit();
+      setLogs(data.data || []);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to load logs');
     } finally {
       setLoading(false);
     }
-  }
+  }, []);
 
   useEffect(() => {
     loadLogs();
-  }, []);
+    const interval = setInterval(loadLogs, 10000);
+    return () => clearInterval(interval);
+  }, [loadLogs]);
 
   const cardClass = `rounded-xl border ${
     theme === 'dark' ? 'bg-gray-800 border-gray-700' : 'bg-white border-gray-200'
   }`;
 
-  const filteredLogs = filter === 'all' ? logs : logs.filter(l => l.type === filter);
+  const filteredLogs = filter === 'all' ? logs : logs.filter((l) => l.result === filter);
 
-  const formatTime = (timestamp: number) => {
-    return new Date(timestamp).toLocaleTimeString();
-  };
+  const formatTime = (timestamp: number) => new Date(timestamp).toLocaleTimeString();
 
-  const getResultIcon = (result: string) => {
+  const getResultIcon = (result: AuditEntry['result']) => {
     switch (result) {
       case 'allowed': return <CheckCircle className="w-4 h-4 text-green-500" />;
       case 'denied': return <XCircle className="w-4 h-4 text-red-500" />;
@@ -95,22 +57,14 @@ export default function Logs() {
     }
   };
 
-  const getTypeColor = (type: string) => {
-    switch (type) {
-      case 'tool': return 'bg-blue-50 text-blue-700';
-      case 'permission': return 'bg-yellow-50 text-yellow-700';
-      case 'session': return 'bg-purple-50 text-purple-700';
-      default: return '';
+  const getResultColor = (result: AuditEntry['result']) => {
+    switch (result) {
+      case 'allowed': return 'bg-green-50 text-green-700';
+      case 'denied': return 'bg-red-50 text-red-700';
+      case 'error': return 'bg-orange-50 text-orange-700';
+      default: return 'bg-gray-50 text-gray-500';
     }
   };
-
-  if (loading) {
-    return (
-      <div className="flex items-center justify-center h-64">
-        <RefreshCw className="w-8 h-8 animate-spin text-primary-500" />
-      </div>
-    );
-  }
 
   return (
     <div>
@@ -140,7 +94,7 @@ export default function Logs() {
               const url = URL.createObjectURL(blob);
               const a = document.createElement('a');
               a.href = url;
-              a.download = `bab-logs-${new Date().toISOString().slice(0, 10)}.json`;
+              a.download = `bab-audit-${new Date().toISOString().slice(0, 10)}.json`;
               a.click();
               URL.revokeObjectURL(url);
             }}
@@ -151,21 +105,20 @@ export default function Logs() {
             <Download className="w-4 h-4" />
             {t('logs.export')}
           </button>
-          <button
-            onClick={() => {
-              setLogs([]);
-            }}
-            className="flex items-center gap-2 px-4 py-2.5 bg-red-500 text-white rounded-lg hover:bg-red-600 transition-colors"
-          >
-            <Trash2 className="w-4 h-4" />
-            {t('logs.clear')}
-          </button>
         </div>
       </div>
 
+      {error && (
+        <div className={`mb-4 p-4 rounded-lg text-sm ${
+          theme === 'dark' ? 'bg-red-900/30 border border-red-800 text-red-400' : 'bg-red-50 border border-red-200 text-red-700'
+        }`}>
+          {error}
+        </div>
+      )}
+
       {/* Filters */}
       <div className="flex gap-2 mb-6">
-        {(['all', 'tool', 'permission', 'session'] as const).map((f) => (
+        {(['all', 'allowed', 'denied', 'error'] as const).map((f) => (
           <button
             key={f}
             onClick={() => setFilter(f)}
@@ -177,20 +130,27 @@ export default function Logs() {
                   : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
             }`}
           >
-            {t(`logs.${f}`)}
+            {f.charAt(0).toUpperCase() + f.slice(1)}
+            <span className="ml-2 text-xs opacity-70">
+              {f === 'all' ? logs.length : logs.filter((l) => l.result === f).length}
+            </span>
           </button>
         ))}
       </div>
 
       {/* Logs List */}
-      {filteredLogs.length === 0 ? (
+      {loading && logs.length === 0 ? (
+        <div className="flex items-center justify-center h-64">
+          <RefreshCw className="w-8 h-8 animate-spin text-primary-500" />
+        </div>
+      ) : filteredLogs.length === 0 ? (
         <div className={`${cardClass} p-12 text-center`}>
           <FileText className={`w-12 h-12 mx-auto mb-4 ${theme === 'dark' ? 'text-gray-600' : 'text-gray-400'}`} />
           <p className={theme === 'dark' ? 'text-gray-400' : 'text-gray-600'}>
             {t('logs.noLogs')}
           </p>
           <p className={`text-sm mt-2 ${theme === 'dark' ? 'text-gray-500' : 'text-gray-400'}`}>
-            Logs will appear when you use the chat or run tools.
+            Logs appear when the AI executes tools.
           </p>
         </div>
       ) : (
@@ -203,23 +163,19 @@ export default function Logs() {
                     {getResultIcon(log.result)}
                     <div>
                       <div className="flex items-center gap-2">
-                        <span className={`text-xs px-2 py-0.5 rounded ${getTypeColor(log.type)}`}>
-                          {t(`logs.${log.type}`)}
+                        <span className={`text-xs px-2 py-0.5 rounded ${getResultColor(log.result)}`}>
+                          {log.result}
                         </span>
-                        {log.toolName && (
-                          <span className={`font-medium ${theme === 'dark' ? 'text-white' : 'text-gray-900'}`}>
-                            {log.toolName}
-                          </span>
-                        )}
-                        {log.sessionId && (
-                          <span className={`text-xs ${theme === 'dark' ? 'text-gray-500' : 'text-gray-400'}`}>
-                            Session: {log.sessionId.slice(0, 8)}...
-                          </span>
-                        )}
+                        <span className={`font-medium ${theme === 'dark' ? 'text-white' : 'text-gray-900'}`}>
+                          {log.toolName}
+                        </span>
+                        <span className={`text-xs ${theme === 'dark' ? 'text-gray-500' : 'text-gray-400'}`}>
+                          Session: {log.sessionId.slice(0, 8)}...
+                        </span>
                       </div>
                       {log.reason && (
                         <p className={`text-xs mt-1 ${theme === 'dark' ? 'text-gray-500' : 'text-gray-400'}`}>
-                          Reason: {log.reason}
+                          {log.reason}
                         </p>
                       )}
                     </div>

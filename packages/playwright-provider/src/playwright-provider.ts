@@ -16,6 +16,7 @@ import * as path from 'node:path';
 import * as os from 'node:os';
 import type { PlaywrightAdapter } from './playwright-adapter.js';
 import type { BrowserSession } from './browser-session.js';
+import { withRetry, withConnectionRetry } from './retry-logic.js';
 
 export interface PlaywrightProviderOptions {
   id: string;
@@ -122,48 +123,11 @@ export class PlaywrightProvider implements Provider {
     this._status = 'connecting';
 
     try {
-      const executablePath = this.executablePath || this.findChromePath();
-      const userDataDir = this.userDataDir || this.findUserDataDir();
-
-      // Try to connect to existing Chrome via CDP first
-      try {
-        this.browser = await chromium.connectOverCDP(`http://localhost:${this.cdpPort}`);
-        console.log('Connected to existing Chrome via CDP');
-      } catch {
-        // CDP connection failed, try persistent context
-        if (this.useExistingProfile && userDataDir) {
-          try {
-            const context = await chromium.launchPersistentContext(
-              userDataDir,
-              {
-                headless: this.headless,
-                executablePath,
-                args: [
-                  '--disable-blink-features=AutomationControlled',
-                  '--no-first-run',
-                  '--no-default-browser-check',
-                ],
-              }
-            );
-            // Get browser from context
-            this.browser = context.browser();
-            console.log('Launched Chrome with existing profile');
-          } catch (error) {
-            console.warn('Failed to launch with existing profile:', error);
-            // Fallback to new browser
-            this.browser = await chromium.launch({
-              headless: this.headless,
-              executablePath,
-            });
-          }
-        } else {
-          // Launch new browser
-          this.browser = await chromium.launch({
-            headless: this.headless,
-            executablePath,
-          });
-        }
-      }
+      this.browser = await withConnectionRetry(
+        () => this.launchBrowser(),
+        this.id,
+        { maxRetries: 2, initialDelay: 1000, maxDelay: 5000 }
+      );
 
       // Set browser in adapter
       if (this.browser) {
@@ -178,6 +142,71 @@ export class PlaywrightProvider implements Provider {
       this._status = 'error';
       throw error;
     }
+  }
+
+  private async launchBrowser(): Promise<Browser> {
+    const executablePath = this.executablePath || this.findChromePath();
+    const userDataDir = this.userDataDir || this.findUserDataDir();
+
+    // Try to connect to existing Chrome via CDP first
+    try {
+      const browser = await chromium.connectOverCDP(`http://localhost:${this.cdpPort}`);
+      console.log('Connected to existing Chrome via CDP');
+      return browser;
+    } catch {
+      // CDP connection failed, try persistent context
+    }
+
+    if (this.useExistingProfile && userDataDir) {
+      try {
+        const context = await chromium.launchPersistentContext(
+          userDataDir,
+          {
+            headless: this.headless,
+            executablePath,
+            args: [
+              '--disable-blink-features=AutomationControlled',
+              '--no-first-run',
+              '--no-default-browser-check',
+            ],
+          }
+        );
+        console.log('Launched Chrome with existing profile');
+        const browser = context.browser();
+        if (browser) {
+          return browser;
+        }
+        throw new Error('Persistent context did not expose a browser');
+      } catch (error) {
+        console.warn('Failed to launch with existing profile:', error);
+      }
+    }
+
+    console.log('Launching new Chrome instance');
+    return await chromium.launch({
+      headless: this.headless,
+      executablePath,
+    });
+  }
+
+  /**
+   * Return the active session, recreating it if the tab was closed.
+   */
+  private async ensureSession(): Promise<BrowserSession> {
+    try {
+      if (this.session && this.session.isActive) {
+        return this.session;
+      }
+    } catch {
+      // Fall through to recreate
+    }
+
+    console.warn('Browser session no longer active, recreating...');
+    this.session = await withRetry(
+      () => this.adapter.createSession(),
+      { maxRetries: 2, initialDelay: 500, maxDelay: 2000 }
+    );
+    return this.session;
   }
 
   async disconnect(): Promise<void> {
@@ -205,13 +234,16 @@ export class PlaywrightProvider implements Provider {
   }
 
   async send(request: ChatCompletionRequest): Promise<ChatCompletionResponse> {
-    if (this._status !== 'connected' || !this.session) {
+    if (this._status !== 'connected') {
       throw new Error('Provider not connected');
     }
 
     this._status = 'busy';
 
     try {
+      // Recreate the tab if it was closed since the last request.
+      const session = await this.ensureSession();
+
       // Build conversation context from all messages except the last user message
       const lastUserIdx = request.messages.length - 1;
       const contextMessages = request.messages.slice(0, lastUserIdx);
@@ -236,10 +268,10 @@ export class PlaywrightProvider implements Provider {
       }
 
       // Send message to AI with context
-      await this.adapter.sendMessage(this.session, userMessage, context);
+      await this.adapter.sendMessage(session, userMessage, context);
 
       // Wait for and read response
-      const responseText = await this.adapter.readResponse(this.session);
+      const responseText = await this.adapter.readResponse(session);
 
       this._status = 'connected';
 
@@ -261,7 +293,7 @@ export class PlaywrightProvider implements Provider {
   }
 
   async *stream(request: ChatCompletionRequest): AsyncIterable<ChatCompletionChunk> {
-    if (this._status !== 'connected' || !this.session) {
+    if (this._status !== 'connected') {
       throw new Error('Provider not connected');
     }
 
@@ -269,6 +301,9 @@ export class PlaywrightProvider implements Provider {
     const chunkId = `pw-${Date.now()}`;
 
     try {
+      // Recreate the tab if it was closed since the last request.
+      const session = await this.ensureSession();
+
       // Build conversation context
       const lastUserIdx = request.messages.length - 1;
       const contextMessages = request.messages.slice(0, lastUserIdx);
@@ -286,10 +321,10 @@ export class PlaywrightProvider implements Provider {
       }
 
       // Send message to AI with context
-      await this.adapter.sendMessage(this.session, userMessage, context);
+      await this.adapter.sendMessage(session, userMessage, context);
 
       // Stream response chunks
-      for await (const chunk of this.adapter.streamResponse(this.session)) {
+      for await (const chunk of this.adapter.streamResponse(session)) {
         yield {
           id: chunkId,
           object: 'chat.completion.chunk',
@@ -378,7 +413,7 @@ export class PlaywrightProvider implements Provider {
   }
 
   cancel(): void {
-    // No-op for Playwright
+    this.adapter.cancel();
   }
 
   getAdapter(): PlaywrightAdapter {

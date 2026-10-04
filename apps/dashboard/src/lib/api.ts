@@ -49,7 +49,7 @@ export interface Session {
 export interface HealthStatus {
   status: string;
   timestamp: number;
-  providers: Record<string, { healthy: boolean; latency?: number; error?: string }>;
+  providers: Record<string, { healthy: boolean; latency?: number; error?: string; details?: Record<string, unknown> }>;
 }
 
 export interface ChatMessage {
@@ -92,6 +92,32 @@ export interface MetricsData {
   provider_errors: Record<string, number>;
 }
 
+export interface AuditEntry {
+  id: string;
+  timestamp: number;
+  sessionId: string;
+  toolName: string;
+  result: 'allowed' | 'denied' | 'error';
+  reason?: string;
+}
+
+export interface Extension {
+  id: string;
+  name: string;
+  type: 'provider' | 'tool';
+  enabled: boolean;
+  status?: string;
+  providerId?: string;
+  description?: string;
+}
+
+export interface AppConfig {
+  general: { serverPort: number; autoStart: boolean; minimizeToTray: boolean };
+  browser: { useExistingProfile: boolean; headless: boolean; defaultTimeout: number };
+  security: { requireConfirmation: boolean; dangerousCommands: string[]; auditLog: boolean };
+  tools: { workingDirectory: string; maxExecutionTime: number; shell: string };
+}
+
 // API methods
 export const api = {
   // Health
@@ -118,6 +144,10 @@ export const api = {
 
   async getSession(id: string): Promise<Session> {
     return request(`/v1/sessions/${id}`);
+  },
+
+  async deleteSession(id: string): Promise<{ deleted: boolean; id: string }> {
+    return request(`/v1/sessions/${id}`, { method: 'DELETE' });
   },
 
   // Chat
@@ -180,5 +210,27 @@ export const api = {
   // Tools
   async getTools(): Promise<Array<{ name: string; description: string; parameters: Record<string, unknown> }>> {
     return request('/v1/tools');
+  },
+
+  // Audit
+  async getAudit(): Promise<{ object: string; data: AuditEntry[] }> {
+    return request('/v1/audit');
+  },
+
+  // Extensions
+  async getExtensions(): Promise<{ object: string; data: Extension[] }> {
+    return request('/v1/extensions');
+  },
+
+  // Config
+  async getConfig(): Promise<AppConfig> {
+    return request('/v1/config');
+  },
+
+  async saveConfig(config: Partial<AppConfig>): Promise<AppConfig> {
+    return request('/v1/config', {
+      method: 'PUT',
+      body: JSON.stringify(config),
+    });
   },
 };

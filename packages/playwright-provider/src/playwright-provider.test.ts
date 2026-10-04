@@ -1,45 +1,47 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { PlaywrightProvider } from './playwright-provider.js';
-import type { SiteAdapter } from './site-adapter.js';
+import type { PlaywrightAdapter } from './playwright-adapter.js';
 
-// Mock Playwright
+// Mock Playwright so connect() resolves without a real browser
 vi.mock('playwright-core', () => ({
   chromium: {
-    launch: vi.fn().mockResolvedValue({
-      newPage: vi.fn().mockResolvedValue({
-        goto: vi.fn(),
-        waitForTimeout: vi.fn(),
-        close: vi.fn(),
-      }),
-      close: vi.fn(),
-    }),
+    connectOverCDP: vi.fn().mockResolvedValue({ close: vi.fn() }),
   },
 }));
 
-function createMockAdapter(): SiteAdapter {
+function createMockAdapter(): PlaywrightAdapter {
+  const session = {
+    id: 'session-1',
+    url: 'https://test.com',
+    close: vi.fn().mockResolvedValue(undefined),
+  };
+
   return {
     siteId: 'test',
     siteUrl: 'https://test.com',
     displayName: 'Test',
-    matches: vi.fn().mockReturnValue(true),
-    waitForReady: vi.fn(),
-    fillInput: vi.fn(),
-    clickSend: vi.fn(),
-    extractResponse: vi.fn().mockResolvedValue('Test response'),
-    isResponseComplete: vi.fn().mockResolvedValue(true),
-  };
+    setBrowser: vi.fn(),
+    createSession: vi.fn().mockResolvedValue(session),
+    waitForReady: vi.fn().mockResolvedValue(undefined),
+    sendMessage: vi.fn().mockResolvedValue(undefined),
+    readResponse: vi.fn().mockResolvedValue('Test response'),
+    streamResponse: vi.fn().mockImplementation(async function* () {
+      yield 'Test response';
+    }),
+    isReady: vi.fn().mockResolvedValue(true),
+    close: vi.fn().mockResolvedValue(undefined),
+  } as unknown as PlaywrightAdapter;
 }
 
 describe('PlaywrightProvider', () => {
   let provider: PlaywrightProvider;
-  let adapter: SiteAdapter;
+  let adapter: PlaywrightAdapter;
 
   beforeEach(() => {
     adapter = createMockAdapter();
     provider = new PlaywrightProvider({
       id: 'test-provider',
       name: 'Test Provider',
-      siteUrl: 'https://test.com',
       adapter,
     });
   });
@@ -50,11 +52,11 @@ describe('PlaywrightProvider', () => {
       expect(provider.name).toBe('Test Provider');
     });
 
-    it('should have idle status initially', () => {
-      expect(provider.status).toBe('idle');
+    it('should have disconnected status initially', () => {
+      expect(provider.status).toBe('disconnected');
     });
 
-    it('should accept custom adapter', () => {
+    it('should start with no tools', () => {
       expect(provider.getTools()).toEqual([]);
     });
   });
@@ -74,8 +76,9 @@ describe('PlaywrightProvider', () => {
     it('should connect to browser', async () => {
       await provider.connect();
 
-      expect(adapter.waitForReady).toHaveBeenCalled();
-      expect(provider.status).toBe('idle');
+      expect(adapter.setBrowser).toHaveBeenCalled();
+      expect(adapter.createSession).toHaveBeenCalled();
+      expect(provider.status).toBe('connected');
     });
   });
 
@@ -89,8 +92,8 @@ describe('PlaywrightProvider', () => {
       });
 
       expect(response.choices[0].message.content).toBe('Test response');
-      expect(adapter.fillInput).toHaveBeenCalledWith(expect.anything(), 'Hello');
-      expect(adapter.clickSend).toHaveBeenCalled();
+      expect(adapter.sendMessage).toHaveBeenCalled();
+      expect(adapter.readResponse).toHaveBeenCalled();
     });
 
     it('should throw when sending without connection', async () => {
@@ -99,7 +102,7 @@ describe('PlaywrightProvider', () => {
           model: 'test',
           messages: [{ role: 'user', content: 'Hello' }],
         })
-      ).rejects.toThrow('Not connected');
+      ).rejects.toThrow('Provider not connected');
     });
   });
 
@@ -122,11 +125,11 @@ describe('PlaywrightProvider', () => {
   });
 
   describe('Shutdown', () => {
-    it('should shutdown cleanly', async () => {
+    it('should disconnect cleanly', async () => {
       await provider.connect();
-      await provider.shutdown();
+      await provider.disconnect();
 
-      expect(provider.status).toBe('shutdown');
+      expect(provider.status).toBe('disconnected');
     });
   });
 });

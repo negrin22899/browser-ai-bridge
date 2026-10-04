@@ -7,14 +7,12 @@ import {
   ExternalLink,
   Check,
   Plus,
-  Settings,
   RefreshCw,
-  Trash2,
   Clock,
 } from 'lucide-react';
 import { useTheme } from '../contexts/ThemeContext';
 import { useLanguage } from '../contexts/LanguageContext';
-import { api, type HealthStatus } from '../lib/api';
+import { api } from '../lib/api';
 
 interface Integration {
   id: string;
