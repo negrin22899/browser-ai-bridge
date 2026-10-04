@@ -1,10 +1,20 @@
 export { createServer } from './server.js';
+export { runToolLoop, runToolLoopStream, extractToolCalls, parseActionsJson } from './tool-loop.js';
+export type { ToolLoopOptions } from './tool-loop.js';
+export { ConfigStore, DEFAULT_CONFIG } from './config-store.js';
+export type { AppConfig } from './config-store.js';
+export { TeamAuth } from './team-auth.js';
+export type { ClientCredential, ClientIdentity, ClientRole } from './team-auth.js';
+export { StatePersistence } from './persistence.js';
+export type { PersistedSession, PersistedState } from './persistence.js';
 export { RateLimiter } from './rate-limiter.js';
 export type { RateLimitConfig, RateLimitInfo } from './rate-limiter.js';
 export { WebSocketHandler } from './websocket.js';
 export type { WebSocketMessage, WebSocketConfig } from './websocket.js';
-export { Cache, ResponseCache } from './cache.js';
+export { Cache } from './cache.js';
 export type { CacheConfig, CacheEntry } from './cache.js';
+export { ResponseCache } from './response-cache.js';
+export type { ResponseCacheOptions, ResponseCacheStats } from './response-cache.js';
 export {
   BABError,
   ProviderConnectionError,

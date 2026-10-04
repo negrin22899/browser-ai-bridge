@@ -14,6 +14,10 @@ import { chromium, type Browser } from 'playwright-core';
 import type { PlaywrightAdapter } from './playwright-adapter.js';
 import type { BrowserSession } from './browser-session.js';
 import { getBrowserInfo, type BrowserId } from './browsers.js';
+import { withRetry, withConnectionRetry } from './retry-logic.js';
+import { CDPClient } from './cdp-client.js';
+import { CdpTokenStream } from './stream-interceptor.js';
+import { ProviderBlockError, type BlockErrorCode } from './stream-parsers.js';
 
 export interface PlaywrightProviderOptions {
   id: string;
@@ -47,6 +51,7 @@ export class PlaywrightProvider implements Provider {
   private useExistingProfile: boolean;
   private userDataDir?: string;
   private cdpPort: number;
+  private blockError: BlockErrorCode | null = null;
 
   constructor(options: PlaywrightProviderOptions) {
     this.id = options.id;
@@ -72,56 +77,11 @@ export class PlaywrightProvider implements Provider {
     this._status = 'connecting';
 
     try {
-      const info = getBrowserInfo(this.browserId);
-      if (!info || !info.installed) {
-        this._status = 'error';
-        throw new Error(
-          `${info?.name ?? this.browserId} is not installed. ` +
-          `Install it or pick another browser in Settings.`
-        );
-      }
-      const executablePath = this.executablePath || info.executablePath;
-      const userDataDir = this.userDataDir || info.userDataDir;
-
-      // Try to connect to existing Chrome via CDP first
-      try {
-        this.browser = await chromium.connectOverCDP(`http://localhost:${this.cdpPort}`);
-        console.log('Connected to existing Chrome via CDP');
-      } catch {
-        // CDP connection failed, try persistent context
-        if (this.useExistingProfile && userDataDir) {
-          try {
-            const context = await chromium.launchPersistentContext(
-              userDataDir,
-              {
-                headless: this.headless,
-                executablePath,
-                args: [
-                  '--disable-blink-features=AutomationControlled',
-                  '--no-first-run',
-                  '--no-default-browser-check',
-                ],
-              }
-            );
-            // Get browser from context
-            this.browser = context.browser();
-            console.log('Launched Chrome with existing profile');
-          } catch (error) {
-            console.warn('Failed to launch with existing profile:', error);
-            // Fallback to new browser
-            this.browser = await chromium.launch({
-              headless: this.headless,
-              executablePath,
-            });
-          }
-        } else {
-          // Launch new browser
-          this.browser = await chromium.launch({
-            headless: this.headless,
-            executablePath,
-          });
-        }
-      }
+      this.browser = await withConnectionRetry(
+        () => this.launchBrowser(),
+        this.id,
+        { maxRetries: 2, initialDelay: 1000, maxDelay: 5000 }
+      );
 
       // Set browser in adapter
       if (this.browser) {
@@ -136,6 +96,80 @@ export class PlaywrightProvider implements Provider {
       this._status = 'error';
       throw error;
     }
+  }
+
+  private async launchBrowser(): Promise<Browser> {
+    // Multi-browser support: resolve the executable + profile dir for the
+    // browser chosen in Settings (chrome | edge | brave | opera | vivaldi | chromium).
+    const info = getBrowserInfo(this.browserId);
+    const executablePath = this.executablePath || info?.executablePath || '';
+    const userDataDir = this.userDataDir || info?.userDataDir;
+    if (!executablePath) {
+      throw new Error(
+        `${info?.name ?? this.browserId} is not installed. ` +
+        `Install it or pick another browser in Settings.`
+      );
+    }
+
+    // Try to connect to existing Chrome via CDP first
+    try {
+      const browser = await chromium.connectOverCDP(`http://localhost:${this.cdpPort}`);
+      console.log('Connected to existing Chrome via CDP');
+      return browser;
+    } catch {
+      // CDP connection failed, try persistent context
+    }
+
+    if (this.useExistingProfile && userDataDir) {
+      try {
+        const context = await chromium.launchPersistentContext(
+          userDataDir,
+          {
+            headless: this.headless,
+            executablePath,
+            args: [
+              '--disable-blink-features=AutomationControlled',
+              '--no-first-run',
+              '--no-default-browser-check',
+            ],
+          }
+        );
+        console.log('Launched Chrome with existing profile');
+        const browser = context.browser();
+        if (browser) {
+          return browser;
+        }
+        throw new Error('Persistent context did not expose a browser');
+      } catch (error) {
+        console.warn('Failed to launch with existing profile:', error);
+      }
+    }
+
+    console.log('Launching new Chrome instance');
+    return await chromium.launch({
+      headless: this.headless,
+      executablePath,
+    });
+  }
+
+  /**
+   * Return the active session, recreating it if the tab was closed.
+   */
+  private async ensureSession(): Promise<BrowserSession> {
+    try {
+      if (this.session && this.session.isActive) {
+        return this.session;
+      }
+    } catch {
+      // Fall through to recreate
+    }
+
+    console.warn('Browser session no longer active, recreating...');
+    this.session = await withRetry(
+      () => this.adapter.createSession(),
+      { maxRetries: 2, initialDelay: 500, maxDelay: 2000 }
+    );
+    return this.session;
   }
 
   async disconnect(): Promise<void> {
@@ -163,13 +197,16 @@ export class PlaywrightProvider implements Provider {
   }
 
   async send(request: ChatCompletionRequest): Promise<ChatCompletionResponse> {
-    if (this._status !== 'connected' || !this.session) {
+    if (this._status !== 'connected') {
       throw new Error('Provider not connected');
     }
 
     this._status = 'busy';
 
     try {
+      // Recreate the tab if it was closed since the last request.
+      const session = await this.ensureSession();
+
       // Build conversation context from all messages except the last user message
       const lastUserIdx = request.messages.length - 1;
       const contextMessages = request.messages.slice(0, lastUserIdx);
@@ -193,12 +230,29 @@ export class PlaywrightProvider implements Provider {
         }
       }
 
+      // Attach CDP interception BEFORE sending so the SSE response is captured.
+      const capture = await this.captureCdpStream(session);
+
       // Send message to AI with context
-      await this.adapter.sendMessage(this.session, userMessage, context);
+      await this.adapter.sendMessage(session, userMessage, context);
 
-      // Wait for and read response
-      const responseText = await this.adapter.readResponse(this.session);
+      // Prefer the real token stream captured from the network; fall back to
+      // DOM reading when nothing was captured or the stream did not complete.
+      let responseText: string | null = null;
+      try {
+        if (capture) {
+          // 4s grace: if the native stream never starts, fall back to DOM.
+          responseText = await capture.stream.collect(120000, 4000);
+        }
+      } finally {
+        if (capture) await capture.dispose();
+      }
 
+      if (responseText === null) {
+        responseText = await this.adapter.readResponse(session);
+      }
+
+      this.blockError = null;
       this._status = 'connected';
 
       return {
@@ -214,12 +268,15 @@ export class PlaywrightProvider implements Provider {
       };
     } catch (error) {
       this._status = 'error';
+      if (error instanceof ProviderBlockError) {
+        this.blockError = error.code;
+      }
       throw error;
     }
   }
 
   async *stream(request: ChatCompletionRequest): AsyncIterable<ChatCompletionChunk> {
-    if (this._status !== 'connected' || !this.session) {
+    if (this._status !== 'connected') {
       throw new Error('Provider not connected');
     }
 
@@ -227,6 +284,9 @@ export class PlaywrightProvider implements Provider {
     const chunkId = `pw-${Date.now()}`;
 
     try {
+      // Recreate the tab if it was closed since the last request.
+      const session = await this.ensureSession();
+
       // Build conversation context
       const lastUserIdx = request.messages.length - 1;
       const contextMessages = request.messages.slice(0, lastUserIdx);
@@ -243,29 +303,25 @@ export class PlaywrightProvider implements Provider {
         if (parts.length > 0) context = parts.join('\n');
       }
 
-      // Send message to AI with context
-      await this.adapter.sendMessage(this.session, userMessage, context);
+      // Attach CDP interception BEFORE sending so the SSE response is captured.
+      const capture = await this.captureCdpStream(session);
 
-      // Stream response chunks
-      for await (const chunk of this.adapter.streamResponse(this.session)) {
-        yield {
-          id: chunkId,
-          object: 'chat.completion.chunk',
-          created: Math.floor(Date.now() / 1000),
-          model: request.model,
-          choices: [{
-            index: 0,
-            delta: {
-              role: 'assistant',
-              content: chunk,
-            },
-            finish_reason: null,
-          }],
-        };
-      }
+      const makeChunk = (content: string): ChatCompletionChunk => ({
+        id: chunkId,
+        object: 'chat.completion.chunk',
+        created: Math.floor(Date.now() / 1000),
+        model: request.model,
+        choices: [{
+          index: 0,
+          delta: {
+            role: 'assistant',
+            content,
+          },
+          finish_reason: null,
+        }],
+      });
 
-      // Send final chunk
-      yield {
+      const finalChunk: ChatCompletionChunk = {
         id: chunkId,
         object: 'chat.completion.chunk',
         created: Math.floor(Date.now() / 1000),
@@ -277,15 +333,61 @@ export class PlaywrightProvider implements Provider {
         }],
       };
 
+      // Send message to AI with context
+      await this.adapter.sendMessage(session, userMessage, context);
+
+      if (capture) {
+        try {
+          // Give the native stream a short grace period to produce a token;
+          // if nothing arrives, fall back to DOM reading.
+          const first = await capture.stream.take(4000);
+          if (first !== null) {
+            yield makeChunk(first);
+            for await (const token of capture.stream.tokens()) {
+              yield makeChunk(token);
+            }
+            yield finalChunk;
+            this.blockError = null;
+            this._status = 'connected';
+            return;
+          }
+        } finally {
+          await capture.dispose();
+        }
+      }
+
+      // Fallback: read from DOM as the response renders.
+      for await (const chunk of this.adapter.streamResponse(session)) {
+        yield makeChunk(chunk);
+      }
+
+      yield finalChunk;
+
+      this.blockError = null;
       this._status = 'connected';
     } catch (error) {
       this._status = 'error';
+      if (error instanceof ProviderBlockError) {
+        this.blockError = error.code;
+      }
       throw error;
     }
   }
 
   async health(): Promise<HealthCheckResult> {
     try {
+      // A block (auth/rate-limit/CAPTCHA) is an explicit, actionable failure.
+      if (this.blockError) {
+        return {
+          healthy: false,
+          error: blockErrorMessage(this.blockError),
+          details: {
+            status: this._status,
+            blockError: this.blockError,
+          },
+        };
+      }
+
       if (this._status === 'disconnected') {
         return {
           healthy: false,
@@ -336,7 +438,7 @@ export class PlaywrightProvider implements Provider {
   }
 
   cancel(): void {
-    // No-op for Playwright
+    this.adapter.cancel();
   }
 
   getAdapter(): PlaywrightAdapter {
@@ -345,5 +447,55 @@ export class PlaywrightProvider implements Provider {
 
   getSession(): BrowserSession | null {
     return this.session;
+  }
+
+  /** Last detected block code (auth_required/rate_limited/captcha), if any. */
+  getBlockError(): BlockErrorCode | null {
+    return this.blockError;
+  }
+
+  /**
+   * Attach CDP network interception for the provider's native SSE stream.
+   * Returns null when CDP is unavailable or the provider has no stream config.
+   */
+  private async captureCdpStream(
+    session: BrowserSession
+  ): Promise<{ stream: CdpTokenStream; dispose: () => Promise<void> } | null> {
+    try {
+      const page = session.getPage();
+      if (!page) return null;
+
+      const config = this.adapter.getStreamConfig();
+      if (!config) return null;
+
+      const cdp = new CDPClient();
+      await cdp.attach(page);
+      const stream = new CdpTokenStream(
+        cdp.captureStream(config.urlPatterns),
+        config.createParser()
+      );
+
+      return {
+        stream,
+        dispose: async () => {
+          await cdp.detach();
+        },
+      };
+    } catch {
+      return null;
+    }
+  }
+}
+
+function blockErrorMessage(code: BlockErrorCode): string {
+  switch (code) {
+    case 'auth_required':
+      return 'Authentication required — re-login in the browser';
+    case 'rate_limited':
+      return 'Rate limited by provider';
+    case 'captcha':
+      return 'CAPTCHA challenge detected';
+    default:
+      return 'Provider blocked the request';
   }
 }

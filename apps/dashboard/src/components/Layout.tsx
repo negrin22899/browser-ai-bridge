@@ -8,10 +8,16 @@ import {
   MessageText1,
   Setting2,
   Flash,
+  Activity,
+  SearchStatus,
+  Hierarchy,
+  DocumentText,
+  Category,
 } from 'iconsax-react';
 import type { Icon as IconsaxIcon } from 'iconsax-react';
 import { useLanguage } from '../contexts/LanguageContext';
 import { useElectron } from '../hooks/useElectron';
+import PermissionPrompt from './PermissionPrompt';
 
 interface LayoutProps {
   children: ReactNode;
@@ -28,6 +34,11 @@ export default function Layout({ children }: LayoutProps) {
     { name: 'Connect', href: '/connect', icon: Link21 },
     { name: t('nav.providers'), href: '/providers', icon: Global },
     { name: t('nav.sessions'), href: '/sessions', icon: MessageText1 },
+    { name: t('nav.runtime'), href: '/runtime', icon: Activity },
+    { name: 'Inspector', href: '/inspector', icon: SearchStatus },
+    { name: t('nav.debugger'), href: '/debugger', icon: Hierarchy },
+    { name: t('nav.logs'), href: '/logs', icon: DocumentText },
+    { name: t('nav.extensions'), href: '/extensions', icon: Category },
     { name: t('nav.settings'), href: '/settings', icon: Setting2 },
   ];
 
@@ -125,6 +136,8 @@ export default function Layout({ children }: LayoutProps) {
       <main className="flex-1 min-w-0 overflow-auto">
         <div className="max-w-7xl mx-auto px-6 py-8">{children}</div>
       </main>
+
+      <PermissionPrompt />
     </div>
   );
 }

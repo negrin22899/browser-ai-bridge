@@ -23,8 +23,8 @@
     "test": "vitest run"
   },
   "dependencies": {
-    "@bab/protocol": "workspace:*",
-    "@bab/playwright-provider": "workspace:*",
+    "@bab/protocol": "*",
+    "@bab/playwright-provider": "*",
     "playwright-core": "^1.52.0"
   },
   "devDependencies": {

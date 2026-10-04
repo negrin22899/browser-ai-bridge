@@ -31,6 +31,7 @@ export default function Dashboard() {
   const [providerCount, setProviderCount] = useState(0);
   const [connectedCount, setConnectedCount] = useState(0);
   const [toolsCount, setToolsCount] = useState<number | null>(null);
+  const [confirmCount, setConfirmCount] = useState(0);
   const [loading, setLoading] = useState(true);
   const [, setError] = useState<string | null>(null);
   const [serverDown, setServerDown] = useState(false);
@@ -51,6 +52,9 @@ export default function Dashboard() {
       setProviderCount(providers.length);
       setConnectedCount(providers.filter((p) => healthData.providers[p]?.healthy).length);
       setToolsCount(Array.isArray(toolsData) ? toolsData.length : null);
+      setConfirmCount(
+        Array.isArray(toolsData) ? toolsData.filter((t) => t.permission === 'confirm').length : 0,
+      );
     } catch (err) {
       if (err instanceof ApiError && err.code === 'SERVER_DOWN') setServerDown(true);
       setError(humanizeError(err, language));
@@ -171,6 +175,11 @@ export default function Dashboard() {
       name: t('dashboard.toolsRegistered'),
       value: toolsCount !== null ? String(toolsCount) : '—',
       status: toolsCount !== null && toolsCount > 0,
+    },
+    {
+      name: t('dashboard.permissionsActive'),
+      value: confirmCount > 0 ? `${confirmCount} confirm` : 'auto',
+      status: true,
     },
   ];
 

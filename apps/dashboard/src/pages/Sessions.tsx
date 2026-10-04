@@ -9,10 +9,13 @@ import {
   MoreVertical,
   Copy,
   AlertTriangle,
+  FileText,
+  FileJson,
 } from 'lucide-react';
 import { useLanguage } from '../contexts/LanguageContext';
 import { api, type Session } from '../lib/api';
 import { humanizeError } from '../lib/errors';
+import { useBabEvents } from '../hooks/useBabEvents';
 import { MenuDropdown, MenuItem, MenuSeparator, NumberPopIn } from '../components/motion';
 
 export default function Sessions() {
@@ -45,6 +48,13 @@ export default function Sessions() {
     return () => clearInterval(interval);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  // Live-refresh when the server publishes session events.
+  useBabEvents((type) => {
+    if (type.startsWith('session.')) {
+      loadSessions();
+    }
+  });
 
   const cardClass = 'rounded-xl glass';
   const inputClass =
@@ -144,7 +154,10 @@ export default function Sessions() {
             <div>
               <p className="text-2xl font-display leading-none text-text">
                 <NumberPopIn
-                  value={sessions.reduce((sum, s) => sum + (s.messages?.length || 0), 0)}
+                  value={sessions.reduce(
+                    (sum, s) => sum + (s.messageCount ?? s.messages?.length ?? 0),
+                    0,
+                  )}
                 />
               </p>
               <p className="text-sm text-text-muted mt-1">{t('sessions.messages')}</p>
@@ -201,13 +214,36 @@ export default function Sessions() {
                       <div className="flex items-center gap-4 mt-1">
                         <span className="text-xs flex items-center gap-1 text-text-subtle">
                           <MessageSquare className="w-3 h-3" />
-                          {session.messages?.length || 0} {t('sessions.messages')}
+                          {session.messageCount ?? session.messages?.length ?? 0}{' '}
+                          {t('sessions.messages')}
                         </span>
                         <span className="text-xs flex items-center gap-1 text-text-subtle">
                           <Clock className="w-3 h-3" />
                           {formatRelative(session.createdAt)}
                         </span>
                       </div>
+
+                      {/* Context usage — real token accounting from the server */}
+                      {typeof session.contextUsagePercent === 'number' && (
+                        <div className="mt-2 max-w-xs">
+                          <div className="h-1.5 rounded-full overflow-hidden bg-surface-inset">
+                            <div
+                              className={`h-full rounded-full transition-all ${
+                                session.contextUsagePercent > 80
+                                  ? 'bg-danger'
+                                  : session.contextUsagePercent > 60
+                                    ? 'bg-warning'
+                                    : 'bg-success'
+                              }`}
+                              style={{ width: `${session.contextUsagePercent}%` }}
+                            />
+                          </div>
+                          <p className="text-xs mt-1 text-text-subtle">
+                            ~{(session.estimatedTokens ?? 0).toLocaleString()} /{' '}
+                            {(session.contextLimit ?? 0).toLocaleString()} tokens
+                          </p>
+                        </div>
+                      )}
                     </div>
                   </div>
 
@@ -250,6 +286,31 @@ export default function Sessions() {
                           onSelect={() => navigator.clipboard.writeText(session.id)}
                         >
                           {language === 'ru' ? 'Скопировать ID' : 'Copy ID'}
+                        </MenuItem>
+                        <MenuSeparator />
+                        <MenuItem
+                          icon={<FileText className="w-4 h-4" />}
+                          onSelect={() =>
+                            api
+                              .downloadSession(session.id, 'markdown')
+                              .catch((err) =>
+                                setError(err instanceof Error ? err.message : 'Export failed'),
+                              )
+                          }
+                        >
+                          {language === 'ru' ? 'Экспорт в Markdown' : 'Export as Markdown'}
+                        </MenuItem>
+                        <MenuItem
+                          icon={<FileJson className="w-4 h-4" />}
+                          onSelect={() =>
+                            api
+                              .downloadSession(session.id, 'json')
+                              .catch((err) =>
+                                setError(err instanceof Error ? err.message : 'Export failed'),
+                              )
+                          }
+                        >
+                          {language === 'ru' ? 'Экспорт в JSON' : 'Export as JSON'}
                         </MenuItem>
                         <MenuSeparator />
                         <MenuItem

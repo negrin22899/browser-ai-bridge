@@ -1,5 +1,5 @@
-import { describe, it, expect } from 'vitest';
-import { PluginValidator, validatePlugin, validateManifest } from '../validator.js';
+import { describe, it, expect, beforeEach } from 'vitest';
+import { PluginValidator, validatePlugin, validateManifest } from './validator.js';
 
 describe('PluginValidator', () => {
   let validator: PluginValidator;

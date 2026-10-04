@@ -39,7 +39,11 @@ export class PermissionEngine implements IPermissionEngine {
       { toolPattern: /^fs\.read/, mode: 'auto' },
       { toolPattern: /^fs\.list/, mode: 'auto' },
       { toolPattern: /^fs\.stat/, mode: 'auto' },
+      { toolPattern: /^fs\.exists/, mode: 'auto' },
+      { toolPattern: /^fs\.glob/, mode: 'auto' },
+      { toolPattern: /^fs\.search/, mode: 'auto' },
       { toolPattern: /^fs\.write/, mode: 'confirm', reason: 'Write file requires confirmation' },
+      { toolPattern: /^fs\.edit/, mode: 'confirm', reason: 'Edit file requires confirmation' },
       { toolPattern: /^fs\.delete/, mode: 'confirm', reason: 'Delete file requires confirmation' },
       { toolPattern: /^fs\.mkdir/, mode: 'confirm', reason: 'Create directory requires confirmation' },
 
@@ -171,6 +175,18 @@ export class PermissionEngine implements IPermissionEngine {
 
   getRules(): PermissionRule[] {
     return [...this.rules];
+  }
+
+  /**
+   * Resolve the effective permission mode for a tool without executing it.
+   * Used by the API/dashboard to show honest permission badges instead of
+   * guessing from the tool name.
+   */
+  getMode(toolName: string): PermissionMode {
+    if (this.dangerousTools.has(toolName)) {
+      return 'deny';
+    }
+    return this.findRule(toolName)?.mode ?? 'confirm';
   }
 
   addRule(rule: PermissionRule): void {

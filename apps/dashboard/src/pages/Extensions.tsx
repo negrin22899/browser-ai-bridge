@@ -1,134 +1,72 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import {
   Puzzle,
   Package,
   Globe,
   Zap,
   MessageSquare,
+  Terminal,
+  FileText,
+  GitBranch,
+  RefreshCw,
+  CheckCircle,
 } from 'lucide-react';
 import { useLanguage } from '../contexts/LanguageContext';
-import { api } from '../lib/api';
+import { api, type Extension } from '../lib/api';
 import { NumberPopIn } from '../components/motion';
-
-interface Extension {
-  id: string;
-  name: string;
-  description: string;
-  version: string;
-  author: string;
-  type: 'provider' | 'tool' | 'extension';
-  enabled: boolean;
-}
-
-const BUILT_IN_EXTENSIONS: Extension[] = [
-  {
-    id: 'provider-gemini',
-    name: 'Google Gemini Provider',
-    description: 'Connect to Google Gemini via browser automation',
-    version: '1.0.0',
-    author: 'BAB Core',
-    type: 'provider',
-    enabled: true,
-  },
-  {
-    id: 'provider-chatgpt',
-    name: 'ChatGPT Provider',
-    description: 'Connect to ChatGPT via browser automation',
-    version: '1.0.0',
-    author: 'BAB Core',
-    type: 'provider',
-    enabled: true,
-  },
-  {
-    id: 'provider-claude',
-    name: 'Claude Provider',
-    description: 'Connect to Claude via browser automation',
-    version: '1.0.0',
-    author: 'BAB Core',
-    type: 'provider',
-    enabled: true,
-  },
-  {
-    id: 'provider-deepseek',
-    name: 'DeepSeek Provider',
-    description: 'Connect to DeepSeek via browser automation',
-    version: '1.0.0',
-    author: 'BAB Core',
-    type: 'provider',
-    enabled: true,
-  },
-  {
-    id: 'tool-fs',
-    name: 'Filesystem Tools',
-    description: 'Read, write, and manage files',
-    version: '1.0.0',
-    author: 'BAB Core',
-    type: 'tool',
-    enabled: true,
-  },
-  {
-    id: 'tool-git',
-    name: 'Git Tools',
-    description: 'Git operations (status, diff, commit)',
-    version: '1.0.0',
-    author: 'BAB Core',
-    type: 'tool',
-    enabled: true,
-  },
-  {
-    id: 'tool-shell',
-    name: 'Shell Tools',
-    description: 'Execute shell commands',
-    version: '1.0.0',
-    author: 'BAB Core',
-    type: 'tool',
-    enabled: true,
-  },
-];
 
 export default function Extensions() {
   const { t } = useLanguage();
-  const [extensions] = useState<Extension[]>(BUILT_IN_EXTENSIONS);
-  const [connectedProviders, setConnectedProviders] = useState<string[]>([]);
+  const [extensions, setExtensions] = useState<Extension[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  const loadExtensions = useCallback(async () => {
+    try {
+      const data = await api.getExtensions();
+      setExtensions(data.data || []);
+    } catch {
+      setExtensions([]);
+    } finally {
+      setLoading(false);
+    }
+  }, []);
 
   useEffect(() => {
-    async function loadStatus() {
-      try {
-        const health = await api.getHealth();
-        const connected = Object.entries(health.providers)
-          .filter(([_, data]) => data.healthy)
-          .map(([id]) => id);
-        setConnectedProviders(connected);
-      } catch {
-        setConnectedProviders([]);
-      }
-    }
-    loadStatus();
-  }, []);
+    loadExtensions();
+    const interval = setInterval(loadExtensions, 10000);
+    return () => clearInterval(interval);
+  }, [loadExtensions]);
 
   const cardClass = 'rounded-xl glass';
 
-  const getProviderIcon = (id: string) => {
-    if (id.includes('gemini')) return <Globe className="w-6 h-6" />;
-    if (id.includes('chatgpt')) return <Zap className="w-6 h-6" />;
-    if (id.includes('claude')) return <MessageSquare className="w-6 h-6" />;
-    return <Puzzle className="w-6 h-6" />;
+  const getTypeIcon = (ext: Extension) => {
+    if (ext.type === 'provider') {
+      if (ext.providerId?.includes('chatgpt')) return Zap;
+      if (ext.providerId?.includes('claude')) return MessageSquare;
+      return Globe;
+    }
+    if (ext.name.startsWith('git.')) return GitBranch;
+    if (ext.name.startsWith('fs.')) return FileText;
+    if (ext.name.startsWith('shell.')) return Terminal;
+    return Puzzle;
   };
 
-  const isProviderConnected = (id: string) => {
-    const providerId = id.replace('provider-', '');
-    return connectedProviders.includes(providerId);
-  };
+  const connectedCount = extensions.filter((e) => e.status === 'connected').length;
 
   return (
     <div>
-      <div className="mb-8">
-        <h1 className={`text-2xl font-bold text-text`}>
-          {t('extensions.title')}
-        </h1>
-        <p className="text-text-muted">
-          {t('extensions.subtitle')}
-        </p>
+      <div className="flex items-center justify-between mb-8">
+        <div>
+          <h1 className="text-2xl font-display leading-none text-text">{t('extensions.title')}</h1>
+          <p className="text-text-muted mt-2">{t('extensions.subtitle')}</p>
+        </div>
+        <button
+          onClick={loadExtensions}
+          className="p-2 rounded-lg transition-colors hover:bg-surface-inset"
+          title={t('extensions.title')}
+        >
+          <RefreshCw className={`w-5 h-5 text-text-muted ${loading ? 'animate-spin' : ''}`} />
+        </button>
       </div>
 
       {/* Stats */}
@@ -166,7 +104,7 @@ export default function Extensions() {
             </div>
             <div>
               <p className="text-2xl font-display leading-none text-text">
-                <NumberPopIn value={connectedProviders.length} />
+                <NumberPopIn value={connectedCount} />
               </p>
               <p className="text-sm text-text-muted mt-1">Connected</p>
             </div>
@@ -175,72 +113,79 @@ export default function Extensions() {
       </div>
 
       {/* Extensions List */}
-      <div className="space-y-4">
-        {extensions.map((ext) => (
-          <div key={ext.id} className={`${cardClass} p-6`}>
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-4">
-                <div
-                  className={`w-12 h-12 rounded-xl flex items-center justify-center ${
-                    ext.type === 'provider'
-                      ? 'bg-accent-soft text-accent'
-                      : 'bg-success/15 text-success'
-                  }`}
-                >
-                  {ext.type === 'provider' ? getProviderIcon(ext.id) : <Puzzle className="w-6 h-6" />}
-                </div>
-                <div>
-                  <div className="flex items-center gap-2">
-                    <h3 className="font-semibold text-text">{ext.name}</h3>
-                    <span className="text-xs px-2 py-0.5 rounded bg-surface-inset text-text-muted">
-                      v{ext.version}
-                    </span>
-                    <span
-                      className={`text-xs px-2 py-0.5 rounded ${
+      {loading && extensions.length === 0 ? (
+        <div className="flex items-center justify-center h-40">
+          <RefreshCw className="w-8 h-8 animate-spin text-accent" />
+        </div>
+      ) : extensions.length === 0 ? (
+        <div className={`${cardClass} p-12 text-center`}>
+          <Puzzle className="w-12 h-12 mx-auto mb-4 text-text-subtle" />
+          <p className="text-text-muted">
+            No extensions registered. Start the server to load providers and tools.
+          </p>
+        </div>
+      ) : (
+        <div className="space-y-4">
+          {extensions.map((ext) => {
+            const Icon = getTypeIcon(ext);
+            const connected = ext.status === 'connected';
+            return (
+              <div key={ext.id} className={`${cardClass} p-6`}>
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-4">
+                    <div
+                      className={`w-12 h-12 rounded-xl flex items-center justify-center ${
                         ext.type === 'provider'
                           ? 'bg-accent-soft text-accent'
                           : 'bg-success/15 text-success'
                       }`}
                     >
-                      {ext.type}
+                      <Icon className="w-6 h-6" />
+                    </div>
+                    <div>
+                      <div className="flex items-center gap-2">
+                        <h3 className="font-semibold text-text">{ext.name}</h3>
+                        <span
+                          className={`text-xs px-2 py-0.5 rounded ${
+                            ext.type === 'provider'
+                              ? 'bg-accent-soft text-accent'
+                              : 'bg-success/15 text-success'
+                          }`}
+                        >
+                          {ext.type}
+                        </span>
+                      </div>
+                      {ext.description && (
+                        <p className="text-sm mt-1 text-text-muted">{ext.description}</p>
+                      )}
+                    </div>
+                  </div>
+
+                  <div className="flex items-center gap-2">
+                    {ext.type === 'provider' && (
+                      <span
+                        className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-sm font-medium ${
+                          connected ? 'bg-success/15 text-success' : 'bg-surface-inset text-text-subtle'
+                        }`}
+                      >
+                        {connected ? <CheckCircle className="w-4 h-4" /> : <Puzzle className="w-4 h-4" />}
+                        {connected ? 'Connected' : 'Disconnected'}
+                      </span>
+                    )}
+                    <span
+                      className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-sm font-medium ${
+                        ext.enabled ? 'bg-success/15 text-success' : 'bg-surface-inset text-text-subtle'
+                      }`}
+                    >
+                      {ext.enabled ? 'Enabled' : 'Disabled'}
                     </span>
                   </div>
-                  <p className="text-sm mt-1 text-text-muted">{ext.description}</p>
-                  <p className="text-xs mt-2 text-text-subtle">by {ext.author}</p>
                 </div>
               </div>
-
-              <div className="flex items-center gap-2">
-                {ext.type === 'provider' && isProviderConnected(ext.id) && (
-                  <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-sm font-medium bg-success/15 text-success">
-                    Connected
-                  </span>
-                )}
-                <span
-                  className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-sm font-medium ${
-                    ext.enabled ? 'bg-success/15 text-success' : 'bg-surface-inset text-text-subtle'
-                  }`}
-                >
-                  {ext.enabled ? 'Enabled' : 'Disabled'}
-                </span>
-              </div>
-            </div>
-          </div>
-        ))}
-      </div>
-
-      {/* Marketplace Notice */}
-      <div className={`mt-8 ${cardClass} p-6 text-center`}>
-        <Puzzle className={`w-12 h-12 mx-auto mb-4 text-text-subtle`} />
-        <h3 className={`text-lg font-semibold mb-2 text-text`}>
-          Plugin Marketplace Coming Soon
-        </h3>
-        <p className={`text-sm text-text-muted`}>
-          Community plugins will be available in a future release.
-          <br />
-          For now, all providers and tools are built-in.
-        </p>
-      </div>
+            );
+          })}
+        </div>
+      )}
     </div>
   );
 }

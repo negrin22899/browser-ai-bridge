@@ -1,4 +1,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import * as fs from 'node:fs';
+import * as os from 'node:os';
+import * as path from 'node:path';
 import { Logger } from './logger.js';
 
 describe('Logger', () => {
@@ -63,5 +66,19 @@ describe('Logger', () => {
     expect(parsed.level).toBe('info');
     expect(parsed.message).toBe('test message');
     expect(parsed.key).toBe('value');
+  });
+
+  it('should append log lines to a file when filePath is set', () => {
+    const file = path.join(os.tmpdir(), `bab-logger-${Date.now()}.log`);
+    const logger = new Logger({ level: 'info', format: 'text', filePath: file });
+
+    logger.info('first line');
+    logger.error('second line');
+
+    const contents = fs.readFileSync(file, 'utf8');
+    expect(contents).toContain('first line');
+    expect(contents).toContain('second line');
+
+    fs.rmSync(file, { force: true });
   });
 });

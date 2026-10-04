@@ -21,6 +21,25 @@ contextBridge.exposeInMainWorld('electronAPI', {
 
   // ── Updates ──────────────────────────────────────────────────
   checkForUpdates: () => ipcRenderer.invoke('check-for-updates'),
+  setUpdateChannel: (channel: 'stable' | 'beta') => ipcRenderer.invoke('set-update-channel', channel),
+
+  // ── Provider Detection ───────────────────────────────────────
+  checkChrome: () => ipcRenderer.invoke('check-chrome'),
+  openProviderSignin: (url: string) => ipcRenderer.invoke('open-provider-signin', url),
+  checkProviderStatus: (providerId: string) => ipcRenderer.invoke('check-provider-status', providerId),
+  getDetectedProviders: () => ipcRenderer.invoke('get-detected-providers'),
+
+  // ── Settings ─────────────────────────────────────────────────
+  loadSettings: () => ipcRenderer.invoke('load-settings'),
+  saveSettings: (settings: any) => ipcRenderer.invoke('save-settings', settings),
+  mergeSettings: (patch: any) => ipcRenderer.invoke('merge-settings', patch),
+
+  // ── Browsers (multi-browser support) ─────────────────────────
+  listBrowsers: () => ipcRenderer.invoke('list-browsers'),
+  detectInstalledBrowsers: () => ipcRenderer.invoke('detect-installed-browsers'),
+
+  // ── Active provider ──────────────────────────────────────────
+  setActiveProvider: (id: string) => ipcRenderer.invoke('set-active-provider', id),
 
   // ── Events ───────────────────────────────────────────────────
   onServerStatus: (callback: (status: any) => void) => {

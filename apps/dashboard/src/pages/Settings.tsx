@@ -15,6 +15,7 @@ import { useTheme } from '../contexts/ThemeContext';
 import { useLanguage } from '../contexts/LanguageContext';
 import { isElectron, type BrowserInfo } from '../hooks/useElectron';
 import { Toggle, TextStatesSwap } from '../components/motion';
+import { api } from '../lib/api';
 
 const DEFAULT_SETTINGS = {
   general: {
@@ -39,6 +40,7 @@ const DEFAULT_SETTINGS = {
     shell: 'bash',
   },
 };
+
 
 export default function Settings() {
   const { theme, setTheme } = useTheme();
@@ -101,6 +103,12 @@ export default function Settings() {
         if (!ok) throw new Error('IPC save returned false');
       } else {
         localStorage.setItem('bab-settings', JSON.stringify(settings));
+      }
+      // Mirror to the backend config so server-side features see the same values.
+      try {
+        await api.saveConfig(settings);
+      } catch {
+        // Server not running — local settings are still saved.
       }
       setSaveState('saved');
       setTimeout(() => setSaveState('idle'), 2000);

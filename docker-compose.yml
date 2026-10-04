@@ -1,0 +1,11 @@
+services:
+  bab:
+    build: .
+    ports:
+      - "3000:3000"
+    environment:
+      # Native API fallback (pick the provider you use).
+      - OPENAI_API_KEY=${OPENAI_API_KEY:-}
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-}
+      - GOOGLE_API_KEY=${GOOGLE_API_KEY:-}
+    restart: unless-stopped

@@ -29,6 +29,18 @@ export class AuditLogger implements IAuditLogger {
     return this.entries.get(sessionId) ?? [];
   }
 
+  getAll(): Map<string, AuditEntry[]> {
+    return new Map(
+      Array.from(this.entries.entries()).map(([k, v]) => [k, [...v]])
+    );
+  }
+
+  restore(entries: Map<string, AuditEntry[]>): void {
+    this.entries = new Map(
+      Array.from(entries.entries()).map(([k, v]) => [k, [...v]])
+    );
+  }
+
   clear(sessionId: string): void {
     this.entries.delete(sessionId);
   }

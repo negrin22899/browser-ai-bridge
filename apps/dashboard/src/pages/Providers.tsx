@@ -11,6 +11,7 @@ import {
 } from 'lucide-react';
 import { useLanguage } from '../contexts/LanguageContext';
 import { isElectron } from '../hooks/useElectron';
+import { useBabEvents } from '../hooks/useBabEvents';
 import { api, waitForProviderHealthy } from '../lib/api';
 import { humanizeError } from '../lib/errors';
 import { NumberPopIn, TextStatesSwap } from '../components/motion';
@@ -65,6 +66,13 @@ export default function Providers() {
     const interval = setInterval(loadStatus, 10000);
     return () => clearInterval(interval);
   }, [loadStatus]);
+
+  // Refresh as soon as the server reports provider events (sign-in, health).
+  useBabEvents((type) => {
+    if (type.startsWith('provider.')) {
+      loadStatus();
+    }
+  });
 
   const switchProvider = async (id: string) => {
     if (!isElectron() || !window.electronAPI?.setActiveProvider) {

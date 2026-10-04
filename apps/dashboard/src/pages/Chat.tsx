@@ -7,9 +7,11 @@ import {
   Bot,
   User,
   Loader2,
+  History,
+  Plus,
 } from 'lucide-react';
 import { useLanguage } from '../contexts/LanguageContext';
-import { api, type Provider } from '../lib/api';
+import { api, type Provider, type Session } from '../lib/api';
 import { humanizeError } from '../lib/errors';
 import { SlidingTabs } from '../components/motion';
 
@@ -37,6 +39,9 @@ export default function Chat() {
   const [selectedProvider, setSelectedProvider] = useState('gemini');
   const [isLoading, setIsLoading] = useState(false);
   const [providers, setProviders] = useState<Provider[]>([]);
+  const [sessions, setSessions] = useState<Session[]>([]);
+  const [historyOpen, setHistoryOpen] = useState(false);
+  const [currentSessionId, setCurrentSessionId] = useState<string | null>(null);
 
   useEffect(() => {
     async function loadProviders() {
@@ -61,8 +66,48 @@ export default function Chat() {
       }
     }
     loadProviders();
+    loadSessions();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  async function loadSessions() {
+    try {
+      const data = await api.getSessions();
+      setSessions(data.data || []);
+    } catch {
+      // Ignore — history is optional.
+    }
+  }
+
+  const loadHistory = async (sessionId: string) => {
+    try {
+      const session = await api.getSession(sessionId);
+      const history: Message[] = (session.messages || []).map((m, i) => ({
+        id: `${sessionId}-${i}`,
+        role: m.role as Message['role'],
+        content: m.content ?? '',
+        timestamp: new Date(),
+      }));
+      setMessages(history.length > 0 ? history : messages);
+      setCurrentSessionId(sessionId);
+      setSelectedProvider(session.providerId || selectedProvider);
+      setHistoryOpen(false);
+    } catch {
+      // Ignore load errors.
+    }
+  };
+
+  const newChat = () => {
+    setCurrentSessionId(null);
+    setMessages([
+      {
+        id: Date.now().toString(),
+        role: 'system',
+        content: 'Welcome! I can help you with file operations, git commands, and more. Just ask!',
+        timestamp: new Date(),
+      },
+    ]);
+  };
 
   const getProviderIcon = (id: string) => {
     switch (id) {
@@ -102,10 +147,17 @@ export default function Chat() {
     setMessages((prev) => [...prev, assistantMessage]);
 
     try {
+      const historyMessages: Array<{ role: 'system' | 'user' | 'assistant'; content: string }> =
+        messages
+          .filter((m) => m.role !== 'system')
+          .map((m) => ({ role: m.role, content: m.content }));
+
       const stream = api.chatStream({
         model: selectedProvider,
+        sessionId: currentSessionId ?? undefined,
         messages: [
           { role: 'system', content: 'You are a helpful assistant. Be concise.' },
+          ...historyMessages,
           { role: 'user', content: userInput },
         ],
       });
@@ -123,6 +175,8 @@ export default function Chat() {
           prev.map((m) => (m.id === assistantId ? { ...m, content: 'No response' } : m)),
         );
       }
+
+      loadSessions();
     } catch (error) {
       const errMsg = humanizeError(error, language);
       setMessages((prev) =>
@@ -149,9 +203,63 @@ export default function Chat() {
         <p className="text-text-muted mt-2">{t('chat.subtitle')}</p>
       </div>
 
-      {/* Provider Selection */}
-      {providers.length > 0 && (
-        <div className="mb-4">
+      {/* Provider Selection + History */}
+      <div className="flex gap-2 mb-4 items-start">
+        <div className="relative">
+          <button
+            onClick={() => setHistoryOpen((v) => !v)}
+            className="flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium glass text-text-muted hover:text-text transition-colors"
+            title="Chat history"
+          >
+            <History className="w-4 h-4" />
+            {t('chat.history')}
+          </button>
+          {historyOpen && (
+            <div className="absolute left-0 top-12 w-80 z-50 glass-strong rounded-xl shadow-glass overflow-hidden">
+              <div className="px-4 py-2 text-xs font-semibold uppercase tracking-wide text-text-subtle border-b border-border">
+                {t('chat.history')} ({sessions.length})
+              </div>
+              {sessions.length === 0 ? (
+                <div className="px-4 py-6 text-sm text-center text-text-muted">
+                  {t('chat.noHistory')}
+                </div>
+              ) : (
+                <div className="max-h-72 overflow-y-auto">
+                  {sessions.map((session) => {
+                    const last = session.messages?.[session.messages.length - 1];
+                    return (
+                      <button
+                        key={session.id}
+                        onClick={() => loadHistory(session.id)}
+                        className={`w-full px-4 py-3 text-left transition-colors ${
+                          currentSessionId === session.id ? 'bg-accent-soft' : 'hover:bg-surface-inset'
+                        }`}
+                      >
+                        <div className="text-sm font-medium text-text">
+                          {session.providerId.charAt(0).toUpperCase() + session.providerId.slice(1)}
+                          <span className="ml-2 text-xs font-normal text-text-muted">
+                            {session.messageCount ?? session.messages?.length ?? 0} msgs
+                          </span>
+                        </div>
+                        <div className="text-xs truncate mt-0.5 text-text-muted">
+                          {last ? (last.content || (last as { tool_calls?: unknown }).tool_calls ? '[tool call]' : '(empty)') : '(empty)'}
+                        </div>
+                      </button>
+                    );
+                  })}
+                </div>
+              )}
+              <button
+                onClick={newChat}
+                className="w-full flex items-center gap-2 px-4 py-2.5 text-sm font-medium text-accent border-t border-border hover:bg-surface-inset transition-colors"
+              >
+                <Plus className="w-4 h-4" />
+                {t('chat.new')}
+              </button>
+            </div>
+          )}
+        </div>
+        {providers.length > 0 && (
           <SlidingTabs
             ariaLabel="Provider"
             value={selectedProvider}
@@ -172,8 +280,8 @@ export default function Chat() {
               };
             })}
           />
-        </div>
-      )}
+        )}
+      </div>
 
       {/* Messages */}
       <div className={`flex-1 overflow-y-auto ${cardClass} p-4 space-y-4`}>

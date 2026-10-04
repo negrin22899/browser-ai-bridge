@@ -1,9 +1,11 @@
 import type { Message } from '@bab/protocol';
+import { estimateMessageTokens, DEFAULT_CONTEXT_LIMIT } from './tokenizer.js';
 
 export interface SessionConfig {
   id: string;
   providerId: string;
   model?: string;
+  createdAt?: number;
   metadata?: Record<string, unknown>;
 }
 
@@ -24,7 +26,7 @@ export class Session {
     this.id = config.id;
     this.providerId = config.providerId;
     this.model = config.model;
-    this.createdAt = Date.now();
+    this.createdAt = config.createdAt ?? Date.now();
     this._updatedAt = Date.now();
     this.metadata = config.metadata ?? {};
   }
@@ -35,6 +37,11 @@ export class Session {
 
   get messageCount(): number {
     return this.messages.length;
+  }
+
+  /** Rough token estimate of the whole conversation history. */
+  estimateTokens(): number {
+    return estimateMessageTokens(this.messages);
   }
 
   addMessage(message: Message): void {
@@ -64,7 +71,7 @@ export class Session {
     this._updatedAt = Date.now();
   }
 
-  toJSON(): object {
+  toJSON(includeMessages = false): object {
     return {
       id: this.id,
       providerId: this.providerId,
@@ -72,7 +79,48 @@ export class Session {
       createdAt: this.createdAt,
       updatedAt: this._updatedAt,
       messageCount: this.messageCount,
+      estimatedTokens: this.estimateTokens(),
+      contextLimit: DEFAULT_CONTEXT_LIMIT,
+      contextUsagePercent: Math.min(
+        100,
+        Math.round((this.estimateTokens() / DEFAULT_CONTEXT_LIMIT) * 100)
+      ),
       metadata: this.metadata,
+      ...(includeMessages ? { messages: this.getMessages() } : {}),
     };
+  }
+
+  /**
+   * Render the conversation as markdown for export.
+   */
+  toMarkdown(): string {
+    const lines: string[] = [
+      `# Session ${this.id}`,
+      '',
+      `- Provider: ${this.providerId}`,
+      `- Model: ${this.model ?? 'n/a'}`,
+      `- Created: ${new Date(this.createdAt).toISOString()}`,
+      `- Updated: ${new Date(this._updatedAt).toISOString()}`,
+      '',
+    ];
+
+    for (const message of this.messages) {
+      const role = message.role === 'assistant' ? '🤖 Assistant' : message.role === 'system' ? '⚙️ System' : '👤 User';
+      lines.push(`## ${role}`);
+      lines.push('');
+      lines.push(message.content ?? '');
+      lines.push('');
+
+      if (message.tool_calls && message.tool_calls.length > 0) {
+        lines.push('**Tool calls:**');
+        lines.push('');
+        lines.push('```json');
+        lines.push(JSON.stringify(message.tool_calls, null, 2));
+        lines.push('```');
+        lines.push('');
+      }
+    }
+
+    return lines.join('\n');
   }
 }

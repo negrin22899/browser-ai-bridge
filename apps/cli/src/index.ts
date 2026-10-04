@@ -1,12 +1,25 @@
 #!/usr/bin/env node
 
 import { Command } from 'commander';
-import { createServer } from '@bab/api';
-import { ProviderManager, SessionManager, EventBus, Logger } from '@bab/core';
+import * as os from 'node:os';
+import * as fs from 'node:fs';
+import * as path from 'node:path';
+import { createServer, runToolLoop, StatePersistence, TeamAuth, ResponseCache } from '@bab/api';
+import { ProviderManager, SessionManager, EventBus, Logger, ProviderRotation } from '@bab/core';
 import { PromptEngine } from '@bab/prompt-engine';
-import { ToolDispatcher } from '@bab/runtime';
+import { Runtime } from '@bab/runtime';
 import { PlaywrightProvider } from '@bab/playwright-provider';
-import { FsReadTool, FsWriteTool } from '@bab/tools-fs';
+import { ApiProvider } from '@bab/api-provider';
+import { PluginLoader, PluginMarketplace } from '@bab/plugin-sdk';
+import {
+  FsReadTool,
+  FsWriteTool,
+  FsEditTool,
+  FsSearchTool,
+  FsGlobTool,
+  FsExistsTool,
+  FsDeleteTool,
+} from '@bab/tools-fs';
 import { GitStatusTool, GitDiffTool, GitCommitTool } from '@bab/tools-git';
 import { ShellExecTool } from '@bab/tools-shell';
 import { serve } from '@hono/node-server';
@@ -26,13 +39,52 @@ program
 
 // ── Helpers ──────────────────────────────────────────────────────
 
-function registerTools(dispatcher: ToolDispatcher): void {
-  dispatcher.register(new FsReadTool());
-  dispatcher.register(new FsWriteTool());
-  dispatcher.register(new GitStatusTool());
-  dispatcher.register(new GitDiffTool());
-  dispatcher.register(new GitCommitTool());
-  dispatcher.register(new ShellExecTool());
+function registerTools(runtime: Runtime): void {
+  runtime.tools.register(new FsReadTool());
+  runtime.tools.register(new FsWriteTool());
+  runtime.tools.register(new FsEditTool());
+  runtime.tools.register(new FsSearchTool());
+  runtime.tools.register(new FsGlobTool());
+  runtime.tools.register(new FsExistsTool());
+  runtime.tools.register(new FsDeleteTool());
+  runtime.tools.register(new GitStatusTool());
+  runtime.tools.register(new GitDiffTool());
+  runtime.tools.register(new GitCommitTool());
+  runtime.tools.register(new ShellExecTool());
+}
+
+function parseAllowList(value?: string): string[] {
+  if (!value) return [];
+  return value
+    .split(',')
+    .map((s) => s.trim())
+    .filter(Boolean);
+}
+
+function createRuntime(eventBus: EventBus, allow: string[], interactive = false): Runtime {
+  const workingDirectory = process.cwd();
+  const runtime = new Runtime(eventBus, {
+    workingDirectory,
+    permissions: {
+      mode: 'scope',
+      defaultScope: {
+        allowedPaths: [workingDirectory],
+        allowedCommands: ['git status', 'git diff', 'git log', 'ls', 'dir'],
+        deniedCommands: ['rm -rf', 'sudo', 'format', 'shutdown', 'del /f /s /q'],
+        maxExecutionTime: 30000,
+      },
+      dangerousTools: [],
+    },
+    audit: {
+      enabled: true,
+      maxEntries: 1000,
+    },
+    autoGrant: allow,
+    interactive,
+  });
+
+  registerTools(runtime);
+  return runtime;
 }
 
 // ── Commands ─────────────────────────────────────────────────────
@@ -73,12 +125,12 @@ program
 program
   .command('diagnose')
   .description('Collect diagnostic information for bug reports')
-  .option('-o, --output <file>', 'Output file path')
-  .action(async () => {
+  .option('-o, --output <file>', 'Output file path (single self-contained JSON)')
+  .action(async (options) => {
     console.log('\nCollecting diagnostic information...\n');
     const info = await runDiagnose();
     printDiagnosticSummary(info);
-    const filepath = await saveDiagnostic(info);
+    const filepath = await saveDiagnostic(info, options.output);
     console.log(`\nDiagnostic saved to: ${filepath}`);
     console.log('Attach this file to your bug report.\n');
   });
@@ -104,6 +156,38 @@ program
 
 // ── Serve ────────────────────────────────────────────────────────
 
+function logFilePath(): string {
+  const date = new Date().toISOString().slice(0, 10);
+  return path.join(os.homedir(), '.browser-ai-bridge', 'logs', `bab-${date}.log`);
+}
+
+function crashDir(): string {
+  return path.join(os.homedir(), '.browser-ai-bridge', 'crashes');
+}
+
+function writeCrashReport(kind: 'exception' | 'rejection', error: unknown): string {
+  try {
+    const dir = crashDir();
+    fs.mkdirSync(dir, { recursive: true });
+    const err = error instanceof Error ? error : new Error(String(error));
+    const report = {
+      kind,
+      timestamp: new Date().toISOString(),
+      name: err.name,
+      message: err.message,
+      stack: err.stack,
+      node: process.version,
+      platform: process.platform,
+      arch: process.arch,
+    };
+    const filepath = path.join(dir, `crash-${Date.now()}.json`);
+    fs.writeFileSync(filepath, JSON.stringify(report, null, 2));
+    return filepath;
+  } catch {
+    return '';
+  }
+}
+
 program
   .command('serve')
   .description('Start the API server')
@@ -115,32 +199,107 @@ program
   .option('--profile', 'Use existing browser profile (for logged-in sessions)', true)
   .option('--no-profile', 'Use new browser profile')
   .option('--browser <name>', 'Browser to drive: chrome | edge | brave | opera | vivaldi | chromium', 'chrome')
+  .option('--allow <tools>', 'Comma-separated tools to allow without confirmation (e.g. fs.write,shell.exec)')
+  .option('--interactive', 'Prompt for permission decisions via the API instead of denying immediately')
+  .option('--api <format>', 'Register a native API provider as fallback (openai, anthropic, google)')
+  .option('--api-key <key>', 'API key for the native API provider (or use OPENAI_API_KEY / ANTHROPIC_API_KEY / GOOGLE_API_KEY)')
+  .option('--api-model <model>', 'Model for the native API provider (default: provider id)')
+  .option('--api-base-url <url>', 'Base URL for the native API provider')
+  .option('--accounts <n>', 'Number of browser accounts/profiles to rotate between (default: 1)')
+  .option('--team', 'Enable team mode: require API keys on every request (multi-client RBAC)')
+  .option('--team-admin-key <key>', 'Admin API key for team mode (or use BAB_ADMIN_KEY)')
+  .option('--cache <dir>', 'Persist verbatim response cache to a directory (repeats answered instantly)')
   .action(async (options) => {
     const eventBus = new EventBus();
-    const logger = new Logger({ level: 'info', format: 'text', context: 'CLI' });
+    const logger = new Logger({
+      level: 'info',
+      format: 'text',
+      context: 'CLI',
+      filePath: logFilePath(),
+    });
     const sessionManager = new SessionManager(eventBus);
     const providerManager = new ProviderManager(eventBus);
     const promptEngine = new PromptEngine();
-    const toolDispatcher = new ToolDispatcher(eventBus);
+    const runtime = createRuntime(eventBus, parseAllowList(options.allow), options.interactive);
 
-    registerTools(toolDispatcher);
+    await runtime.start();
+
+    // Persistence: restore sessions/audit from disk and save periodically.
+    const persistence = new StatePersistence(
+      path.join(os.homedir(), '.browser-ai-bridge', 'state.json')
+    );
+    const savedState = persistence.load();
+    if (savedState) {
+      for (const s of savedState.sessions) {
+        sessionManager.restore(
+          { id: s.id, providerId: s.providerId, model: s.model, createdAt: s.createdAt },
+          s.messages
+        );
+      }
+      if (savedState.activeSessionId && sessionManager.has(savedState.activeSessionId)) {
+        sessionManager.setActive(savedState.activeSessionId);
+      }
+      if (savedState.audit && Object.keys(savedState.audit).length > 0) {
+        runtime.restoreAudit(new Map(Object.entries(savedState.audit)));
+      }
+      logger.info(`Restored ${savedState.sessions.length} session(s) from disk`);
+    }
+
+    const captureState = () => ({
+      sessions: sessionManager.list().map((s) => ({
+        id: s.id,
+        providerId: s.providerId,
+        model: s.model,
+        createdAt: s.createdAt,
+        messages: s.getMessages(),
+      })),
+      audit: Object.fromEntries(runtime.getAllAuditEntries()),
+      activeSessionId: sessionManager.getActiveId(),
+    });
+    const saveState = () => persistence.save(captureState());
+    const saveInterval = setInterval(saveState, 5000);
 
     if (options.site) {
-      const { id: providerId, adapter } = resolveProvider(options.site);
-      const provider = new PlaywrightProvider({
-        id: providerId,
-        name: options.site,
-        adapter,
-        headless: options.headless,
-        useExistingProfile: options.profile,
-        browser: options.browser,
-      });
+      const { id: providerId } = resolveProvider(options.site);
+      const accountCount = Math.max(1, parseInt(options.accounts ?? '1', 10) || 1);
 
-      provider.setTools(toolDispatcher.getDescriptions());
+      // Multi-account rotation: each account gets its own browser profile so the
+      // user can be logged into a different AI account in each one. Account 0
+      // reuses the existing logged-in profile; the rest use dedicated profiles
+      // that the user can sign into once.
+      const accounts: PlaywrightProvider[] = [];
+      for (let i = 0; i < accountCount; i++) {
+        const { adapter } = resolveProvider(options.site);
+        const account = new PlaywrightProvider({
+          id: accountCount > 1 ? `${providerId}-account-${i + 1}` : providerId,
+          name: accountCount > 1 ? `${options.site} (account ${i + 1})` : options.site,
+          adapter,
+          headless: options.headless,
+          useExistingProfile: i === 0 ? options.profile : false,
+          browser: options.browser,
+          // Distinct profile dir + CDP port keep accounts from colliding on the
+          // same browser instance.
+          userDataDir: i === 0
+            ? undefined
+            : path.join(os.homedir(), '.browser-ai-bridge', 'profiles', `${providerId}-account-${i + 1}`),
+          cdpPort: 9222 + i,
+        });
+        account.setTools(runtime.getToolDescriptions());
+        accounts.push(account);
+      }
+
+      const provider = accountCount > 1
+        ? new ProviderRotation(providerId, accounts, { name: options.site })
+        : accounts[0];
+
       providerManager.register(provider);
       providerManager.setActive(providerId);
 
-      logger.info(`Connecting to ${options.site} via ${options.browser}...`);
+      logger.info(
+        accountCount > 1
+          ? `Connecting to ${options.site} across ${accountCount} accounts...`
+          : `Connecting to ${options.site} via ${options.browser}...`
+      );
       try {
         await provider.connect();
         logger.info('Connected to browser AI');
@@ -152,16 +311,94 @@ program
       }
     }
 
-    const app = createServer({ providerManager, sessionManager, logger, promptEngine });
+    if (options.api) {
+      const format = options.api.toLowerCase();
+      if (!['openai', 'anthropic', 'google'].includes(format)) {
+        logger.error(`Unknown API format: ${options.api}. Use openai, anthropic, or google.`);
+        process.exit(1);
+      }
+
+      const apiProvider = new ApiProvider({
+        id: `api-${format}`,
+        name: `Native ${format}`,
+        format: format as 'openai' | 'anthropic' | 'google',
+        apiKey: options.apiKey,
+        model: options.apiModel,
+        baseUrl: options.apiBaseUrl,
+      });
+      apiProvider.setTools(runtime.getToolDescriptions());
+      providerManager.register(apiProvider);
+
+      try {
+        await apiProvider.connect();
+        logger.info(`Native ${format} API provider registered (fallback)`);
+      } catch (error) {
+        logger.error('Failed to initialize API provider:', {
+          error: error instanceof Error ? error.message : String(error),
+        });
+      }
+    }
+
+    // Team mode: multi-client RBAC. Requires a key on every request except
+    // /health. Admin key comes from --team-admin-key / BAB_ADMIN_KEY, or is
+    // generated once and printed.
+    let teamAuth: TeamAuth | undefined;
+    if (options.team) {
+      teamAuth = new TeamAuth();
+      const adminKey = options.teamAdminKey ?? process.env.BAB_ADMIN_KEY;
+      if (adminKey) {
+        teamAuth.ensure('admin', 'admin', adminKey);
+      } else if (teamAuth.list().length === 0) {
+        const created = teamAuth.create('admin', 'admin');
+        console.log('');
+        console.log('Team mode enabled. Admin API key (store it now):');
+        console.log(`  ${created.key}`);
+        console.log('');
+      }
+      logger.info(`Team mode enabled (${teamAuth.list().length} client(s))`);
+    }
+
+    const responseCache = options.cache ? new ResponseCache({ cacheDir: options.cache }) : undefined;
+
+    const app = createServer({ providerManager, sessionManager, logger, promptEngine, runtime, eventBus, teamAuth, responseCache });
     const port = parseInt(options.port);
 
-    serve({ fetch: app.fetch, port }, (info) => {
-      logger.info(`Browser AI Bridge running at http://localhost:${info.port}`);
+    serve({ fetch: app.fetch, port, hostname: options.host }, (info) => {
+      logger.info(`Browser AI Bridge running at http://${options.host}:${info.port}`);
       logger.info('Endpoints:');
       logger.info('  POST /v1/chat/completions - Chat completions');
       logger.info('  POST /v1/responses - Responses API');
       logger.info('  GET  /models - List models');
       logger.info('  GET  /health - Health check');
+    });
+
+    // Graceful shutdown: close browser and stop runtime.
+    let shuttingDown = false;
+    const shutdown = async () => {
+      if (shuttingDown) return;
+      shuttingDown = true;
+      logger.info('Shutting down...');
+      clearInterval(saveInterval);
+      saveState();
+      await providerManager.shutdownAll();
+      await runtime.stop();
+      process.exit(0);
+    };
+
+    process.on('SIGINT', shutdown);
+    process.on('SIGTERM', shutdown);
+    process.on('uncaughtException', (error) => {
+      logger.error('Uncaught exception', { error: error.message });
+      const report = writeCrashReport('exception', error);
+      if (report) logger.info('Crash report saved', { path: report });
+      void shutdown();
+    });
+    process.on('unhandledRejection', (reason) => {
+      logger.error('Unhandled rejection', {
+        error: reason instanceof Error ? reason.message : String(reason),
+      });
+      const report = writeCrashReport('rejection', reason);
+      if (report) logger.info('Crash report saved', { path: report });
     });
   });
 
@@ -177,12 +414,13 @@ program
   .option('--profile', 'Use existing browser profile', true)
   .option('--no-profile', 'Use new browser profile')
   .option('--browser <name>', 'Browser to drive: chrome | edge | brave | opera | vivaldi | chromium', 'chrome')
+  .option('--allow <tools>', 'Comma-separated tools to allow without confirmation (e.g. fs.write,shell.exec)')
   .action(async (message, options) => {
     const logger = new Logger({ level: 'info', format: 'text', context: 'Chat' });
     const eventBus = new EventBus();
-    const toolDispatcher = new ToolDispatcher(eventBus);
+    const runtime = createRuntime(eventBus, parseAllowList(options.allow));
 
-    registerTools(toolDispatcher);
+    await runtime.start();
 
     const { id: providerId, adapter } = resolveProvider(options.site);
     const provider = new PlaywrightProvider({
@@ -194,7 +432,7 @@ program
       browser: options.browser,
     });
 
-    provider.setTools(toolDispatcher.getDescriptions());
+    provider.setTools(runtime.getToolDescriptions());
 
     logger.info(`Connecting to ${options.site} via ${options.browser}...`);
     try {
@@ -208,15 +446,24 @@ program
     }
 
     const promptEngine = new PromptEngine();
-    const systemPrompt = promptEngine.generateSystemPrompt(toolDispatcher.getDescriptions());
+    const systemPrompt = promptEngine.generateSystemPrompt(runtime.getToolDescriptions());
+    const sessionManager = new SessionManager(eventBus);
+    const session = sessionManager.create(providerId);
 
-    const response = await provider.send({
-      model: providerId,
-      messages: [
-        { role: 'system', content: systemPrompt },
-        { role: 'user', content: message },
-      ],
-    });
+    const response = await runToolLoop(
+      provider,
+      runtime,
+      logger,
+      {
+        model: providerId,
+        messages: [
+          { role: 'system', content: systemPrompt },
+          { role: 'user', content: message },
+        ],
+      },
+      session.id,
+      { onMessage: (m) => session.addMessage(m) }
+    );
 
     console.log('\nAI Response:');
     console.log('='.repeat(50));
@@ -224,6 +471,96 @@ program
     console.log('='.repeat(50));
 
     await provider.disconnect();
+    await runtime.stop();
+  });
+
+// ── Team ─────────────────────────────────────────────────────────
+
+const team = program
+  .command('team')
+  .description('Manage team-mode API keys (multi-client RBAC)');
+
+team
+  .command('list')
+  .description('List team clients')
+  .action(() => {
+    const auth = new TeamAuth();
+    const clients = auth.list();
+    if (clients.length === 0) {
+      console.log('No team clients. Add one with: bab team add <name>');
+      return;
+    }
+    for (const client of clients) {
+      console.log(`${client.id}  ${client.role.padEnd(6)}  ${client.name}  (${client.keyHint})`);
+    }
+  });
+
+team
+  .command('add <name>')
+  .description('Add a team client (key is printed once)')
+  .option('--role <role>', 'Role: admin or member', 'member')
+  .action((name: string, options: { role?: string }) => {
+    const role = options.role === 'admin' ? 'admin' : 'member';
+    const auth = new TeamAuth();
+    const { credential, key } = auth.create(name, role);
+    console.log(`Created ${role} client "${name}" (${credential.id})`);
+    console.log(`API key (store it now): ${key}`);
+  });
+
+team
+  .command('revoke <id>')
+  .description('Revoke a team client key')
+  .action((id: string) => {
+    const auth = new TeamAuth();
+    const ok = auth.revoke(id);
+    console.log(ok ? `Revoked ${id}` : `Client ${id} not found`);
+  });
+
+// ── Plugin ────────────────────────────────────────────────────────
+
+const plugin = program
+  .command('plugin')
+  .description('Manage BAB plugins (marketplace + installed)');
+
+plugin
+  .command('list')
+  .description('List installed and available plugins')
+  .action(async () => {
+    const eventBus = new EventBus();
+    const loader = new PluginLoader(eventBus);
+    const manifests = await loader.discover();
+
+    console.log('\nInstalled plugins:');
+    if (manifests.length === 0) {
+      console.log('  (none discovered)');
+    } else {
+      for (const manifest of manifests) {
+        console.log(`  ${manifest.name}@${manifest.version} — ${manifest.description ?? ''}`);
+      }
+    }
+
+    const marketplace = new PluginMarketplace();
+    console.log('\nAvailable in marketplace:');
+    for (const entry of marketplace.available()) {
+      console.log(`  ${entry.id}@${entry.version} — ${entry.description}`);
+    }
+
+    console.log('\nInstall with: bab plugin install <id | local-dir | git-url>\n');
+  });
+
+plugin
+  .command('install <source>')
+  .description('Install a plugin from the marketplace, a local directory, or a git URL')
+  .action(async (source: string) => {
+    const marketplace = new PluginMarketplace();
+    console.log(`Installing ${source}...`);
+    try {
+      const result = await marketplace.install(source);
+      console.log(`Installed to ${result.installedTo}`);
+    } catch (error) {
+      console.error(`Install failed: ${error instanceof Error ? error.message : String(error)}`);
+      process.exit(1);
+    }
   });
 
 program.parse();

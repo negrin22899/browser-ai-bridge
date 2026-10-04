@@ -12,6 +12,13 @@ export type EventMap = {
   'tool.completed': { toolName: string; result: unknown; sessionId: string };
   'tool.error': { toolName: string; error: string; sessionId: string };
 
+  // Tool loop lifecycle (for the AI Debugger timeline)
+  'loop.started': { sessionId: string; model: string; messageCount: number };
+  'loop.iteration': { sessionId: string; iteration: number; toolCount: number; tools: string[] };
+  'loop.repair': { sessionId: string; iteration: number; repairs: number };
+  'loop.final': { sessionId: string; iterations: number; duration: number };
+  'loop.error': { sessionId: string; error: string };
+
   'permission.requested': { toolName: string; sessionId: string };
   'permission.granted': { toolName: string; sessionId: string };
   'permission.denied': { toolName: string; sessionId: string };
@@ -51,6 +58,14 @@ export type EventMap = {
   'replay.tool_call': { sessionId: string; data: unknown };
   'replay.tool_result': { sessionId: string; data: unknown };
   'replay.permission': { sessionId: string; data: unknown };
+
+  // Plugin lifecycle events
+  'plugin.loaded': { name: string };
+  'plugin.unloaded': { name: string };
+  'plugin.reloaded': { name: string };
+  'plugin.error': { name: string; error: string };
+  'provider.register': { provider: unknown; plugin: string };
+  'tool.register': { tool: unknown; plugin: string };
 };
 
 export type EventHandler<T> = (data: T) => void | Promise<void>;

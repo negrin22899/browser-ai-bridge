@@ -15,6 +15,7 @@ const translations: Record<Language, Record<string, string>> = {
     'nav.providers': 'Providers',
     'nav.sessions': 'Sessions',
     'nav.runtime': 'Runtime',
+    'nav.debugger': 'Debugger',
     'nav.logs': 'Logs',
     'nav.extensions': 'Extensions',
     'nav.settings': 'Settings',
@@ -52,6 +53,28 @@ const translations: Record<Language, Record<string, string>> = {
     'providers.api': 'API',
     'providers.status': 'Status',
 
+    // Integrations
+    'integrations.title': 'Integrations',
+    'integrations.subtitle': 'Connect to browser AI providers',
+    'integrations.connected': 'Connected',
+    'integrations.available': 'Available',
+    'integrations.apiKeys': 'API keys used',
+    'integrations.search': 'Search integrations...',
+    'integrations.connect': 'Connect',
+
+    // Chat
+    'chat.title': 'Chat',
+    'chat.subtitle': 'Talk to your browser AI',
+    'chat.placeholder': 'Type a message...',
+    'chat.thinking': 'Thinking...',
+    'chat.quickActions': 'Quick actions:',
+    'chat.readFile': 'Read a file',
+    'chat.gitStatus': 'Git status',
+    'chat.runCommand': 'Run a command',
+    'chat.history': 'History',
+    'chat.noHistory': 'No history yet',
+    'chat.new': 'New chat',
+
     // Sessions
     'sessions.title': 'Sessions',
     'sessions.subtitle': 'Manage conversation sessions',
@@ -80,6 +103,14 @@ const translations: Record<Language, Record<string, string>> = {
     'runtime.confirm': 'Confirm',
     'runtime.deny': 'Deny',
 
+    // Debugger
+    'debugger.title': 'AI Debugger',
+    'debugger.subtitle': 'Live tool-loop timeline — watch what the AI does step by step',
+    'debugger.pause': 'Pause',
+    'debugger.resume': 'Resume',
+    'debugger.clear': 'Clear',
+    'debugger.empty': 'No events yet. Send a chat request and watch the tool loop unfold here.',
+
     // Logs
     'logs.title': 'Logs',
     'logs.subtitle': 'Audit log and system events',
@@ -87,6 +118,9 @@ const translations: Record<Language, Record<string, string>> = {
     'logs.export': 'Export',
     'logs.filter': 'Filter',
     'logs.all': 'All',
+    'logs.allowed': 'Allowed',
+    'logs.denied': 'Denied',
+    'logs.error': 'Error',
     'logs.tool': 'Tool',
     'logs.permission': 'Permission',
     'logs.session': 'Session',
@@ -139,6 +173,28 @@ const translations: Record<Language, Record<string, string>> = {
     'settings.english': 'English',
     'settings.russian': 'Russian',
 
+    // Permissions
+    'permission.title': 'AI requests permission',
+    'permission.tool': 'Tool',
+    'permission.session': 'Session',
+    'permission.params': 'Parameters',
+    'permission.allowOnce': 'Allow once',
+    'permission.allowSession': 'This session',
+    'permission.deny': 'Deny',
+
+    // Onboarding
+    'onboarding.welcomeTitle': 'Welcome to Browser AI Bridge',
+    'onboarding.welcomeText': 'Use your logged-in browser AI (Gemini, ChatGPT, Claude, DeepSeek) instead of paying for API keys — right inside your favorite IDE.',
+    'onboarding.getStarted': 'Get started',
+    'onboarding.chooseProvider': 'Choose a provider',
+    'onboarding.chooseProviderText': 'Pick the AI you already use. You can add more later.',
+    'onboarding.chooseModel': 'Choose a model',
+    'onboarding.chooseModelText': 'This will be your default model.',
+    'onboarding.model': 'Model',
+    'onboarding.modelPlaceholder': 'e.g. gpt-4o',
+    'onboarding.back': 'Back',
+    'onboarding.done': 'Finish',
+
     // Status
     'status.serverRunning': 'Server running',
     'status.success': 'success',
@@ -157,6 +213,7 @@ const translations: Record<Language, Record<string, string>> = {
     'nav.providers': 'Провайдеры',
     'nav.sessions': 'Сессии',
     'nav.runtime': 'Рантайм',
+    'nav.debugger': 'Отладчик',
     'nav.logs': 'Логи',
     'nav.extensions': 'Расширения',
     'nav.settings': 'Настройки',
@@ -194,6 +251,28 @@ const translations: Record<Language, Record<string, string>> = {
     'providers.api': 'API',
     'providers.status': 'Статус',
 
+    // Integrations
+    'integrations.title': 'Интеграции',
+    'integrations.subtitle': 'Подключение к браузерным AI провайдерам',
+    'integrations.connected': 'Подключено',
+    'integrations.available': 'Доступно',
+    'integrations.apiKeys': 'Использовано API-ключей',
+    'integrations.search': 'Поиск интеграций...',
+    'integrations.connect': 'Подключить',
+
+    // Chat
+    'chat.title': 'Чат',
+    'chat.subtitle': 'Общение с твоим браузерным AI',
+    'chat.placeholder': 'Напиши сообщение...',
+    'chat.thinking': 'Думаю...',
+    'chat.quickActions': 'Быстрые действия:',
+    'chat.readFile': 'Прочитать файл',
+    'chat.gitStatus': 'Статус git',
+    'chat.runCommand': 'Выполнить команду',
+    'chat.history': 'История',
+    'chat.noHistory': 'Истории пока нет',
+    'chat.new': 'Новый чат',
+
     // Sessions
     'sessions.title': 'Сессии',
     'sessions.subtitle': 'Управление сессиями разговоров',
@@ -222,6 +301,14 @@ const translations: Record<Language, Record<string, string>> = {
     'runtime.confirm': 'Подтверждение',
     'runtime.deny': 'Запрет',
 
+    // Debugger
+    'debugger.title': 'AI Отладчик',
+    'debugger.subtitle': 'Живой timeline tool-loop — смотри, что AI делает по шагам',
+    'debugger.pause': 'Пауза',
+    'debugger.resume': 'Продолжить',
+    'debugger.clear': 'Очистить',
+    'debugger.empty': 'Событий пока нет. Отправь запрос в чат и смотри, как разворачивается tool-loop.',
+
     // Logs
     'logs.title': 'Логи',
     'logs.subtitle': 'Аудит лог и системные события',
@@ -229,6 +316,9 @@ const translations: Record<Language, Record<string, string>> = {
     'logs.export': 'Экспорт',
     'logs.filter': 'Фильтр',
     'logs.all': 'Все',
+    'logs.allowed': 'Разрешено',
+    'logs.denied': 'Запрещено',
+    'logs.error': 'Ошибка',
     'logs.tool': 'Инструмент',
     'logs.permission': 'Разрешение',
     'logs.session': 'Сессия',
@@ -280,6 +370,28 @@ const translations: Record<Language, Record<string, string>> = {
     'settings.brandTheme': 'Фирменная',
     'settings.english': 'Английский',
     'settings.russian': 'Русский',
+
+    // Permissions
+    'permission.title': 'AI запрашивает разрешение',
+    'permission.tool': 'Инструмент',
+    'permission.session': 'Сессия',
+    'permission.params': 'Параметры',
+    'permission.allowOnce': 'Разрешить (1 раз)',
+    'permission.allowSession': 'На сессию',
+    'permission.deny': 'Отклонить',
+
+    // Onboarding
+    'onboarding.welcomeTitle': 'Добро пожаловать в Browser AI Bridge',
+    'onboarding.welcomeText': 'Используй залогиненный браузерный AI (Gemini, ChatGPT, Claude, DeepSeek) вместо оплаты API-ключей — прямо внутри твоей IDE.',
+    'onboarding.getStarted': 'Начать',
+    'onboarding.chooseProvider': 'Выбери провайдера',
+    'onboarding.chooseProviderText': 'Выбери AI, которым уже пользуешься. Потом можно добавить ещё.',
+    'onboarding.chooseModel': 'Выбери модель',
+    'onboarding.chooseModelText': 'Это будет твоя модель по умолчанию.',
+    'onboarding.model': 'Модель',
+    'onboarding.modelPlaceholder': 'например, gpt-4o',
+    'onboarding.back': 'Назад',
+    'onboarding.done': 'Готово',
 
     // Status
     'status.serverRunning': 'Сервер работает',

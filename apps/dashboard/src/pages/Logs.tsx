@@ -1,86 +1,59 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import {
   FileText,
   Download,
-  Trash2,
   CheckCircle,
   XCircle,
   Clock,
   RefreshCw,
-  AlertTriangle,
 } from 'lucide-react';
 import { useLanguage } from '../contexts/LanguageContext';
-import { api, type Session } from '../lib/api';
+import { useBabEvents } from '../hooks/useBabEvents';
+import { api, type AuditEntry } from '../lib/api';
 import { SlidingTabs } from '../components/motion';
 
-interface LogEntry {
-  id: string;
-  timestamp: number;
-  type: 'tool' | 'permission' | 'session';
-  toolName?: string;
-  sessionId?: string;
-  result: 'allowed' | 'denied' | 'error';
-  reason?: string;
-}
+type Filter = 'all' | 'allowed' | 'denied' | 'error';
 
 export default function Logs() {
   const { t, language } = useLanguage();
-  const [logs, setLogs] = useState<LogEntry[]>([]);
+  const [logs, setLogs] = useState<AuditEntry[]>([]);
   const [loading, setLoading] = useState(true);
-  const [filter, setFilter] = useState<'all' | 'tool' | 'permission' | 'session'>('all');
-  const [confirmingClear, setConfirmingClear] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [filter, setFilter] = useState<Filter>('all');
 
-  async function loadLogs() {
+  const loadLogs = useCallback(async () => {
     setLoading(true);
+    setError(null);
     try {
-      // Synthesise entries from sessions until we have a real audit log endpoint.
-      const sessionsData = await api.getSessions();
-      const sessions = sessionsData.data || [];
-
-      const logEntries: LogEntry[] = sessions.flatMap((session: Session) => {
-        const entries: LogEntry[] = [];
-
-        entries.push({
-          id: `session-${session.id}`,
-          timestamp: session.createdAt,
-          type: 'session',
-          sessionId: session.id,
-          result: 'allowed',
-        });
-
-        session.messages?.forEach((_, idx) => {
-          entries.push({
-            id: `msg-${session.id}-${idx}`,
-            timestamp: session.createdAt + (idx + 1) * 1000,
-            type: 'tool',
-            toolName: 'chat.message',
-            sessionId: session.id,
-            result: 'allowed',
-          });
-        });
-
-        return entries;
-      });
-
-      setLogs(logEntries.sort((a, b) => b.timestamp - a.timestamp));
-    } catch {
-      setLogs([]);
+      // Real audit trail from the runtime's audit logger.
+      const data = await api.getAudit();
+      setLogs(data.data || []);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to load logs');
     } finally {
       setLoading(false);
     }
-  }
+  }, []);
 
   useEffect(() => {
     loadLogs();
-  }, []);
+    const interval = setInterval(loadLogs, 10000);
+    return () => clearInterval(interval);
+  }, [loadLogs]);
+
+  useBabEvents((type) => {
+    if (type.startsWith('tool.') || type.startsWith('permission.') || type.startsWith('session.')) {
+      loadLogs();
+    }
+  });
 
   const cardClass = 'rounded-xl glass';
 
-  const filteredLogs = filter === 'all' ? logs : logs.filter((l) => l.type === filter);
+  const filteredLogs = filter === 'all' ? logs : logs.filter((l) => l.result === filter);
 
   const formatTime = (timestamp: number) => new Date(timestamp).toLocaleTimeString();
 
-  const getResultIcon = (result: string) => {
+  const getResultIcon = (result: AuditEntry['result']) => {
     switch (result) {
       case 'allowed':
         return <CheckCircle className="w-4 h-4 text-success" />;
@@ -93,16 +66,16 @@ export default function Logs() {
     }
   };
 
-  const getTypeColor = (type: string) => {
-    switch (type) {
-      case 'tool':
-        return 'bg-accent-soft text-accent';
-      case 'permission':
-        return 'bg-warning/15 text-warning';
-      case 'session':
+  const getResultColor = (result: AuditEntry['result']) => {
+    switch (result) {
+      case 'allowed':
         return 'bg-success/15 text-success';
+      case 'denied':
+        return 'bg-danger/15 text-danger';
+      case 'error':
+        return 'bg-warning/15 text-warning';
       default:
-        return '';
+        return 'bg-surface-inset text-text-muted';
     }
   };
 
@@ -111,18 +84,10 @@ export default function Logs() {
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = `bab-logs-${new Date().toISOString().slice(0, 10)}.json`;
+    a.download = `bab-audit-${new Date().toISOString().slice(0, 10)}.json`;
     a.click();
     URL.revokeObjectURL(url);
   };
-
-  if (loading) {
-    return (
-      <div className="flex items-center justify-center h-64">
-        <RefreshCw className="w-8 h-8 animate-spin text-accent" />
-      </div>
-    );
-  }
 
   return (
     <div>
@@ -147,56 +112,41 @@ export default function Logs() {
             <Download className="w-4 h-4" />
             {t('logs.export')}
           </button>
-          {confirmingClear ? (
-            <div className="flex items-center gap-2 bg-danger/10 border border-danger/30 rounded-lg px-3 py-1.5 text-sm">
-              <AlertTriangle className="w-4 h-4 text-danger" />
-              <span className="text-danger">
-                {language === 'ru' ? 'Очистить всё?' : 'Clear all?'}
-              </span>
-              <button
-                onClick={() => {
-                  setLogs([]);
-                  setConfirmingClear(false);
-                }}
-                className="text-xs px-2 py-1 rounded bg-danger text-white hover:opacity-90"
-              >
-                {t('logs.clear')}
-              </button>
-              <button
-                onClick={() => setConfirmingClear(false)}
-                className="text-xs px-2 py-1 rounded text-text-muted hover:bg-surface-inset"
-              >
-                {t('common.cancel')}
-              </button>
-            </div>
-          ) : (
-            <button
-              onClick={() => setConfirmingClear(true)}
-              disabled={logs.length === 0}
-              className="flex items-center gap-2 px-4 py-2.5 rounded-lg bg-danger/15 text-danger hover:bg-danger/25 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-            >
-              <Trash2 className="w-4 h-4" />
-              {t('logs.clear')}
-            </button>
-          )}
         </div>
       </div>
+
+      {error && (
+        <div className="mb-4 p-4 rounded-lg text-sm bg-danger/10 border border-danger/30 text-danger">
+          {error}
+        </div>
+      )}
 
       {/* Filters */}
       <div className="mb-6">
         <SlidingTabs
           ariaLabel="Log filter"
           value={filter}
-          onChange={(v) => setFilter(v as typeof filter)}
-          tabs={(['all', 'tool', 'permission', 'session'] as const).map((f) => ({
+          onChange={(v) => setFilter(v as Filter)}
+          tabs={(['all', 'allowed', 'denied', 'error'] as const).map((f) => ({
             id: f,
-            label: t(`logs.${f}`),
+            label: (
+              <>
+                {t(`logs.${f}`)}
+                <span className="ml-2 text-xs opacity-70">
+                  {f === 'all' ? logs.length : logs.filter((l) => l.result === f).length}
+                </span>
+              </>
+            ),
           }))}
         />
       </div>
 
       {/* Logs List */}
-      {filteredLogs.length === 0 ? (
+      {loading && logs.length === 0 ? (
+        <div className="flex items-center justify-center h-64">
+          <RefreshCw className="w-8 h-8 animate-spin text-accent" />
+        </div>
+      ) : filteredLogs.length === 0 ? (
         <div className={`${cardClass} p-12 text-center`}>
           <FileText className="w-12 h-12 mx-auto mb-4 text-text-subtle" />
           <p className="text-text-muted">{t('logs.noLogs')}</p>
@@ -216,8 +166,8 @@ export default function Logs() {
                     {getResultIcon(log.result)}
                     <div>
                       <div className="flex items-center gap-2">
-                        <span className={`text-xs px-2 py-0.5 rounded ${getTypeColor(log.type)}`}>
-                          {t(`logs.${log.type}`)}
+                        <span className={`text-xs px-2 py-0.5 rounded ${getResultColor(log.result)}`}>
+                          {log.result}
                         </span>
                         {log.toolName && (
                           <span className="font-medium text-text font-mono text-sm">

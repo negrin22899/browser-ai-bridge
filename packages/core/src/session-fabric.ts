@@ -287,6 +287,10 @@ export class Session {
     return Array.from(this._activeRequests);
   }
 
+  clearActiveRequests(): void {
+    this._activeRequests.clear();
+  }
+
   // --- Metadata ---
 
   setMetadata(key: string, value: unknown): void {
@@ -455,6 +459,7 @@ export class SessionFabric {
 
     const success = session.transitionTo('DEGRADED', error);
     if (success) {
+      session.clearActiveRequests();
       this.eventBus.emit('session.degraded', { sessionId, error });
     }
     return success;

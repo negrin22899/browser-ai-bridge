@@ -4,3 +4,5 @@ export { PluginBuilder, createPlugin, createProviderPlugin, createToolPlugin } f
 export { PluginValidator, validatePlugin, validateManifest } from './validator.js';
 export type { PluginValidationResult } from './validator.js';
 export { ToolPlugin, ToolPluginBuilder, createToolPluginFromTool, createToolPluginBuilder } from './tool-plugin.js';
+export { PluginMarketplace } from './marketplace.js';
+export type { CatalogEntry, InstallResult } from './marketplace.js';

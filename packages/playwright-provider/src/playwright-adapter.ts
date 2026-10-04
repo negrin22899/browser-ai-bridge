@@ -3,22 +3,31 @@ import { BrowserSession } from './browser-session.js';
 import { TabManager } from './tab-manager.js';
 import { MessageSender } from './message-sender.js';
 import { ResponseReader } from './response-reader.js';
+import { toSelectorList, type SelectorList } from './selector-utils.js';
+import { withRetry } from './retry-logic.js';
+import type { ProviderStreamConfig } from './stream-parsers.js';
 
 export interface PlaywrightAdapterConfig {
   selectors: {
-    input: string;
-    sendButton: string;
-    response: string;
-    loading?: string;
+    input: SelectorList;
+    sendButton: SelectorList;
+    response: SelectorList;
+    loading?: SelectorList;
   };
   timeouts?: {
     response?: number;
     navigation?: number;
   };
+  /** Native SSE stream interception config (real tokens via CDP). */
+  stream?: ProviderStreamConfig;
 }
 
 /**
- * Playwright Adapter - abstracts browser automation for AI sites
+ * Playwright Adapter - abstracts browser automation for AI sites.
+ *
+ * All selectors are ordered fallback lists: if a provider changes its layout,
+ * the adapter moves on to the next selector instead of failing on the first
+ * hardcoded one.
  */
 export class PlaywrightAdapter {
   readonly siteId: string;
@@ -29,6 +38,8 @@ export class PlaywrightAdapter {
   protected messageSender: MessageSender;
   protected responseReader: ResponseReader;
   protected config: PlaywrightAdapterConfig;
+  private inputSelectors: string[];
+  private cancelled = false;
 
   constructor(
     siteId: string,
@@ -40,6 +51,7 @@ export class PlaywrightAdapter {
     this.siteUrl = siteUrl;
     this.displayName = displayName;
     this.config = config;
+    this.inputSelectors = toSelectorList(config.selectors.input);
 
     this.tabManager = new TabManager();
     this.messageSender = new MessageSender(
@@ -47,9 +59,10 @@ export class PlaywrightAdapter {
       config.selectors.sendButton
     );
     this.responseReader = new ResponseReader({
-      responseSelector: config.selectors.response,
-      loadingSelector: config.selectors.loading,
+      responseSelectors: config.selectors.response,
+      loadingSelectors: config.selectors.loading,
       timeout: config.timeouts?.response ?? 60000,
+      isCancelled: () => this.cancelled,
     });
   }
 
@@ -58,28 +71,54 @@ export class PlaywrightAdapter {
   }
 
   async createSession(): Promise<BrowserSession> {
-    const session = await this.tabManager.createSession();
-    await session.navigate(this.siteUrl);
-    await this.waitForReady(session);
-    return session;
+    return await withRetry(
+      async () => {
+        const session = await this.tabManager.createSession();
+        await session.navigate(this.siteUrl);
+        await this.waitForReady(session);
+        return session;
+      },
+      { maxRetries: 2, initialDelay: 500, maxDelay: 2000 }
+    );
   }
 
   async waitForReady(session: BrowserSession): Promise<void> {
-    // Wait for the input to be available
-    await session.waitForSelector(this.config.selectors.input, 30000);
+    for (const selector of this.inputSelectors) {
+      try {
+        await session.waitForSelector(selector, 5000);
+        return;
+      } catch {
+        // Try next selector
+      }
+    }
+
+    throw new Error(`Could not find ${this.displayName} input field`);
   }
 
   async sendMessage(session: BrowserSession, message: string, context?: string): Promise<void> {
     const fullMessage = context ? `${context}\n\n${message}` : message;
-    await this.messageSender.send(session, fullMessage);
+
+    await withRetry(
+      () => this.messageSender.send(session, fullMessage),
+      { maxRetries: 2, initialDelay: 500, maxDelay: 2000 }
+    );
   }
 
   async readResponse(session: BrowserSession): Promise<string> {
+    this.cancelled = false;
     return await this.responseReader.waitForResponse(session);
   }
 
   async *streamResponse(session: BrowserSession): AsyncIterable<string> {
+    this.cancelled = false;
     yield* this.responseReader.streamResponse(session);
+  }
+
+  /**
+   * Cancel the in-flight response read.
+   */
+  cancel(): void {
+    this.cancelled = true;
   }
 
   async isReady(session: BrowserSession): Promise<boolean> {
@@ -88,6 +127,10 @@ export class PlaywrightAdapter {
 
   getTabManager(): TabManager {
     return this.tabManager;
+  }
+
+  getStreamConfig(): ProviderStreamConfig | undefined {
+    return this.config.stream;
   }
 
   async close(): Promise<void> {

@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { createPlugin, createProviderPlugin, createToolPlugin, PluginBuilder } from '../builder.js';
+import { createPlugin, createProviderPlugin, createToolPlugin, PluginBuilder } from './builder.js';
 
 describe('PluginBuilder', () => {
   it('should create a plugin with manifest', () => {
