@@ -1,11 +1,16 @@
-import { createContext, useContext, useState, useEffect, ReactNode } from 'react';
+import { createContext, useContext, useRef, useState, useEffect, ReactNode } from 'react';
 
-type Theme = 'light' | 'dark';
+export type Theme = 'brand' | 'light' | 'dark';
+
+const THEMES: Theme[] = ['brand', 'light', 'dark'];
+const DEFAULT_THEME: Theme = 'brand';
 
 interface ThemeContextType {
   theme: Theme;
-  toggleTheme: () => void;
   setTheme: (theme: Theme) => void;
+  cycleTheme: () => void;
+  /** Legacy alias — many pages still call this. Cycles through the three themes. */
+  toggleTheme: () => void;
 }
 
 const ThemeContext = createContext<ThemeContextType | undefined>(undefined);
@@ -14,62 +19,88 @@ function isElectron(): boolean {
   return typeof window !== 'undefined' && !!window.electronAPI;
 }
 
-export function ThemeProvider({ children }: { children: ReactNode }) {
-  const [theme, setThemeState] = useState<Theme>('dark');
+function normalize(value: unknown): Theme {
+  if (typeof value === 'string' && (THEMES as string[]).includes(value)) return value as Theme;
+  return DEFAULT_THEME;
+}
 
-  // Load theme on mount
+function applyTheme(theme: Theme) {
+  const root = document.documentElement;
+  root.setAttribute('data-theme', theme);
+  // Keep the Tailwind `dark:` variant working during the migration.
+  root.classList.remove('light', 'dark', 'brand');
+  root.classList.add(theme);
+}
+
+export function ThemeProvider({ children }: { children: ReactNode }) {
+  // Read persisted theme synchronously so React's initial render already has
+  // the right colour palette. If we set state='brand' first and load from
+  // localStorage in an effect, the save-effect fires with 'brand' before the
+  // load-effect ever runs and silently overwrites the stored value.
+  const [theme, setThemeState] = useState<Theme>(() => {
+    if (typeof window === 'undefined') return DEFAULT_THEME;
+    return normalize(localStorage.getItem('theme'));
+  });
+
+  // Gate persistence until we've finished the async Electron-settings hydrate.
+  // Without this, the first render's save-effect would clobber a possibly
+  // newer value living in Electron's on-disk settings.json.
+  const persistOnChange = useRef(false);
+
   useEffect(() => {
-    const loadTheme = async () => {
+    applyTheme(theme);
+    if (!persistOnChange.current) return;
+    try {
+      localStorage.setItem('theme', theme);
+      if (isElectron() && window.electronAPI?.mergeSettings) {
+        window.electronAPI.mergeSettings({ theme }).catch(() => {});
+      }
+    } catch (e) {
+      console.error('Failed to save theme:', e);
+    }
+  }, [theme]);
+
+  useEffect(() => {
+    let cancelled = false;
+    async function hydrate() {
       try {
-        if (isElectron()) {
-          const settings = await window.electronAPI!.loadSettings();
-          if (settings?.theme) {
-            setThemeState(settings.theme as Theme);
-            return;
+        if (isElectron() && window.electronAPI?.loadSettings) {
+          const settings = await window.electronAPI.loadSettings();
+          if (!cancelled && settings?.theme) {
+            const next = normalize(settings.theme);
+            setThemeState((prev) => (prev !== next ? next : prev));
           }
-        }
-        // Fallback to localStorage
-        const saved = localStorage.getItem('theme');
-        if (saved) {
-          setThemeState(saved as Theme);
         }
       } catch (e) {
         console.error('Failed to load theme:', e);
+      } finally {
+        // Allow subsequent theme changes (user clicks or hydrate diffs) to
+        // persist. Setting this after the async hydrate settles is what
+        // stops the mount-race entirely.
+        persistOnChange.current = true;
       }
+    }
+    if (!isElectron()) {
+      persistOnChange.current = true;
+      return;
+    }
+    hydrate();
+    return () => {
+      cancelled = true;
     };
-    loadTheme();
   }, []);
 
-  // Save theme when it changes
-  useEffect(() => {
-    document.documentElement.classList.remove('light', 'dark');
-    document.documentElement.classList.add(theme);
+  const setTheme = (next: Theme) => setThemeState(normalize(next));
 
-    const saveTheme = async () => {
-      try {
-        localStorage.setItem('theme', theme);
-        if (isElectron()) {
-          const settings = await window.electronAPI!.loadSettings() || {};
-          settings.theme = theme;
-          await window.electronAPI!.saveSettings(settings);
-        }
-      } catch (e) {
-        console.error('Failed to save theme:', e);
-      }
-    };
-    saveTheme();
-  }, [theme]);
-
-  const toggleTheme = () => {
-    setThemeState(prev => prev === 'light' ? 'dark' : 'light');
-  };
-
-  const setTheme = (newTheme: Theme) => {
-    setThemeState(newTheme);
+  const cycleTheme = () => {
+    setThemeState((prev) => {
+      const idx = THEMES.indexOf(prev);
+      return THEMES[(idx + 1) % THEMES.length];
+    });
   };
 
   return (
-    <ThemeContext.Provider value={{ theme, toggleTheme, setTheme }}>
+    <ThemeContext.Provider value={{ theme, setTheme, cycleTheme, toggleTheme: cycleTheme }}>
       {children}
     </ThemeContext.Provider>
   );

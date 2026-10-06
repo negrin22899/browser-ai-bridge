@@ -11,11 +11,9 @@ import type {
 } from '@bab/protocol';
 import { DEFAULT_CAPABILITIES } from '@bab/protocol';
 import { chromium, type Browser } from 'playwright-core';
-import * as fs from 'node:fs';
-import * as path from 'node:path';
-import * as os from 'node:os';
 import type { PlaywrightAdapter } from './playwright-adapter.js';
 import type { BrowserSession } from './browser-session.js';
+import { getBrowserInfo, type BrowserId } from './browsers.js';
 import { withRetry, withConnectionRetry } from './retry-logic.js';
 import { CDPClient } from './cdp-client.js';
 import { CdpTokenStream } from './stream-interceptor.js';
@@ -26,6 +24,8 @@ export interface PlaywrightProviderOptions {
   name: string;
   adapter: PlaywrightAdapter;
   headless?: boolean;
+  /** Browser to drive: chrome | edge | brave | opera | vivaldi | chromium. Default: chrome. */
+  browser?: BrowserId;
   executablePath?: string;
   useExistingProfile?: boolean;
   userDataDir?: string;
@@ -46,6 +46,7 @@ export class PlaywrightProvider implements Provider {
   private session: BrowserSession | null = null;
   private tools: ToolDescription[] = [];
   private headless: boolean;
+  private browserId: BrowserId;
   private executablePath?: string;
   private useExistingProfile: boolean;
   private userDataDir?: string;
@@ -57,6 +58,7 @@ export class PlaywrightProvider implements Provider {
     this.name = options.name;
     this.adapter = options.adapter;
     this.headless = options.headless ?? false;
+    this.browserId = options.browser ?? 'chrome';
     this.executablePath = options.executablePath;
     this.useExistingProfile = options.useExistingProfile ?? true;
     this.userDataDir = options.userDataDir;
@@ -65,58 +67,6 @@ export class PlaywrightProvider implements Provider {
 
   get status(): ProviderStatus {
     return this._status;
-  }
-
-  private findChromePath(): string {
-    const platform = os.platform();
-    const paths: string[] = [];
-
-    if (platform === 'win32') {
-      paths.push(
-        'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe',
-        'C:\\Program Files (x86)\\Google\\Chrome\\Application\\chrome.exe',
-        path.join(os.homedir(), 'AppData', 'Local', 'Google', 'Chrome', 'Application', 'chrome.exe')
-      );
-    } else if (platform === 'darwin') {
-      paths.push('/Applications/Google Chrome.app/Contents/MacOS/Google Chrome');
-    } else {
-      paths.push('/usr/bin/google-chrome', '/usr/bin/google-chrome-stable');
-    }
-
-    for (const p of paths) {
-      if (fs.existsSync(p)) {
-        return p;
-      }
-    }
-
-    return '';
-  }
-
-  private findUserDataDir(): string {
-    const platform = os.platform();
-    const paths: string[] = [];
-
-    if (platform === 'win32') {
-      paths.push(
-        path.join(os.homedir(), 'AppData', 'Local', 'Google', 'Chrome', 'User Data')
-      );
-    } else if (platform === 'darwin') {
-      paths.push(
-        path.join(os.homedir(), 'Library', 'Application Support', 'Google', 'Chrome')
-      );
-    } else {
-      paths.push(
-        path.join(os.homedir(), '.config', 'google-chrome')
-      );
-    }
-
-    for (const p of paths) {
-      if (fs.existsSync(p)) {
-        return p;
-      }
-    }
-
-    return '';
   }
 
   async connect(): Promise<void> {
@@ -149,8 +99,17 @@ export class PlaywrightProvider implements Provider {
   }
 
   private async launchBrowser(): Promise<Browser> {
-    const executablePath = this.executablePath || this.findChromePath();
-    const userDataDir = this.userDataDir || this.findUserDataDir();
+    // Multi-browser support: resolve the executable + profile dir for the
+    // browser chosen in Settings (chrome | edge | brave | opera | vivaldi | chromium).
+    const info = getBrowserInfo(this.browserId);
+    const executablePath = this.executablePath || info?.executablePath || '';
+    const userDataDir = this.userDataDir || info?.userDataDir;
+    if (!executablePath) {
+      throw new Error(
+        `${info?.name ?? this.browserId} is not installed. ` +
+        `Install it or pick another browser in Settings.`
+      );
+    }
 
     // Try to connect to existing Chrome via CDP first
     try {

@@ -27,6 +27,7 @@ const state = {
   provider: null as any,
   port: 3000,
   site: null as string | null,
+  serverError: null as string | null,
   updateChannel: (process.env.BAB_UPDATE_CHANNEL ?? 'stable') as 'stable' | 'beta',
 };
 
@@ -83,6 +84,60 @@ function getCliPath(): string {
   }
   // Dev: apps/desktop/dist → ../cli/dist/index.js
   return path.join(getAppPath(), '..', 'cli', 'dist', 'index.js');
+}
+
+// ─── Settings store (used by the dashboard via IPC) ─────────────
+
+const settingsPath = path.join(app.getPath('userData'), 'settings.json');
+
+function loadSettings(): any {
+  try {
+    if (fs.existsSync(settingsPath)) {
+      return JSON.parse(fs.readFileSync(settingsPath, 'utf-8'));
+    }
+  } catch (e) {
+    console.error('Failed to load settings:', e);
+  }
+  return null;
+}
+
+function saveSettings(settings: any): boolean {
+  try {
+    fs.writeFileSync(settingsPath, JSON.stringify(settings, null, 2));
+    return true;
+  } catch (e) {
+    console.error('Failed to save settings:', e);
+    return false;
+  }
+}
+
+function broadcastServerStatus(): void {
+  if (!mainWindow || mainWindow.isDestroyed()) return;
+  mainWindow.webContents.send('server-status', {
+    running: state.serverRunning,
+    port: state.port,
+    site: state.site,
+    error: state.serverError,
+  });
+}
+
+function loadBrowserDetector(): any {
+  const candidates = app.isPackaged
+    ? [
+        path.join(process.resourcesPath, 'node_modules', '@bab', 'playwright-provider', 'dist', 'browsers.js'),
+        path.join(process.resourcesPath, 'packages', 'playwright-provider', 'dist', 'browsers.js'),
+      ]
+    : [path.join(__dirname, '..', '..', '..', 'packages', 'playwright-provider', 'dist', 'browsers.js')];
+  for (const p of candidates) {
+    if (fs.existsSync(p)) {
+      try {
+        return require(p);
+      } catch (err) {
+        console.error('[browsers] Failed to load detector at', p, err);
+      }
+    }
+  }
+  return null;
 }
 
 // ─── Notifications ───────────────────────────────────────────────
@@ -246,60 +301,119 @@ function updateTray(): void {
 
 // ─── Server ──────────────────────────────────────────────────────
 
-async function startServer(port = 3000): Promise<{ success: boolean; error?: string }> {
-  if (state.serverRunning) return { success: true };
+async function startServer(port = 3000): Promise<{ success: boolean; error?: string; port?: number; site?: string }> {
+  if (state.serverRunning) return { success: true, port: state.port, site: state.site ?? undefined };
 
   try {
     const cliPath = getCliPath();
     if (!fs.existsSync(cliPath)) {
-      try { execSync('npm run build', { cwd: getAppPath(), stdio: 'ignore' }); } catch {
-        return { success: false, error: 'CLI not found. Please build the project first.' };
-      }
+      const error = 'CLI entry not found. Please build the project first.';
+      console.error('[server]', error);
+      state.serverError = error;
+      broadcastServerStatus();
+      return { success: false, error };
     }
+
+    // Honour the dashboard settings (provider, browser, headless, profile).
+    const settings = loadSettings() || {};
+    const general = settings.general || {};
+    const browserSettings = settings.browser || {};
+    const chosenPort = port || general.serverPort || settings.serverPort || 3000;
+    const site = settings.provider || 'gemini';
+    const headless = browserSettings.headless ?? settings.headless ?? false;
+    const useProfile = browserSettings.useExistingProfile ?? settings.useExistingProfile ?? true;
+    const browser =
+      (typeof settings.browser === 'string' ? settings.browser : browserSettings.id) || 'chrome';
+
+    const args = [
+      cliPath,
+      'serve',
+      '--port', String(chosenPort),
+      '--site', site,
+      '--browser', browser,
+      headless ? '--headless' : '--no-headless',
+      useProfile ? '--profile' : '--no-profile',
+    ];
 
     // Run the CLI with Electron's bundled Node runtime (ELECTRON_RUN_AS_NODE),
     // so a separately installed Node is NOT required by end users.
-    serverProcess = spawn(process.execPath, [cliPath, 'serve', '--port', port.toString()], {
+    console.log('[server] Spawning:', process.execPath, args.join(' '));
+    serverProcess = spawn(process.execPath, args, {
       cwd: getAppPath(),
-      stdio: 'pipe',
+      stdio: ['ignore', 'pipe', 'pipe'],
       env: { ...process.env, ELECTRON_RUN_AS_NODE: '1' },
     });
 
+    state.serverError = null;
+    state.port = chosenPort;
+    state.site = site;
+
+    const READY_RE = /running at http:\/\/localhost:(\d+)/i;
+
     serverProcess.stdout?.on('data', (data: Buffer) => {
-      const output = data.toString();
-      if (output.includes('running at')) {
+      const text = data.toString();
+      process.stdout.write(`[bab-server] ${text}`);
+      const match = text.match(READY_RE);
+      if (match && !state.serverRunning) {
         state.serverRunning = true;
-        state.port = port;
-        mainWindow?.webContents.send('server-status', { running: true, port });
+        state.port = parseInt(match[1], 10) || chosenPort;
+        broadcastServerStatus();
+        updateTray();
+        notify('Browser AI Bridge', `Server running at http://localhost:${state.port}`);
+      }
+    });
+
+    serverProcess.stderr?.on('data', (data: Buffer) => {
+      process.stderr.write(`[bab-server] ${data.toString()}`);
+    });
+
+    serverProcess.on('close', (code: number | null) => {
+      console.log(`[server] Exited (code=${code})`);
+      const wasRunning = state.serverRunning;
+      state.serverRunning = false;
+      serverProcess = null;
+      if (code !== 0 && code !== null) {
+        state.serverError = `Server exited with code ${code}`;
+      }
+      if (wasRunning || state.serverError) {
+        broadcastServerStatus();
         updateTray();
       }
     });
 
-    serverProcess.on('close', () => {
+    serverProcess.on('error', (err: Error) => {
+      console.error('[server] Spawn error:', err);
+      state.serverError = err.message;
       state.serverRunning = false;
       serverProcess = null;
-      mainWindow?.webContents.send('server-status', { running: false });
+      broadcastServerStatus();
       updateTray();
     });
 
-    await new Promise((r) => setTimeout(r, 2000));
-    state.serverRunning = true;
-    state.port = port;
-    mainWindow?.webContents.send('server-status', { running: true, port });
-    updateTray();
-    notify('Browser AI Bridge', `Server running at http://localhost:${port}`);
-    return { success: true };
+    return { success: true, port: chosenPort, site };
   } catch (error: any) {
     return { success: false, error: error.message };
   }
 }
 
 function stopServer(): { success: boolean } {
-  if (serverProcess) { serverProcess.kill(); serverProcess = null; }
+  if (serverProcess) {
+    try {
+      if (process.platform === 'win32' && serverProcess.pid) {
+        execSync(`taskkill /pid ${serverProcess.pid} /T /F`);
+      } else {
+        serverProcess.kill('SIGTERM');
+      }
+    } catch (err) {
+      console.error('[server] Kill failed:', err);
+    }
+    serverProcess = null;
+  }
+  const wasRunning = state.serverRunning;
   state.serverRunning = false;
-  mainWindow?.webContents.send('server-status', { running: false });
+  if (wasRunning) notify('Browser AI Bridge', 'Server stopped');
+  broadcastServerStatus();
   updateTray();
-  notify('Browser AI Bridge', 'Server stopped');
   return { success: true };
 }
 
@@ -332,6 +446,138 @@ ipcMain.handle('open-chrome', async (_e: any, url: string) => {
 });
 ipcMain.handle('open-external', async (_e: any, url: string) => {
   try { shell.openExternal(url); return { success: true }; } catch (error: any) { return { success: false, error: error.message }; }
+});
+
+// ─── IPC: Provider detection & active provider ───────────────────
+
+const PROVIDER_URLS: Record<string, string> = {
+  gemini: 'https://gemini.google.com',
+  chatgpt: 'https://chatgpt.com',
+  claude: 'https://claude.ai',
+  deepseek: 'https://chat.deepseek.com',
+};
+
+ipcMain.handle('check-chrome', async () => {
+  const executablePath = getChromeExecutablePath();
+  const userDataDir = getChromeUserDataDir();
+  return {
+    installed: fs.existsSync(executablePath),
+    executablePath,
+    userDataDir,
+    userDataExists: fs.existsSync(userDataDir),
+  };
+});
+
+ipcMain.handle('open-provider-signin', async (_e: any, url: string) => {
+  try {
+    await shell.openExternal(url);
+    return { success: true, url };
+  } catch (error: any) {
+    return { success: false, error: error.message };
+  }
+});
+
+ipcMain.handle('check-provider-status', async (_e: any, providerId: string) => {
+  const url = PROVIDER_URLS[providerId];
+  if (!url) return { connected: false, error: 'Unknown provider' };
+  const https = require('https');
+  return new Promise((resolve) => {
+    const req = https.get(url, { timeout: 5000 }, (res: any) => {
+      resolve({ connected: res.statusCode === 200, statusCode: res.statusCode, providerId });
+    });
+    req.on('error', () => resolve({ connected: false, error: 'Network error', providerId }));
+    req.on('timeout', () => {
+      req.destroy();
+      resolve({ connected: false, error: 'Timeout', providerId });
+    });
+  });
+});
+
+ipcMain.handle('get-detected-providers', async () => {
+  const userDataDir = getChromeUserDataDir();
+  const detected: Array<{ id: string; name: string; type: string; status: string }> = [];
+  if (fs.existsSync(userDataDir)) {
+    const defaultProfile = path.join(userDataDir, 'Default');
+    const cookiesPath = path.join(defaultProfile, 'Cookies');
+    if (fs.existsSync(defaultProfile) && fs.existsSync(cookiesPath)) {
+      detected.push({
+        id: 'chrome-detected',
+        name: 'Chrome Profile Detected',
+        type: 'browser',
+        status: 'available',
+      });
+    }
+  }
+  return detected;
+});
+
+ipcMain.handle('set-active-provider', async (_e: any, providerId: string) => {
+  const allowed = ['gemini', 'chatgpt', 'claude', 'deepseek'];
+  if (!allowed.includes(providerId)) {
+    return { success: false, error: 'Unknown provider' };
+  }
+  const settings = loadSettings() || {};
+  settings.provider = providerId;
+  saveSettings(settings);
+  // Restart the server so the new provider is picked up.
+  if (state.serverRunning || serverProcess) {
+    stopServer();
+    await new Promise((r) => setTimeout(r, 500));
+  }
+  const result = await startServer();
+  return { success: result.success, error: result.error, provider: providerId };
+});
+
+// ─── IPC: Browsers (multi-browser support) ───────────────────────
+
+ipcMain.handle('list-browsers', async () => {
+  const detector = loadBrowserDetector();
+  if (!detector) {
+    // Detector module not built yet — return a Chrome fallback so the UI still works.
+    return [{
+      id: 'chrome',
+      name: 'Google Chrome',
+      executablePath: getChromeExecutablePath(),
+      userDataDir: getChromeUserDataDir(),
+      installed: isChromeInstalled(),
+    }];
+  }
+  try {
+    return detector.listAllBrowsers();
+  } catch (err) {
+    console.error('[browsers] listAllBrowsers failed:', err);
+    return [];
+  }
+});
+
+ipcMain.handle('detect-installed-browsers', async () => {
+  const detector = loadBrowserDetector();
+  if (!detector) {
+    return isChromeInstalled()
+      ? [{ id: 'chrome', name: 'Google Chrome', installed: true, executablePath: getChromeExecutablePath(), userDataDir: getChromeUserDataDir() }]
+      : [];
+  }
+  try {
+    return detector.detectInstalledBrowsers();
+  } catch (err) {
+    console.error('[browsers] detectInstalledBrowsers failed:', err);
+    return [];
+  }
+});
+
+// ─── IPC: Settings ───────────────────────────────────────────────
+
+ipcMain.handle('load-settings', async () => loadSettings());
+
+ipcMain.handle('save-settings', async (_e: any, settings: any) => saveSettings(settings));
+
+// Atomic partial merge — avoids theme/lang races where two writers each
+// read the file and clobber the other's field.
+ipcMain.handle('merge-settings', async (_e: any, patch: any) => {
+  const current = loadSettings() || {};
+  const next = { ...current, ...(patch || {}) };
+  const ok = saveSettings(next);
+  return ok ? next : null;
 });
 
 // ─── Auto-Updater ────────────────────────────────────────────────

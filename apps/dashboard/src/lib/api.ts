@@ -1,10 +1,40 @@
 /**
  * Browser AI Bridge - Dashboard API Client
- * 
+ *
  * Connects to the real BAB API server.
  */
 
 const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:3000';
+
+export type ApiErrorCode =
+  | 'SERVER_DOWN'
+  | 'NO_PROVIDER'
+  | 'PROVIDER_NOT_SIGNED_IN'
+  | 'RATE_LIMITED'
+  | 'BAD_REQUEST'
+  | 'SERVER_ERROR'
+  | 'UNKNOWN';
+
+export class ApiError extends Error {
+  code: ApiErrorCode;
+  status?: number;
+  constructor(code: ApiErrorCode, message: string, status?: number) {
+    super(message);
+    this.name = 'ApiError';
+    this.code = code;
+    this.status = status;
+  }
+}
+
+function classifyErrorPayload(status: number, msg: string): ApiErrorCode {
+  const m = (msg || '').toLowerCase();
+  if (status === 429) return 'RATE_LIMITED';
+  if (status === 400) return 'BAD_REQUEST';
+  if (status === 503 || m.includes('no provider available')) return 'NO_PROVIDER';
+  if (m.includes('not signed in') || m.includes('login') || m.includes('sign in')) return 'PROVIDER_NOT_SIGNED_IN';
+  if (status >= 500) return 'SERVER_ERROR';
+  return 'UNKNOWN';
+}
 
 async function request<T>(path: string, options?: RequestInit): Promise<T> {
   const url = `${API_BASE}${path}`;
@@ -18,14 +48,14 @@ async function request<T>(path: string, options?: RequestInit): Promise<T> {
         ...options?.headers,
       },
     });
-  } catch (err) {
-    // Network error - server not running or unreachable
-    throw new Error('Server not running. Start the server first.');
+  } catch {
+    throw new ApiError('SERVER_DOWN', 'Local server is not reachable');
   }
 
   if (!response.ok) {
-    const error = await response.json().catch(() => ({ error: { message: response.statusText } }));
-    throw new Error(error.error?.message || `API error: ${response.status}`);
+    const payload = await response.json().catch(() => ({ error: { message: response.statusText } }));
+    const raw = payload?.error?.message || `HTTP ${response.status}`;
+    throw new ApiError(classifyErrorPayload(response.status, raw), raw, response.status);
   }
 
   return response.json();
@@ -238,14 +268,21 @@ export const api = {
 
   async *chatStream(request_body: ChatCompletionRequest): AsyncGenerator<string> {
     const url = `${API_BASE}/v1/chat/completions`;
-    const response = await fetch(url, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ ...request_body, stream: true }),
-    });
+    let response: Response;
+    try {
+      response = await fetch(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ...request_body, stream: true }),
+      });
+    } catch {
+      throw new ApiError('SERVER_DOWN', 'Local server is not reachable');
+    }
 
     if (!response.ok) {
-      throw new Error(`Stream error: ${response.status}`);
+      const payload = await response.json().catch(() => ({ error: { message: response.statusText } }));
+      const raw = payload?.error?.message || `HTTP ${response.status}`;
+      throw new ApiError(classifyErrorPayload(response.status, raw), raw, response.status);
     }
 
     const reader = response.body?.getReader();
@@ -334,3 +371,26 @@ export const api = {
     });
   },
 };
+
+/**
+ * Poll /health until the given provider is healthy or timeout elapses.
+ * Returns the final HealthStatus row (may be undefined if provider never appeared).
+ */
+export async function waitForProviderHealthy(
+  providerId: string,
+  { timeoutMs = 20000, intervalMs = 500 }: { timeoutMs?: number; intervalMs?: number } = {}
+): Promise<HealthStatus['providers'][string] | undefined> {
+  const deadline = Date.now() + timeoutMs;
+  let lastRow: HealthStatus['providers'][string] | undefined;
+  while (Date.now() < deadline) {
+    try {
+      const h = await api.getHealth();
+      lastRow = h.providers?.[providerId];
+      if (lastRow?.healthy) return lastRow;
+    } catch {
+      // server may still be booting — keep polling
+    }
+    await new Promise((r) => setTimeout(r, intervalMs));
+  }
+  return lastRow;
+}

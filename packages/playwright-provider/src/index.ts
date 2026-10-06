@@ -6,6 +6,14 @@ export type { PlaywrightProviderOptions } from './playwright-provider.js';
 export { BrowserManager } from './browser-manager.js';
 export type { BrowserManagerOptions } from './browser-manager.js';
 
+// Browser detection (multi-browser support)
+export {
+  detectInstalledBrowsers,
+  listAllBrowsers,
+  getBrowserInfo,
+} from './browsers.js';
+export type { BrowserId, BrowserInfo } from './browsers.js';
+
 // Adapter abstraction
 export { PlaywrightAdapter } from './playwright-adapter.js';
 export type { PlaywrightAdapterConfig } from './playwright-adapter.js';

@@ -5,25 +5,29 @@ import {
   Clock,
   Server,
   Trash2,
-  ArrowRight,
   RefreshCw,
-  FileJson,
+  MoreVertical,
+  Copy,
+  AlertTriangle,
   FileText,
+  FileJson,
 } from 'lucide-react';
-import { useTheme } from '../contexts/ThemeContext';
 import { useLanguage } from '../contexts/LanguageContext';
-import { useBabEvents } from '../hooks/useBabEvents';
 import { api, type Session } from '../lib/api';
+import { humanizeError } from '../lib/errors';
+import { useBabEvents } from '../hooks/useBabEvents';
+import { MenuDropdown, MenuItem, MenuSeparator, NumberPopIn } from '../components/motion';
 
 export default function Sessions() {
-  const { theme } = useTheme();
-  const { t } = useLanguage();
+  const { t, language } = useLanguage();
   const [sessions, setSessions] = useState<Session[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [showNewModal, setShowNewModal] = useState(false);
+  const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
   const [newSessionProvider, setNewSessionProvider] = useState('gemini');
   const [newSessionModel, setNewSessionModel] = useState('gemini');
+  const [modelTouched, setModelTouched] = useState(false);
 
   async function loadSessions() {
     setLoading(true);
@@ -32,7 +36,7 @@ export default function Sessions() {
       const data = await api.getSessions();
       setSessions(data.data || []);
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to load sessions');
+      setError(humanizeError(err, language));
     } finally {
       setLoading(false);
     }
@@ -42,17 +46,19 @@ export default function Sessions() {
     loadSessions();
     const interval = setInterval(loadSessions, 15000);
     return () => clearInterval(interval);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // Live-refresh when the server publishes session events.
   useBabEvents((type) => {
     if (type.startsWith('session.')) {
       loadSessions();
     }
   });
 
-  const cardClass = `rounded-xl border ${
-    theme === 'dark' ? 'bg-gray-800 border-gray-700' : 'bg-white border-gray-200'
-  }`;
+  const cardClass = 'rounded-xl glass';
+  const inputClass =
+    'w-full px-4 py-2.5 rounded-lg border border-border bg-surface-inset text-text placeholder:text-text-subtle focus:outline-none focus:ring-2 focus:ring-accent focus:border-accent transition-colors';
 
   const formatRelative = (timestamp: number) => {
     const diff = Date.now() - timestamp;
@@ -60,10 +66,10 @@ export default function Sessions() {
     const hours = Math.floor(diff / 3600000);
     const days = Math.floor(diff / 86400000);
 
-    if (minutes < 1) return 'Just now';
-    if (minutes < 60) return `${minutes}m ago`;
-    if (hours < 24) return `${hours}h ago`;
-    return `${days}d ago`;
+    if (minutes < 1) return language === 'ru' ? 'Только что' : 'Just now';
+    if (minutes < 60) return `${minutes}${language === 'ru' ? 'м назад' : 'm ago'}`;
+    if (hours < 24) return `${hours}${language === 'ru' ? 'ч назад' : 'h ago'}`;
+    return `${days}${language === 'ru' ? 'д назад' : 'd ago'}`;
   };
 
   const handleCreateSession = async () => {
@@ -72,23 +78,24 @@ export default function Sessions() {
       setShowNewModal(false);
       loadSessions();
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to create session');
+      setError(humanizeError(err, language));
     }
   };
 
-  const handleDeleteSession = async (sessionId: string) => {
+  const doDeleteSession = async (sessionId: string) => {
+    setConfirmDeleteId(null);
     try {
       await api.deleteSession(sessionId);
-      loadSessions();
+      setSessions((prev) => prev.filter((s) => s.id !== sessionId));
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to delete session');
+      setError(humanizeError(err, language));
     }
   };
 
   if (loading) {
     return (
       <div className="flex items-center justify-center h-64">
-        <RefreshCw className="w-8 h-8 animate-spin text-primary-500" />
+        <RefreshCw className="w-8 h-8 animate-spin text-accent" />
       </div>
     );
   }
@@ -97,25 +104,20 @@ export default function Sessions() {
     <div>
       <div className="flex items-center justify-between mb-8">
         <div>
-          <h1 className={`text-2xl font-bold ${theme === 'dark' ? 'text-white' : 'text-gray-900'}`}>
-            {t('sessions.title')}
-          </h1>
-          <p className={theme === 'dark' ? 'text-gray-400' : 'text-gray-600'}>
-            {t('sessions.subtitle')}
-          </p>
+          <h1 className="text-2xl font-display leading-none text-text">{t('sessions.title')}</h1>
+          <p className="text-text-muted mt-2">{t('sessions.subtitle')}</p>
         </div>
         <div className="flex gap-2">
           <button
             onClick={loadSessions}
-            className={`p-2 rounded-lg transition-colors ${
-              theme === 'dark' ? 'hover:bg-gray-700' : 'hover:bg-gray-100'
-            }`}
+            className="p-2 rounded-lg transition-colors hover:bg-surface-inset"
+            aria-label={t('sessions.title')}
           >
-            <RefreshCw className={`w-5 h-5 ${theme === 'dark' ? 'text-gray-400' : 'text-gray-600'}`} />
+            <RefreshCw className="w-5 h-5 text-text-muted" />
           </button>
           <button
             onClick={() => setShowNewModal(true)}
-            className="flex items-center gap-2 px-4 py-2.5 bg-primary-500 text-white rounded-lg hover:bg-primary-600 transition-colors"
+            className="flex items-center gap-2 px-4 py-2.5 bg-accent text-accent-fg rounded-lg hover:opacity-90 transition-opacity"
           >
             <Plus className="w-4 h-4" />
             {t('sessions.new')}
@@ -124,9 +126,7 @@ export default function Sessions() {
       </div>
 
       {error && (
-        <div className={`mb-4 p-4 rounded-lg text-sm ${
-          theme === 'dark' ? 'bg-red-900/30 border border-red-800 text-red-400' : 'bg-red-50 border border-red-200 text-red-700'
-        }`}>
+        <div className="mb-4 p-4 rounded-lg text-sm bg-danger/10 border border-danger/30 text-danger">
           {error}
         </div>
       )}
@@ -135,52 +135,45 @@ export default function Sessions() {
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
         <div className={`${cardClass} p-4`}>
           <div className="flex items-center gap-3">
-            <div className={`w-10 h-10 rounded-lg flex items-center justify-center ${
-              theme === 'dark' ? 'bg-green-900' : 'bg-green-50'
-            }`}>
-              <MessageSquare className={`w-5 h-5 ${theme === 'dark' ? 'text-green-400' : 'text-green-600'}`} />
+            <div className="w-10 h-10 rounded-lg flex items-center justify-center bg-success/15 text-success">
+              <MessageSquare className="w-5 h-5" />
             </div>
             <div>
-              <p className={`text-2xl font-bold ${theme === 'dark' ? 'text-white' : 'text-gray-900'}`}>
-                {sessions.length}
+              <p className="text-2xl font-display leading-none text-text">
+                <NumberPopIn value={sessions.length} />
               </p>
-              <p className={`text-sm ${theme === 'dark' ? 'text-gray-400' : 'text-gray-600'}`}>
-                {t('sessions.active')}
-              </p>
+              <p className="text-sm text-text-muted mt-1">{t('sessions.active')}</p>
             </div>
           </div>
         </div>
         <div className={`${cardClass} p-4`}>
           <div className="flex items-center gap-3">
-            <div className={`w-10 h-10 rounded-lg flex items-center justify-center ${
-              theme === 'dark' ? 'bg-blue-900' : 'bg-blue-50'
-            }`}>
-              <MessageSquare className={`w-5 h-5 ${theme === 'dark' ? 'text-blue-400' : 'text-blue-600'}`} />
+            <div className="w-10 h-10 rounded-lg flex items-center justify-center bg-accent-soft text-accent">
+              <MessageSquare className="w-5 h-5" />
             </div>
             <div>
-              <p className={`text-2xl font-bold ${theme === 'dark' ? 'text-white' : 'text-gray-900'}`}>
-                {sessions.reduce((sum, s) => sum + (s.messageCount ?? s.messages?.length ?? 0), 0)}
+              <p className="text-2xl font-display leading-none text-text">
+                <NumberPopIn
+                  value={sessions.reduce(
+                    (sum, s) => sum + (s.messageCount ?? s.messages?.length ?? 0),
+                    0,
+                  )}
+                />
               </p>
-              <p className={`text-sm ${theme === 'dark' ? 'text-gray-400' : 'text-gray-600'}`}>
-                {t('sessions.messages')}
-              </p>
+              <p className="text-sm text-text-muted mt-1">{t('sessions.messages')}</p>
             </div>
           </div>
         </div>
         <div className={`${cardClass} p-4`}>
           <div className="flex items-center gap-3">
-            <div className={`w-10 h-10 rounded-lg flex items-center justify-center ${
-              theme === 'dark' ? 'bg-purple-900' : 'bg-purple-50'
-            }`}>
-              <Server className={`w-5 h-5 ${theme === 'dark' ? 'text-purple-400' : 'text-purple-600'}`} />
+            <div className="w-10 h-10 rounded-lg flex items-center justify-center bg-warning/15 text-warning">
+              <Server className="w-5 h-5" />
             </div>
             <div>
-              <p className={`text-2xl font-bold ${theme === 'dark' ? 'text-white' : 'text-gray-900'}`}>
-                {new Set(sessions.map(s => s.providerId)).size}
+              <p className="text-2xl font-display leading-none text-text">
+                <NumberPopIn value={new Set(sessions.map((s) => s.providerId)).size} />
               </p>
-              <p className={`text-sm ${theme === 'dark' ? 'text-gray-400' : 'text-gray-600'}`}>
-                {t('sessions.provider')}
-              </p>
+              <p className="text-sm text-text-muted mt-1">{t('sessions.provider')}</p>
             </div>
           </div>
         </div>
@@ -189,149 +182,180 @@ export default function Sessions() {
       {/* Session List */}
       {sessions.length === 0 ? (
         <div className={`${cardClass} p-12 text-center`}>
-          <MessageSquare className={`w-12 h-12 mx-auto mb-4 ${theme === 'dark' ? 'text-gray-600' : 'text-gray-400'}`} />
-          <p className={`mb-4 ${theme === 'dark' ? 'text-gray-400' : 'text-gray-600'}`}>
-            {t('sessions.noSessions')}
-          </p>
+          <MessageSquare className="w-12 h-12 mx-auto mb-4 text-text-subtle" />
+          <p className="mb-4 text-text-muted">{t('sessions.noSessions')}</p>
           <button
             onClick={() => setShowNewModal(true)}
-            className="px-4 py-2 bg-primary-500 text-white rounded-lg hover:bg-primary-600 transition-colors"
+            className="px-4 py-2 bg-accent text-accent-fg rounded-lg hover:opacity-90 transition-opacity"
           >
-            Create Session
+            {t('sessions.newSession')}
           </button>
         </div>
       ) : (
         <div className="space-y-3">
-          {sessions.map((session) => (
-            <div key={session.id} className={`${cardClass} p-4 hover:shadow-md transition-shadow`}>
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-4">
-                  <div className={`w-10 h-10 rounded-lg flex items-center justify-center ${
-                    theme === 'dark' ? 'bg-green-900' : 'bg-green-50'
-                  }`}>
-                    <MessageSquare className={`w-5 h-5 ${
-                      theme === 'dark' ? 'text-green-400' : 'text-green-600'
-                    }`} />
-                  </div>
-                  <div>
-                    <div className="flex items-center gap-2">
-                      <h3 className={`font-medium ${theme === 'dark' ? 'text-white' : 'text-gray-900'}`}>
-                        {session.providerId.charAt(0).toUpperCase() + session.providerId.slice(1)}
-                      </h3>
-                      <span className="text-xs px-2 py-0.5 rounded bg-green-50 text-green-700">
-                        {session.model}
-                      </span>
+          {sessions.map((session) => {
+            const isConfirming = confirmDeleteId === session.id;
+            return (
+              <div key={session.id} className={`${cardClass} p-4 transition-shadow`}>
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-4">
+                    <div className="w-10 h-10 rounded-lg flex items-center justify-center bg-accent-soft text-accent">
+                      <MessageSquare className="w-5 h-5" />
                     </div>
-                    <div className="flex items-center gap-4 mt-1">
-                      <span className={`text-xs flex items-center gap-1 ${
-                        theme === 'dark' ? 'text-gray-500' : 'text-gray-400'
-                      }`}>
-                        <MessageSquare className="w-3 h-3" />
-                        {session.messageCount ?? session.messages?.length ?? 0} {t('sessions.messages')}
-                      </span>
-                      <span className={`text-xs flex items-center gap-1 ${
-                        theme === 'dark' ? 'text-gray-500' : 'text-gray-400'
-                      }`}>
-                        <Clock className="w-3 h-3" />
-                        {formatRelative(session.createdAt)}
-                      </span>
-                    </div>
-
-                    {/* Context usage */}
-                    {typeof session.contextUsagePercent === 'number' && (
-                      <div className="mt-2 max-w-xs">
-                        <div className={`h-1.5 rounded-full overflow-hidden ${
-                          theme === 'dark' ? 'bg-gray-700' : 'bg-gray-100'
-                        }`}>
-                          <div
-                            className={`h-full rounded-full transition-all ${
-                              session.contextUsagePercent > 80
-                                ? 'bg-red-500'
-                                : session.contextUsagePercent > 60
-                                  ? 'bg-yellow-500'
-                                  : 'bg-green-500'
-                            }`}
-                            style={{ width: `${session.contextUsagePercent}%` }}
-                          />
-                        </div>
-                        <p className={`text-xs mt-1 ${theme === 'dark' ? 'text-gray-500' : 'text-gray-400'}`}>
-                          ~{(session.estimatedTokens ?? 0).toLocaleString()} / {(session.contextLimit ?? 0).toLocaleString()} tokens
-                        </p>
+                    <div>
+                      <div className="flex items-center gap-2">
+                        <h3 className="font-medium text-text">
+                          {session.providerId.charAt(0).toUpperCase() + session.providerId.slice(1)}
+                        </h3>
+                        <span className="text-xs px-2 py-0.5 rounded bg-accent-soft text-accent">
+                          {session.model}
+                        </span>
                       </div>
+                      <div className="flex items-center gap-4 mt-1">
+                        <span className="text-xs flex items-center gap-1 text-text-subtle">
+                          <MessageSquare className="w-3 h-3" />
+                          {session.messageCount ?? session.messages?.length ?? 0}{' '}
+                          {t('sessions.messages')}
+                        </span>
+                        <span className="text-xs flex items-center gap-1 text-text-subtle">
+                          <Clock className="w-3 h-3" />
+                          {formatRelative(session.createdAt)}
+                        </span>
+                      </div>
+
+                      {/* Context usage — real token accounting from the server */}
+                      {typeof session.contextUsagePercent === 'number' && (
+                        <div className="mt-2 max-w-xs">
+                          <div className="h-1.5 rounded-full overflow-hidden bg-surface-inset">
+                            <div
+                              className={`h-full rounded-full transition-all ${
+                                session.contextUsagePercent > 80
+                                  ? 'bg-danger'
+                                  : session.contextUsagePercent > 60
+                                    ? 'bg-warning'
+                                    : 'bg-success'
+                              }`}
+                              style={{ width: `${session.contextUsagePercent}%` }}
+                            />
+                          </div>
+                          <p className="text-xs mt-1 text-text-subtle">
+                            ~{(session.estimatedTokens ?? 0).toLocaleString()} /{' '}
+                            {(session.contextLimit ?? 0).toLocaleString()} tokens
+                          </p>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+
+                  <div className="flex items-center gap-2">
+                    {isConfirming ? (
+                      <div className="flex items-center gap-2 bg-danger/10 border border-danger/30 rounded-lg px-3 py-1.5 text-sm">
+                        <AlertTriangle className="w-4 h-4 text-danger" />
+                        <span className="text-danger">
+                          {language === 'ru' ? 'Удалить?' : 'Delete?'}
+                        </span>
+                        <button
+                          onClick={() => doDeleteSession(session.id)}
+                          className="text-xs px-2 py-1 rounded bg-danger text-white hover:opacity-90"
+                        >
+                          {t('common.delete')}
+                        </button>
+                        <button
+                          onClick={() => setConfirmDeleteId(null)}
+                          className="text-xs px-2 py-1 rounded text-text-muted hover:bg-surface-inset"
+                        >
+                          {t('common.cancel')}
+                        </button>
+                      </div>
+                    ) : (
+                      <MenuDropdown
+                        origin="top-right"
+                        trigger={({ toggle }) => (
+                          <button
+                            type="button"
+                            onClick={toggle}
+                            className="p-2 rounded-lg text-text-muted hover:text-text hover:bg-surface-inset transition-colors"
+                            aria-label="Session actions"
+                          >
+                            <MoreVertical className="w-4 h-4" />
+                          </button>
+                        )}
+                      >
+                        <MenuItem
+                          icon={<Copy className="w-4 h-4" />}
+                          onSelect={() => navigator.clipboard.writeText(session.id)}
+                        >
+                          {language === 'ru' ? 'Скопировать ID' : 'Copy ID'}
+                        </MenuItem>
+                        <MenuSeparator />
+                        <MenuItem
+                          icon={<FileText className="w-4 h-4" />}
+                          onSelect={() =>
+                            api
+                              .downloadSession(session.id, 'markdown')
+                              .catch((err) =>
+                                setError(err instanceof Error ? err.message : 'Export failed'),
+                              )
+                          }
+                        >
+                          {language === 'ru' ? 'Экспорт в Markdown' : 'Export as Markdown'}
+                        </MenuItem>
+                        <MenuItem
+                          icon={<FileJson className="w-4 h-4" />}
+                          onSelect={() =>
+                            api
+                              .downloadSession(session.id, 'json')
+                              .catch((err) =>
+                                setError(err instanceof Error ? err.message : 'Export failed'),
+                              )
+                          }
+                        >
+                          {language === 'ru' ? 'Экспорт в JSON' : 'Export as JSON'}
+                        </MenuItem>
+                        <MenuSeparator />
+                        <MenuItem
+                          danger
+                          icon={<Trash2 className="w-4 h-4" />}
+                          onSelect={() => setConfirmDeleteId(session.id)}
+                        >
+                          {t('common.delete')}
+                        </MenuItem>
+                      </MenuDropdown>
                     )}
                   </div>
                 </div>
-
-                <div className="flex items-center gap-2">
-                  <button
-                    title="Export as Markdown"
-                    onClick={() => api.downloadSession(session.id, 'markdown').catch((err) => setError(err instanceof Error ? err.message : 'Export failed'))}
-                    className={`p-2 rounded-lg transition-colors ${
-                      theme === 'dark'
-                        ? 'text-gray-400 hover:text-blue-400 hover:bg-gray-700'
-                        : 'text-gray-400 hover:text-blue-600 hover:bg-gray-100'
-                    }`}
-                  >
-                    <FileText className="w-4 h-4" />
-                  </button>
-                  <button
-                    title="Export as JSON"
-                    onClick={() => api.downloadSession(session.id, 'json').catch((err) => setError(err instanceof Error ? err.message : 'Export failed'))}
-                    className={`p-2 rounded-lg transition-colors ${
-                      theme === 'dark'
-                        ? 'text-gray-400 hover:text-blue-400 hover:bg-gray-700'
-                        : 'text-gray-400 hover:text-blue-600 hover:bg-gray-100'
-                    }`}
-                  >
-                    <FileJson className="w-4 h-4" />
-                  </button>
-                  <button className={`p-2 rounded-lg transition-colors ${
-                    theme === 'dark'
-                      ? 'text-gray-400 hover:text-gray-300 hover:bg-gray-700'
-                      : 'text-gray-400 hover:text-gray-600 hover:bg-gray-100'
-                  }`}>
-                    <ArrowRight className="w-4 h-4" />
-                  </button>
-                  <button
-                    onClick={() => handleDeleteSession(session.id)}
-                    className={`p-2 rounded-lg transition-colors ${
-                      theme === 'dark'
-                        ? 'text-gray-400 hover:text-red-400 hover:bg-gray-700'
-                        : 'text-gray-400 hover:text-red-600 hover:bg-gray-100'
-                    }`}
-                  >
-                    <Trash2 className="w-4 h-4" />
-                  </button>
-                </div>
               </div>
-            </div>
-          ))}
+            );
+          })}
         </div>
       )}
 
       {/* New Session Modal */}
       {showNewModal && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-          <div className={`${cardClass} p-6 max-w-md w-full mx-4`}>
-            <h2 className={`text-xl font-bold mb-4 ${theme === 'dark' ? 'text-white' : 'text-gray-900'}`}>
-              New Session
+        <div
+          className="fixed inset-0 bg-black/40 backdrop-blur-sm flex items-center justify-center z-50 p-4"
+          onClick={() => setShowNewModal(false)}
+        >
+          <div
+            className={`${cardClass} p-6 max-w-md w-full`}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <h2 className="text-xl font-display leading-none mb-4 text-text">
+              {t('sessions.newSession')}
             </h2>
             <div className="space-y-4">
               <div>
-                <label className={`block text-sm font-medium mb-2 ${theme === 'dark' ? 'text-gray-300' : 'text-gray-700'}`}>
-                  Provider
+                <label className="block text-sm font-medium mb-2 text-text-muted">
+                  {t('sessions.provider')}
                 </label>
                 <select
                   value={newSessionProvider}
                   onChange={(e) => {
-                    setNewSessionProvider(e.target.value);
-                    setNewSessionModel(e.target.value);
+                    const value = e.target.value;
+                    setNewSessionProvider(value);
+                    if (!modelTouched) setNewSessionModel(value);
                   }}
-                  className={`w-full px-4 py-2.5 border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500 ${
-                    theme === 'dark'
-                      ? 'bg-gray-700 border-gray-600 text-white'
-                      : 'bg-white border-gray-200 text-gray-900'
-                  }`}
+                  className={inputClass}
                 >
                   <option value="gemini">Google Gemini</option>
                   <option value="chatgpt">ChatGPT</option>
@@ -340,37 +364,32 @@ export default function Sessions() {
                 </select>
               </div>
               <div>
-                <label className={`block text-sm font-medium mb-2 ${theme === 'dark' ? 'text-gray-300' : 'text-gray-700'}`}>
-                  Model
+                <label className="block text-sm font-medium mb-2 text-text-muted">
+                  {t('sessions.model')}
                 </label>
                 <input
                   type="text"
                   value={newSessionModel}
-                  onChange={(e) => setNewSessionModel(e.target.value)}
-                  className={`w-full px-4 py-2.5 border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500 ${
-                    theme === 'dark'
-                      ? 'bg-gray-700 border-gray-600 text-white'
-                      : 'bg-white border-gray-200 text-gray-900'
-                  }`}
+                  onChange={(e) => {
+                    setNewSessionModel(e.target.value);
+                    setModelTouched(true);
+                  }}
+                  className={inputClass}
                 />
               </div>
             </div>
             <div className="flex gap-3 mt-6">
               <button
                 onClick={() => setShowNewModal(false)}
-                className={`flex-1 py-2.5 rounded-lg transition-colors ${
-                  theme === 'dark'
-                    ? 'bg-gray-700 hover:bg-gray-600 text-white'
-                    : 'bg-gray-100 hover:bg-gray-200 text-gray-900'
-                }`}
+                className="flex-1 py-2.5 rounded-lg bg-surface-inset text-text-muted hover:text-text hover:bg-accent-soft transition-colors"
               >
-                Cancel
+                {t('common.cancel')}
               </button>
               <button
                 onClick={handleCreateSession}
-                className="flex-1 py-2.5 bg-primary-500 text-white rounded-lg hover:bg-primary-600 transition-colors"
+                className="flex-1 py-2.5 bg-accent text-accent-fg rounded-lg hover:opacity-90 transition-opacity"
               >
-                Create
+                {t('common.create')}
               </button>
             </div>
           </div>

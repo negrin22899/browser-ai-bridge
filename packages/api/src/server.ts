@@ -525,6 +525,15 @@ export function createServer(deps: ServerDeps): Hono<ServerEnv> {
     return c.json({ deleted: true, id });
   });
 
+  app.delete('/v1/sessions/:id', (c) => {
+    const id = c.req.param('id');
+    if (!sessionManager.has(id)) {
+      return c.json({ error: { message: 'Session not found' } }, 404);
+    }
+    sessionManager.close(id);
+    return c.json({ deleted: true, id });
+  });
+
   // ── Tools ────────────────────────────────────────────────────
 
   app.get('/v1/tools', (c) => {

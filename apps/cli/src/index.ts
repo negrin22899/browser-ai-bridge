@@ -196,8 +196,9 @@ program
   .option('--site <url>', 'AI site URL or provider name (gemini, chatgpt, claude, deepseek)')
   .option('--headless', 'Run browser in headless mode (no visible window)', true)
   .option('--no-headless', 'Show browser window')
-  .option('--profile', 'Use existing Chrome profile (for logged-in sessions)', true)
+  .option('--profile', 'Use existing browser profile (for logged-in sessions)', true)
   .option('--no-profile', 'Use new browser profile')
+  .option('--browser <name>', 'Browser to drive: chrome | edge | brave | opera | vivaldi | chromium', 'chrome')
   .option('--allow <tools>', 'Comma-separated tools to allow without confirmation (e.g. fs.write,shell.exec)')
   .option('--interactive', 'Prompt for permission decisions via the API instead of denying immediately')
   .option('--api <format>', 'Register a native API provider as fallback (openai, anthropic, google)')
@@ -262,7 +263,7 @@ program
       const { id: providerId } = resolveProvider(options.site);
       const accountCount = Math.max(1, parseInt(options.accounts ?? '1', 10) || 1);
 
-      // Multi-account rotation: each account gets its own Chrome profile so the
+      // Multi-account rotation: each account gets its own browser profile so the
       // user can be logged into a different AI account in each one. Account 0
       // reuses the existing logged-in profile; the rest use dedicated profiles
       // that the user can sign into once.
@@ -275,6 +276,7 @@ program
           adapter,
           headless: options.headless,
           useExistingProfile: i === 0 ? options.profile : false,
+          browser: options.browser,
           // Distinct profile dir + CDP port keep accounts from colliding on the
           // same browser instance.
           userDataDir: i === 0
@@ -296,7 +298,7 @@ program
       logger.info(
         accountCount > 1
           ? `Connecting to ${options.site} across ${accountCount} accounts...`
-          : `Connecting to ${options.site}...`
+          : `Connecting to ${options.site} via ${options.browser}...`
       );
       try {
         await provider.connect();
@@ -409,8 +411,9 @@ program
   .option('--site <url>', 'AI site URL or provider name', 'gemini')
   .option('--headless', 'Run browser in headless mode (no visible window)', true)
   .option('--no-headless', 'Show browser window')
-  .option('--profile', 'Use existing Chrome profile', true)
+  .option('--profile', 'Use existing browser profile', true)
   .option('--no-profile', 'Use new browser profile')
+  .option('--browser <name>', 'Browser to drive: chrome | edge | brave | opera | vivaldi | chromium', 'chrome')
   .option('--allow <tools>', 'Comma-separated tools to allow without confirmation (e.g. fs.write,shell.exec)')
   .action(async (message, options) => {
     const logger = new Logger({ level: 'info', format: 'text', context: 'Chat' });
@@ -426,11 +429,12 @@ program
       adapter,
       headless: options.headless,
       useExistingProfile: options.profile,
+      browser: options.browser,
     });
 
     provider.setTools(runtime.getToolDescriptions());
 
-    logger.info(`Connecting to ${options.site}...`);
+    logger.info(`Connecting to ${options.site} via ${options.browser}...`);
     try {
       await provider.connect();
       logger.info('Connected!');

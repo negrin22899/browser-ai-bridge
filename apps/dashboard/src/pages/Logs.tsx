@@ -7,16 +7,15 @@ import {
   Clock,
   RefreshCw,
 } from 'lucide-react';
-import { useTheme } from '../contexts/ThemeContext';
 import { useLanguage } from '../contexts/LanguageContext';
 import { useBabEvents } from '../hooks/useBabEvents';
 import { api, type AuditEntry } from '../lib/api';
+import { SlidingTabs } from '../components/motion';
 
 type Filter = 'all' | 'allowed' | 'denied' | 'error';
 
 export default function Logs() {
-  const { theme } = useTheme();
-  const { t } = useLanguage();
+  const { t, language } = useLanguage();
   const [logs, setLogs] = useState<AuditEntry[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -26,6 +25,7 @@ export default function Logs() {
     setLoading(true);
     setError(null);
     try {
+      // Real audit trail from the runtime's audit logger.
       const data = await api.getAudit();
       setLogs(data.data || []);
     } catch (err) {
@@ -47,9 +47,7 @@ export default function Logs() {
     }
   });
 
-  const cardClass = `rounded-xl border ${
-    theme === 'dark' ? 'bg-gray-800 border-gray-700' : 'bg-white border-gray-200'
-  }`;
+  const cardClass = 'rounded-xl glass';
 
   const filteredLogs = filter === 'all' ? logs : logs.filter((l) => l.result === filter);
 
@@ -57,57 +55,59 @@ export default function Logs() {
 
   const getResultIcon = (result: AuditEntry['result']) => {
     switch (result) {
-      case 'allowed': return <CheckCircle className="w-4 h-4 text-green-500" />;
-      case 'denied': return <XCircle className="w-4 h-4 text-red-500" />;
-      case 'error': return <XCircle className="w-4 h-4 text-orange-500" />;
-      default: return null;
+      case 'allowed':
+        return <CheckCircle className="w-4 h-4 text-success" />;
+      case 'denied':
+        return <XCircle className="w-4 h-4 text-danger" />;
+      case 'error':
+        return <XCircle className="w-4 h-4 text-warning" />;
+      default:
+        return null;
     }
   };
 
   const getResultColor = (result: AuditEntry['result']) => {
     switch (result) {
-      case 'allowed': return 'bg-green-50 text-green-700';
-      case 'denied': return 'bg-red-50 text-red-700';
-      case 'error': return 'bg-orange-50 text-orange-700';
-      default: return 'bg-gray-50 text-gray-500';
+      case 'allowed':
+        return 'bg-success/15 text-success';
+      case 'denied':
+        return 'bg-danger/15 text-danger';
+      case 'error':
+        return 'bg-warning/15 text-warning';
+      default:
+        return 'bg-surface-inset text-text-muted';
     }
+  };
+
+  const doExport = () => {
+    const blob = new Blob([JSON.stringify(logs, null, 2)], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `bab-audit-${new Date().toISOString().slice(0, 10)}.json`;
+    a.click();
+    URL.revokeObjectURL(url);
   };
 
   return (
     <div>
       <div className="flex items-center justify-between mb-8">
         <div>
-          <h1 className={`text-2xl font-bold ${theme === 'dark' ? 'text-white' : 'text-gray-900'}`}>
-            {t('logs.title')}
-          </h1>
-          <p className={theme === 'dark' ? 'text-gray-400' : 'text-gray-600'}>
-            {t('logs.subtitle')}
-          </p>
+          <h1 className="text-2xl font-display leading-none text-text">{t('logs.title')}</h1>
+          <p className="text-text-muted mt-2">{t('logs.subtitle')}</p>
         </div>
         <div className="flex gap-2">
           <button
             onClick={loadLogs}
-            className={`p-2 rounded-lg transition-colors ${
-              theme === 'dark' ? 'hover:bg-gray-700' : 'hover:bg-gray-100'
-            }`}
+            className="p-2 rounded-lg transition-colors hover:bg-surface-inset"
+            aria-label="Refresh"
           >
-            <RefreshCw className={`w-5 h-5 ${loading ? 'animate-spin' : ''} ${
-              theme === 'dark' ? 'text-gray-400' : 'text-gray-600'
-            }`} />
+            <RefreshCw className={`w-5 h-5 text-text-muted ${loading ? 'animate-spin' : ''}`} />
           </button>
           <button
-            onClick={() => {
-              const blob = new Blob([JSON.stringify(logs, null, 2)], { type: 'application/json' });
-              const url = URL.createObjectURL(blob);
-              const a = document.createElement('a');
-              a.href = url;
-              a.download = `bab-audit-${new Date().toISOString().slice(0, 10)}.json`;
-              a.click();
-              URL.revokeObjectURL(url);
-            }}
-            className={`flex items-center gap-2 px-4 py-2.5 rounded-lg ${
-              theme === 'dark' ? 'bg-gray-700 text-gray-300 hover:bg-gray-600' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-            }`}
+            onClick={doExport}
+            disabled={logs.length === 0}
+            className="flex items-center gap-2 px-4 py-2.5 rounded-lg bg-surface-inset text-text-muted hover:text-accent hover:bg-accent-soft transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
           >
             <Download className="w-4 h-4" />
             {t('logs.export')}
@@ -116,53 +116,49 @@ export default function Logs() {
       </div>
 
       {error && (
-        <div className={`mb-4 p-4 rounded-lg text-sm ${
-          theme === 'dark' ? 'bg-red-900/30 border border-red-800 text-red-400' : 'bg-red-50 border border-red-200 text-red-700'
-        }`}>
+        <div className="mb-4 p-4 rounded-lg text-sm bg-danger/10 border border-danger/30 text-danger">
           {error}
         </div>
       )}
 
       {/* Filters */}
-      <div className="flex gap-2 mb-6">
-        {(['all', 'allowed', 'denied', 'error'] as const).map((f) => (
-          <button
-            key={f}
-            onClick={() => setFilter(f)}
-            className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
-              filter === f
-                ? 'bg-primary-500 text-white'
-                : theme === 'dark'
-                  ? 'bg-gray-700 text-gray-300 hover:bg-gray-600'
-                  : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-            }`}
-          >
-            {f.charAt(0).toUpperCase() + f.slice(1)}
-            <span className="ml-2 text-xs opacity-70">
-              {f === 'all' ? logs.length : logs.filter((l) => l.result === f).length}
-            </span>
-          </button>
-        ))}
+      <div className="mb-6">
+        <SlidingTabs
+          ariaLabel="Log filter"
+          value={filter}
+          onChange={(v) => setFilter(v as Filter)}
+          tabs={(['all', 'allowed', 'denied', 'error'] as const).map((f) => ({
+            id: f,
+            label: (
+              <>
+                {t(`logs.${f}`)}
+                <span className="ml-2 text-xs opacity-70">
+                  {f === 'all' ? logs.length : logs.filter((l) => l.result === f).length}
+                </span>
+              </>
+            ),
+          }))}
+        />
       </div>
 
       {/* Logs List */}
       {loading && logs.length === 0 ? (
         <div className="flex items-center justify-center h-64">
-          <RefreshCw className="w-8 h-8 animate-spin text-primary-500" />
+          <RefreshCw className="w-8 h-8 animate-spin text-accent" />
         </div>
       ) : filteredLogs.length === 0 ? (
         <div className={`${cardClass} p-12 text-center`}>
-          <FileText className={`w-12 h-12 mx-auto mb-4 ${theme === 'dark' ? 'text-gray-600' : 'text-gray-400'}`} />
-          <p className={theme === 'dark' ? 'text-gray-400' : 'text-gray-600'}>
-            {t('logs.noLogs')}
-          </p>
-          <p className={`text-sm mt-2 ${theme === 'dark' ? 'text-gray-500' : 'text-gray-400'}`}>
-            Logs appear when the AI executes tools.
+          <FileText className="w-12 h-12 mx-auto mb-4 text-text-subtle" />
+          <p className="text-text-muted">{t('logs.noLogs')}</p>
+          <p className="text-sm mt-2 text-text-subtle">
+            {language === 'ru'
+              ? 'Логи появятся, когда IDE обратится к мосту или выполнится инструмент.'
+              : 'Logs will appear when you use the chat or run tools.'}
           </p>
         </div>
       ) : (
-        <div className={`${cardClass}`}>
-          <div className={`divide-y ${theme === 'dark' ? 'divide-gray-700' : 'divide-gray-100'}`}>
+        <div className={cardClass}>
+          <div className="divide-y divide-border">
             {filteredLogs.map((log) => (
               <div key={log.id} className="px-6 py-4">
                 <div className="flex items-center justify-between">
@@ -173,21 +169,23 @@ export default function Logs() {
                         <span className={`text-xs px-2 py-0.5 rounded ${getResultColor(log.result)}`}>
                           {log.result}
                         </span>
-                        <span className={`font-medium ${theme === 'dark' ? 'text-white' : 'text-gray-900'}`}>
-                          {log.toolName}
-                        </span>
-                        <span className={`text-xs ${theme === 'dark' ? 'text-gray-500' : 'text-gray-400'}`}>
-                          Session: {log.sessionId.slice(0, 8)}...
-                        </span>
+                        {log.toolName && (
+                          <span className="font-medium text-text font-mono text-sm">
+                            {log.toolName}
+                          </span>
+                        )}
+                        {log.sessionId && (
+                          <span className="text-xs text-text-subtle font-mono">
+                            {log.sessionId.slice(0, 8)}
+                          </span>
+                        )}
                       </div>
                       {log.reason && (
-                        <p className={`text-xs mt-1 ${theme === 'dark' ? 'text-gray-500' : 'text-gray-400'}`}>
-                          {log.reason}
-                        </p>
+                        <p className="text-xs mt-1 text-text-subtle">Reason: {log.reason}</p>
                       )}
                     </div>
                   </div>
-                  <div className="flex items-center gap-1 text-xs text-gray-400">
+                  <div className="flex items-center gap-1 text-xs text-text-subtle font-mono">
                     <Clock className="w-3 h-3" />
                     {formatTime(log.timestamp)}
                   </div>
