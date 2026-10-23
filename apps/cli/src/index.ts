@@ -193,7 +193,7 @@ program
   .description('Start the API server')
   .option('-p, --port <port>', 'Port to listen on', '3000')
   .option('-h, --host <host>', 'Host to bind to', 'localhost')
-  .option('--site <url>', 'AI site URL or provider name (gemini, chatgpt, claude, deepseek)')
+  .option('--site <url>', 'AI site URL or provider name (google-ai, gemini, chatgpt, claude, deepseek)')
   .option('--headless', 'Run browser in headless mode (no visible window)', true)
   .option('--no-headless', 'Show browser window')
   .option('--profile', 'Use existing browser profile (for logged-in sessions)', true)

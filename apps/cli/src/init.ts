@@ -73,9 +73,11 @@ export async function runInit(): Promise<void> {
 Your Browser AI Bridge is ready!
 
 To start:
-  bab serve --site gemini
+  bab serve --site google-ai
 
 Or with other providers:
+  bab serve --site google-ai
+  bab serve --site gemini
   bab serve --site chatgpt
   bab serve --site claude
   bab serve --site deepseek
@@ -85,7 +87,7 @@ API will be available at:
 
 Configure your IDE (Cursor, VS Code, etc.):
   API URL: http://localhost:3000/v1/chat/completions
-  Model: gemini
+  Model: google-ai
 
 For more help:
   bab --help

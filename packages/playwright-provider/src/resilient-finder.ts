@@ -344,6 +344,71 @@ export const DEEPSEEK_STRATEGIES: Record<string, SelectorStrategy> = {
 };
 
 /**
+ * Google Search AI Mode strategies.
+ *
+ * Covers both classic Search (`name="q"`) and the AI Mode chat surface
+ * (`udm=50` / "Ask anything"). Model picker (Gemini 2.5 / experimental
+ * codenames like Argon) lives on the page itself — we only type and read.
+ */
+export const GOOGLE_AI_STRATEGIES: Record<string, SelectorStrategy> = {
+  input: {
+    name: 'input',
+    selectors: [
+      // AI Mode / Gemini in Search chat box
+      'textarea[aria-label*="Ask anything" i]',
+      'textarea[aria-label*="Ask" i]',
+      'div[contenteditable="true"][aria-label*="Ask" i]',
+      'textarea[placeholder*="Ask" i]',
+      // Classic Google Search box
+      'textarea[name="q"]',
+      'input[name="q"]',
+      '#APjFqb',
+      'textarea[aria-label*="Search" i]',
+      'input[aria-label*="Search" i]',
+      'div[contenteditable="true"][role="combobox"]',
+      'div[contenteditable="true"][role="textbox"]',
+      'textarea',
+    ],
+    description: 'Google Search / AI Mode input field',
+  },
+  sendButton: {
+    name: 'sendButton',
+    selectors: [
+      'button[aria-label*="Send" i]',
+      'button[aria-label*="Submit" i]',
+      'button[aria-label*="Search" i]',
+      'button[type="submit"]',
+      'form[role="search"] button',
+      'div[role="button"][aria-label*="Send" i]',
+      'button:has(svg[aria-label*="Search" i])',
+    ],
+    description: 'Google Search / AI Mode send button',
+  },
+  response: {
+    name: 'response',
+    selectors: [
+      // AI Mode / AI Overview answer blocks
+      '[data-attrid*="AI" i]',
+      '.ai-overview',
+      '[class*="ai-mode"] [class*="response"]',
+      '[class*="AIOverview"]',
+      '[class*="aio"] [class*="answer"]',
+      'div[jsname*="answer" i]',
+      // Conversational AI Mode turns
+      '[data-message-author-role="assistant"]',
+      '[data-content-type*="model" i]',
+      'message-content .markdown',
+      '.model-response-text',
+      // Broad last-resort answer containers
+      '#search .M8OgIe',
+      '#rso [data-hveid]',
+      'div[data-attrid="wa:/description"]',
+    ],
+    description: 'Google Search AI / AI Mode response container',
+  },
+};
+
+/**
  * All provider strategies keyed by provider id and role.
  *
  * Strategies are namespaced (e.g. "gemini.input") so that registering every
@@ -357,6 +422,7 @@ export const PROVIDER_STRATEGIES: Record<
   chatgpt: CHATGPT_STRATEGIES,
   claude: CLAUDE_STRATEGIES,
   deepseek: DEEPSEEK_STRATEGIES,
+  'google-ai': GOOGLE_AI_STRATEGIES,
 };
 
 /**

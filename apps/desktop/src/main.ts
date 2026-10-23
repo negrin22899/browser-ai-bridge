@@ -270,7 +270,7 @@ function buildTrayMenu(): Electron.Menu {
     },
     {
       label: 'Copy Models List',
-      click: () => clipboard.writeText('gemini, chatgpt, claude, deepseek'),
+      click: () => clipboard.writeText('google-ai, gemini, chatgpt, claude, deepseek'),
     },
     { type: 'separator' },
     {

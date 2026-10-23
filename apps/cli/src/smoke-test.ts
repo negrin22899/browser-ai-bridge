@@ -7,6 +7,7 @@ import { GeminiPlaywrightAdapter } from '@bab/playwright-provider';
 import { ChatGPTPlaywrightAdapter } from '@bab/playwright-provider';
 import { ClaudePlaywrightAdapter } from '@bab/playwright-provider';
 import { DeepSeekPlaywrightAdapter } from '@bab/playwright-provider';
+import { GoogleAIPlaywrightAdapter } from '@bab/playwright-provider';
 import { FsReadTool, FsWriteTool } from '@bab/tools-fs';
 import { GitStatusTool, GitDiffTool, GitCommitTool } from '@bab/tools-git';
 import { ShellExecTool } from '@bab/tools-shell';
@@ -154,6 +155,7 @@ export async function runSmokeTest(site: string): Promise<boolean> {
 
 function getAdapter(site: string) {
   const normalized = site.toLowerCase().trim();
+  if (normalized === 'google-ai' || normalized === 'google-search' || normalized.includes('google.com/search') || normalized.includes('udm=50')) return new GoogleAIPlaywrightAdapter();
   if (normalized === 'gemini' || normalized.includes('gemini.google.com')) return new GeminiPlaywrightAdapter();
   if (normalized === 'chatgpt' || normalized.includes('chatgpt.com') || normalized.includes('chat.openai.com')) return new ChatGPTPlaywrightAdapter();
   if (normalized === 'claude' || normalized.includes('claude.ai')) return new ClaudePlaywrightAdapter();
@@ -163,6 +165,7 @@ function getAdapter(site: string) {
 
 function getProviderId(site: string): string {
   const normalized = site.toLowerCase().trim();
+  if (normalized === 'google-ai' || normalized === 'google-search' || normalized.includes('google.com/search') || normalized.includes('udm=50')) return 'google-ai';
   if (normalized === 'gemini' || normalized.includes('gemini.google.com')) return 'gemini';
   if (normalized === 'chatgpt' || normalized.includes('chatgpt.com') || normalized.includes('chat.openai.com')) return 'chatgpt';
   if (normalized === 'claude' || normalized.includes('claude.ai')) return 'claude';

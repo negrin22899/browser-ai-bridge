@@ -14,6 +14,7 @@ interface Choice {
 }
 
 const CHOICES: Choice[] = [
+  { id: 'google-ai', label: 'Google AI Search', hint: 'Browser session · no Gemini login', icon: Globe, kind: 'browser', defaultModel: 'google-ai' },
   { id: 'gemini', label: 'Google Gemini', hint: 'Browser session', icon: Globe, kind: 'browser', defaultModel: 'gemini' },
   { id: 'chatgpt', label: 'ChatGPT', hint: 'Browser session', icon: MessageSquare, kind: 'browser', defaultModel: 'chatgpt' },
   { id: 'claude', label: 'Claude', hint: 'Browser session', icon: Bot, kind: 'browser', defaultModel: 'claude' },

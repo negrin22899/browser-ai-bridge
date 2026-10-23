@@ -36,7 +36,7 @@ export default function Chat() {
     },
   ]);
   const [input, setInput] = useState('');
-  const [selectedProvider, setSelectedProvider] = useState('gemini');
+  const [selectedProvider, setSelectedProvider] = useState('google-ai');
   const [isLoading, setIsLoading] = useState(false);
   const [providers, setProviders] = useState<Provider[]>([]);
   const [sessions, setSessions] = useState<Session[]>([]);
@@ -59,6 +59,7 @@ export default function Chat() {
       } catch {
         // API not available, show default providers so the tabs aren't empty.
         setProviders([
+          { id: 'google-ai', name: 'Google AI Search', status: 'unknown' },
           { id: 'gemini', name: 'Gemini', status: 'unknown' },
           { id: 'chatgpt', name: 'ChatGPT', status: 'unknown' },
           { id: 'claude', name: 'Claude', status: 'unknown' },
@@ -111,6 +112,8 @@ export default function Chat() {
 
   const getProviderIcon = (id: string) => {
     switch (id) {
+      case 'google-ai':
+        return Globe;
       case 'gemini':
         return Globe;
       case 'chatgpt':

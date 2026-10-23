@@ -38,6 +38,7 @@ export { GeminiPlaywrightAdapter } from './adapters/gemini-adapter.js';
 export { ChatGPTPlaywrightAdapter } from './adapters/chatgpt-adapter.js';
 export { ClaudePlaywrightAdapter } from './adapters/claude-adapter.js';
 export { DeepSeekPlaywrightAdapter } from './adapters/deepseek-adapter.js';
+export { GoogleAIPlaywrightAdapter } from './adapters/google-ai-adapter.js';
 
 // Session persistence
 export { SessionPersistence } from './session-persistence.js';
@@ -93,5 +94,6 @@ export {
   ProviderBlockError,
   ProviderStreamError,
   detectBlockError,
+  GoogleAIStreamParser,
 } from './stream-parsers.js';
 export type { ProviderStreamConfig, StreamEventParser, ParsedEvent, BlockErrorCode } from './stream-parsers.js';

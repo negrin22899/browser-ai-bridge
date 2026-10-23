@@ -24,6 +24,7 @@ interface ProviderCatalogEntry {
 }
 
 const CATALOG: ProviderCatalogEntry[] = [
+  { id: 'google-ai', name: 'Google AI Search', siteUrl: 'https://www.google.com/search?udm=50', icon: Globe },
   { id: 'gemini',   name: 'Google Gemini', siteUrl: 'https://gemini.google.com', icon: Globe },
   { id: 'chatgpt',  name: 'ChatGPT',       siteUrl: 'https://chatgpt.com',        icon: Zap },
   { id: 'claude',   name: 'Claude',        siteUrl: 'https://claude.ai',          icon: Globe },

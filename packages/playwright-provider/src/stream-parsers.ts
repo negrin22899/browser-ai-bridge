@@ -207,6 +207,45 @@ export class DeepSeekStreamParser implements StreamEventParser {
   }
 }
 
+// ── Google AI Search / AI Mode ─────────────────────────────────
+// Google Search AI Mode streams via BatchExecute / assistive AI
+// endpoints. Payloads mix RPC wrappers and plain text; be tolerant.
+
+export class GoogleAIStreamParser implements StreamEventParser {
+  readonly id = 'google-ai';
+  private lastText = '';
+
+  parse(data: string): ParsedEvent {
+    const parsed = parseJson(data);
+    if (parsed === undefined) {
+      // Plain text payloads (rare, but possible on some assist endpoints).
+      const trimmed = data.trim();
+      if (!trimmed || trimmed.startsWith('[')) return {};
+      return { text: trimmed };
+    }
+
+    const strings: string[] = [];
+    collectStrings(parsed, strings);
+    if (strings.length === 0) {
+      const obj = parsed as Record<string, unknown>;
+      const err = obj?.error;
+      if (typeof err === 'string' && err) return { error: err };
+      return {};
+    }
+
+    // Prefer the longest cumulative string and diff it (Gemini-style),
+    // otherwise join incremental fragments.
+    const longest = strings.reduce((a, b) => (b.length > a.length ? b : a), '');
+    if (this.lastText && longest.startsWith(this.lastText)) {
+      const delta = longest.slice(this.lastText.length);
+      this.lastText = longest;
+      return delta ? { text: delta } : {};
+    }
+    this.lastText = longest;
+    return longest ? { text: longest } : {};
+  }
+}
+
 // ── Config registry ─────────────────────────────────────────────
 
 export const PROVIDER_STREAM_CONFIGS: Record<string, ProviderStreamConfig> = {
@@ -214,6 +253,11 @@ export const PROVIDER_STREAM_CONFIGS: Record<string, ProviderStreamConfig> = {
     id: 'gemini',
     urlPatterns: ['StreamGenerateContent'],
     createParser: () => new GeminiStreamParser(),
+  },
+  'google-ai': {
+    id: 'google-ai',
+    urlPatterns: ['BatchExecute', 'assistive', 'ai.?mode', 'SearchAI'],
+    createParser: () => new GoogleAIStreamParser(),
   },
   chatgpt: {
     id: 'chatgpt',

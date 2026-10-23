@@ -133,7 +133,7 @@ export default function Dashboard() {
               await startServer();
               setTimeout(loadData, 3000);
             } else {
-              alert('Run in terminal: bab serve --site gemini');
+              alert('Run in terminal: bab serve --site google-ai');
             }
           }}
           className="flex items-center gap-2 px-6 py-3 bg-accent text-accent-fg rounded-lg hover:opacity-90 transition-colors font-medium"
@@ -143,7 +143,7 @@ export default function Dashboard() {
         </button>
         {!isElectron && (
           <div className="mt-6 p-4 rounded-lg bg-surface-inset">
-            <p className="text-xs font-mono text-text-muted">bab serve --site gemini</p>
+            <p className="text-xs font-mono text-text-muted">bab serve --site google-ai</p>
           </div>
         )}
       </div>

@@ -4,6 +4,7 @@ import {
   ChatGPTPlaywrightAdapter,
   ClaudePlaywrightAdapter,
   DeepSeekPlaywrightAdapter,
+  GoogleAIPlaywrightAdapter,
 } from '@bab/playwright-provider';
 
 export interface ProviderEntry {
@@ -15,8 +16,14 @@ export interface ProviderEntry {
 
 const PROVIDERS: ProviderEntry[] = [
   {
+    id: 'google-ai',
+    names: ['google-ai', 'google-search', 'googleai', 'google-search-ai'],
+    urlPatterns: ['google.com/search', 'udm=50', 'google.com/?udm'],
+    createAdapter: () => new GoogleAIPlaywrightAdapter(),
+  },
+  {
     id: 'gemini',
-    names: ['gemini', 'google'],
+    names: ['gemini'],
     urlPatterns: ['gemini.google.com'],
     createAdapter: () => new GeminiPlaywrightAdapter(),
   },
@@ -49,8 +56,8 @@ function findProvider(siteUrlOrName: string): ProviderEntry {
     }
   }
 
-  // Default to Gemini
-  return PROVIDERS[0];
+  // Default to Gemini for backwards compatibility
+  return PROVIDERS.find((p) => p.id === 'gemini') ?? PROVIDERS[0];
 }
 
 export function resolveProvider(siteUrlOrName: string): { id: string; adapter: PlaywrightAdapter } {

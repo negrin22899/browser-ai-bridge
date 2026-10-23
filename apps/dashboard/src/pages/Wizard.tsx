@@ -29,6 +29,7 @@ interface ProviderChoice {
 }
 
 const PROVIDERS: ProviderChoice[] = [
+  { id: 'google-ai', name: 'Google AI Search', siteUrl: 'https://www.google.com/search?udm=50', icon: Globe },
   { id: 'gemini',   name: 'Google Gemini', siteUrl: 'https://gemini.google.com', icon: Globe },
   { id: 'chatgpt',  name: 'ChatGPT',       siteUrl: 'https://chatgpt.com',        icon: Zap },
   { id: 'claude',   name: 'Claude',        siteUrl: 'https://claude.ai',          icon: MessageSquare },
@@ -42,7 +43,7 @@ export default function Wizard() {
   const [step, setStep] = useState<Step>(1);
   const [browsers, setBrowsers] = useState<BrowserInfo[]>([]);
   const [browserId, setBrowserId] = useState<BrowserInfo['id']>('chrome');
-  const [providerId, setProviderId] = useState<string>('gemini');
+  const [providerId, setProviderId] = useState<string>('google-ai');
   const [verifyState, setVerifyState] = useState<'idle' | 'checking' | 'ok' | 'fail'>('idle');
   const [verifyError, setVerifyError] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
@@ -296,13 +297,20 @@ export default function Wizard() {
         {step === 3 && (
           <>
             <h1 className="text-2xl font-display leading-none mb-3 text-text">
-              {t(`Войди в ${chosenProvider.name}`, `Sign in to ${chosenProvider.name}`)}
+              {providerId === 'google-ai'
+                ? t('Открой Google AI Search', 'Open Google AI Search')
+                : t(`Войди в ${chosenProvider.name}`, `Sign in to ${chosenProvider.name}`)}
             </h1>
             <p className="mb-6 text-text-muted">
-              {t(
-                'Мы откроем сайт в твоём браузере. Залогинься под своим аккаунтом, вернись сюда и нажми «Проверить». Мы поднимем сервер и убедимся, что сессия работает.',
-                'We will open the site in your browser. Sign in, come back, and hit "Verify". We will spin up the server and confirm your session works.',
-              )}
+              {providerId === 'google-ai'
+                ? t(
+                    'Откроем Google Поиск с AI-режимом. Вход в Gemini не нужен — просто открой вкладку, при желании выбери модель (Gemini / Argon) прямо на странице Google и нажми «Проверить».',
+                    'We will open Google Search with AI Mode. No Gemini login needed — just open the tab, pick a model (Gemini / Argon) on the Google page if you like, then hit "Verify".',
+                  )
+                : t(
+                    'Мы откроем сайт в твоём браузере. Залогинься под своим аккаунтом, вернись сюда и нажми «Проверить». Мы поднимем сервер и убедимся, что сессия работает.',
+                    'We will open the site in your browser. Sign in, come back, and hit "Verify". We will spin up the server and confirm your session works.',
+                  )}
             </p>
 
             <div className="p-4 rounded-lg mb-4 bg-surface-inset border border-border">
@@ -354,10 +362,15 @@ export default function Wizard() {
                   )}
                   {verifyState === 'fail' && (
                     <p className="mt-2">
-                      {t(
-                        'Проверь, что залогинен на сайте, и нажми «Проверить» ещё раз.',
-                        'Make sure you are signed in on the site, then hit "Verify" again.',
-                      )}
+                      {providerId === 'google-ai'
+                        ? t(
+                            'Проверь, что вкладка Google AI Search открыта, и нажми «Проверить» ещё раз.',
+                            'Make sure the Google AI Search tab is open, then hit "Verify" again.',
+                          )
+                        : t(
+                            'Проверь, что залогинен на сайте, и нажми «Проверить» ещё раз.',
+                            'Make sure you are signed in on the site, then hit "Verify" again.',
+                          )}
                     </p>
                   )}
                 </div>
