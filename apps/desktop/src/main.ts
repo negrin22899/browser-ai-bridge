@@ -286,7 +286,7 @@ function createTray(): void {
 
   const icon = nativeImage.createFromPath(iconPath);
   tray = new Tray(icon.resize({ width: 16, height: 16 }));
-  tray.setToolTip('Browser AI Bridge — v1.0.0');
+  tray.setToolTip('Browser AI Bridge — v1.1.0');
   tray.setContextMenu(buildTrayMenu());
   tray.on('click', () => {
     mainWindow?.show();
