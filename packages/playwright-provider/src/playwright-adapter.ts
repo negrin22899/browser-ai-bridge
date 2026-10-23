@@ -73,8 +73,31 @@ export class PlaywrightAdapter {
   async createSession(): Promise<BrowserSession> {
     return await withRetry(
       async () => {
-        const session = await this.tabManager.createSession();
-        await session.navigate(this.siteUrl);
+        // Prefer a tab the user already has open for this provider
+        // (logged-in Google AI Search / Gemini / ChatGPT / …).
+        const hostHint = (() => {
+          try {
+            return new URL(this.siteUrl).hostname.replace(/^www\./, '');
+          } catch {
+            return this.siteUrl;
+          }
+        })();
+        const patterns = [hostHint, this.siteId, this.siteUrl];
+        const session = await this.tabManager.createSession(undefined, { urlPatterns: patterns });
+
+        // Only navigate when we opened a blank/new tab — don't kick the user
+        // off the page they already had open.
+        try {
+          const url = session.url || '';
+          const isBlank = !url || url === 'about:blank';
+          const matches = patterns.some((p) => url.toLowerCase().includes(p.toLowerCase()));
+          if (isBlank || !matches) {
+            await session.navigate(this.siteUrl);
+          }
+        } catch {
+          await session.navigate(this.siteUrl);
+        }
+
         await this.waitForReady(session);
         return session;
       },

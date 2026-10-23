@@ -198,6 +198,7 @@ program
   .option('--no-headless', 'Show browser window')
   .option('--profile', 'Use existing browser profile (for logged-in sessions)', true)
   .option('--no-profile', 'Use new browser profile')
+  .option('--profile-dir <dir>', 'Chrome user-data-dir for the app login profile')
   .option('--browser <name>', 'Browser to drive: chrome | edge | brave | opera | vivaldi | chromium', 'chrome')
   .option('--allow <tools>', 'Comma-separated tools to allow without confirmation (e.g. fs.write,shell.exec)')
   .option('--interactive', 'Prompt for permission decisions via the API instead of denying immediately')
@@ -280,7 +281,7 @@ program
           // Distinct profile dir + CDP port keep accounts from colliding on the
           // same browser instance.
           userDataDir: i === 0
-            ? undefined
+            ? options.profileDir
             : path.join(os.homedir(), '.browser-ai-bridge', 'profiles', `${providerId}-account-${i + 1}`),
           cdpPort: 9222 + i,
         });
@@ -413,6 +414,7 @@ program
   .option('--no-headless', 'Show browser window')
   .option('--profile', 'Use existing browser profile', true)
   .option('--no-profile', 'Use new browser profile')
+  .option('--profile-dir <dir>', 'Chrome user-data-dir for the app login profile')
   .option('--browser <name>', 'Browser to drive: chrome | edge | brave | opera | vivaldi | chromium', 'chrome')
   .option('--allow <tools>', 'Comma-separated tools to allow without confirmation (e.g. fs.write,shell.exec)')
   .action(async (message, options) => {
@@ -430,6 +432,7 @@ program
       headless: options.headless,
       useExistingProfile: options.profile,
       browser: options.browser,
+      userDataDir: options.profileDir,
     });
 
     provider.setTools(runtime.getToolDescriptions());
@@ -563,4 +566,16 @@ plugin
     }
   });
 
-program.parse();
+// Electron (even under ELECTRON_RUN_AS_NODE) still sets process.versions.electron,
+// which makes Commander treat argv differently and report the script path as an
+// unknown command. Normalize to plain user args before parsing.
+const userArgs = process.argv.slice(2);
+if (
+  userArgs.length > 0 &&
+  (userArgs[0] === __filename ||
+    userArgs[0] === process.argv[1] ||
+    /[\\/]cli[\\/]index\.(js|mjs|cjs)$/.test(userArgs[0]))
+) {
+  userArgs.shift();
+}
+program.parse(userArgs, { from: 'user' });

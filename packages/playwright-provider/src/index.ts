@@ -87,6 +87,13 @@ export { ExtensionAdapter } from './extension-adapter.js';
 export { CDPClient } from './cdp-client.js';
 export type { NetworkCaptureChunk } from './cdp-client.js';
 
+// Attach to the user's real Chrome profile (logged-in tabs)
+export { connectToUserChrome, readDevToolsActivePort, isChromeRunning } from './chrome-attach.js';
+export type { ChromeAttachOptions } from './chrome-attach.js';
+
+// App-managed login profile (keeps working when the everyday browser is closed)
+export { getAppProfileDir, ensureAppProfileDir, isSignedInHint } from './app-profile.js';
+
 // Native stream interception
 export { CdpTokenStream } from './stream-interceptor.js';
 export {

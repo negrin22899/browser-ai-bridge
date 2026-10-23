@@ -46,6 +46,8 @@ export default function Wizard() {
   const [providerId, setProviderId] = useState<string>('google-ai');
   const [verifyState, setVerifyState] = useState<'idle' | 'checking' | 'ok' | 'fail'>('idle');
   const [verifyError, setVerifyError] = useState<string | null>(null);
+  /** User must explicitly allow the app to use the signed-in browser session. */
+  const [permission, setPermission] = useState<'unknown' | 'allowed' | 'denied'>('unknown');
   const [copied, setCopied] = useState(false);
   const [apiPort, setApiPort] = useState(3000);
 
@@ -105,6 +107,16 @@ export default function Wizard() {
   };
 
   const verifySignedIn = async () => {
+    if (permission !== 'allowed') {
+      setVerifyState('fail');
+      setVerifyError(
+        t(
+          'Сначала нажми «Разрешить», чтобы приложение могло использовать вход.',
+          'Press "Allow" first so the app can use the sign-in.',
+        ),
+      );
+      return;
+    }
     setVerifyState('checking');
     setVerifyError(null);
     try {
@@ -304,12 +316,12 @@ export default function Wizard() {
             <p className="mb-6 text-text-muted">
               {providerId === 'google-ai'
                 ? t(
-                    'Откроем Google Поиск с AI-режимом. Вход в Gemini не нужен — просто открой вкладку, при желании выбери модель (Gemini / Argon) прямо на странице Google и нажми «Проверить».',
-                    'We will open Google Search with AI Mode. No Gemini login needed — just open the tab, pick a model (Gemini / Argon) on the Google page if you like, then hit "Verify".',
+                    'Нажми «Открыть сайт» — откроется окно входа Google. Выбери аккаунт (если нужно) и залогинься. Потом нажми «Разрешить» — приложение будет работать через этот вход, даже если закроешь браузер.',
+                    'Click "Open site" — a Google sign-in window will appear. Pick your account if needed and sign in. Then hit "Allow" — the app will use that sign-in even after you close the browser.',
                   )
                 : t(
-                    'Мы откроем сайт в твоём браузере. Залогинься под своим аккаунтом, вернись сюда и нажми «Проверить». Мы поднимем сервер и убедимся, что сессия работает.',
-                    'We will open the site in your browser. Sign in, come back, and hit "Verify". We will spin up the server and confirm your session works.',
+                    'Нажми «Открыть сайт» — откроется окно входа. Выбери аккаунт и залогинься. Потом нажми «Разрешить» — приложение будет работать через этот вход, даже если закроешь браузер.',
+                    'Click "Open site" — a sign-in window will appear. Sign in with your account. Then hit "Allow" — the app will use that sign-in even after you close the browser.',
                   )}
             </p>
 
@@ -330,6 +342,60 @@ export default function Wizard() {
                   {t('Открыть сайт', 'Open site')}
                 </button>
               </div>
+            </div>
+
+            {/* Explicit Allow / Deny — the app may only use the session after this. */}
+            <div className="p-4 rounded-lg mb-4 border border-border bg-surface">
+              <p className="text-sm font-medium text-text mb-3">
+                {t(
+                  'Разрешить приложению использовать этот вход?',
+                  'Allow the app to use this sign-in?',
+                )}
+              </p>
+              <div className="flex gap-3">
+                <button
+                  onClick={() => setPermission('allowed')}
+                  disabled={verifyState === 'checking'}
+                  className={`flex-1 px-4 py-2.5 rounded-lg text-sm font-medium transition-colors ${
+                    permission === 'allowed'
+                      ? 'bg-success text-white'
+                      : 'bg-accent text-accent-fg hover:opacity-90'
+                  }`}
+                >
+                  {permission === 'allowed'
+                    ? t('Разрешено ✓', 'Allowed ✓')
+                    : t('Разрешить', 'Allow')}
+                </button>
+                <button
+                  onClick={() => setPermission('denied')}
+                  disabled={verifyState === 'checking'}
+                  className={`flex-1 px-4 py-2.5 rounded-lg text-sm font-medium transition-colors ${
+                    permission === 'denied'
+                      ? 'bg-danger text-white'
+                      : 'bg-surface-inset text-text-muted hover:text-text'
+                  }`}
+                >
+                  {permission === 'denied'
+                    ? t('Отклонено', 'Denied')
+                    : t('Отклонить', 'Deny')}
+                </button>
+              </div>
+              {permission === 'denied' && (
+                <p className="mt-2 text-xs text-danger">
+                  {t(
+                    'Без разрешения приложение не сможет получать ответы. Нажми «Разрешить», чтобы продолжить.',
+                    'Without permission the app cannot read answers. Press "Allow" to continue.',
+                  )}
+                </p>
+              )}
+              {permission === 'allowed' && (
+                <p className="mt-2 text-xs text-success">
+                  {t(
+                    'Ок. Теперь можно нажать «Проверить».',
+                    'OK. You can press "Verify" now.',
+                  )}
+                </p>
+              )}
             </div>
 
             {verifyState !== 'idle' && (
@@ -388,7 +454,7 @@ export default function Wizard() {
               </button>
               <button
                 onClick={verifySignedIn}
-                disabled={verifyState === 'checking'}
+                disabled={verifyState === 'checking' || permission !== 'allowed'}
                 className={primaryBtnClass}
               >
                 {verifyState === 'checking' ? (

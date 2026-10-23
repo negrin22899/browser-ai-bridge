@@ -1,4 +1,4 @@
-import type { Browser } from 'playwright-core';
+import type { Browser, Page } from 'playwright-core';
 import { BrowserSession } from './browser-session.js';
 
 /**
@@ -17,18 +17,57 @@ export class TabManager {
     this.browser = browser;
   }
 
-  async createSession(id?: string): Promise<BrowserSession> {
+  /**
+   * Reuse an already-open tab whose URL matches any of the patterns
+   * (substring match). Falls back to the first non-blank http(s) page
+   * when only one such page exists. Returns null when nothing fits.
+   */
+  private findExistingPage(urlPatterns: string[]): Page | null {
+    if (!this.browser) return null;
+    const contexts = this.browser.contexts();
+    const pages: Page[] = [];
+    for (const ctx of contexts) {
+      for (const page of ctx.pages()) pages.push(page);
+    }
+    if (pages.length === 0) return null;
+
+    const needles = urlPatterns.map((p) => p.toLowerCase());
+    for (const page of pages) {
+      const url = (page.url() || '').toLowerCase();
+      if (!url || url === 'about:blank') continue;
+      if (needles.some((n) => url.includes(n))) return page;
+    }
+
+    // Single real page — user likely has the provider open without a
+    // distinctive URL fragment we know about. Prefer it over a new tab.
+    const real = pages.filter((p) => {
+      const u = p.url() || '';
+      return u && u !== 'about:blank' && !u.startsWith('chrome://') && !u.startsWith('edge://');
+    });
+    return real.length === 1 ? real[0] : null;
+  }
+
+  async createSession(id?: string, opts?: { urlPatterns?: string[] }): Promise<BrowserSession> {
     if (!this.browser) {
       throw new Error('Browser not connected');
     }
 
     const sessionId = id ?? `session-${Date.now()}`;
-    const page = await this.browser.newPage();
+    let page: Page;
+
+    const existing = opts?.urlPatterns?.length ? this.findExistingPage(opts.urlPatterns) : null;
+    if (existing) {
+      console.log('[tabs] Reusing existing tab:', existing.url());
+      page = existing;
+    } else {
+      page = await this.browser.newPage();
+    }
+
     const session = new BrowserSession(sessionId);
     await session.attach(page);
 
     this.sessions.set(sessionId, session);
-    
+
     if (!this.activeSessionId) {
       this.activeSessionId = sessionId;
     }

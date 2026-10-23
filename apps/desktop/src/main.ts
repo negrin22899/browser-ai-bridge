@@ -13,11 +13,15 @@ import {
 } from 'electron';
 import path from 'path';
 import fs from 'fs';
+import http from 'http';
 import { execSync, spawn, ChildProcess } from 'child_process';
+import { pathToFileURL } from 'url';
 
 let mainWindow: BrowserWindow | null = null;
 let tray: Tray | null = null;
 let serverProcess: ChildProcess | null = null;
+let uiServer: http.Server | null = null;
+let uiServerPort = 0;
 let isQuitting = false;
 
 // App state
@@ -44,6 +48,14 @@ function getChromeUserDataDir(): string {
     default:
       return '';
   }
+}
+
+/**
+ * App-managed Chrome profile. Login window and the Playwright session share
+ * it, so signing in once is enough and the everyday browser can stay closed.
+ */
+function getAppChromeProfileDir(): string {
+  return path.join(process.env.HOME || process.env.USERPROFILE || '', '.browser-ai-bridge', 'chrome-profile');
 }
 
 function getChromeExecutablePath(): string {
@@ -84,6 +96,87 @@ function getCliPath(): string {
   }
   // Dev: apps/desktop/dist → ../cli/dist/index.js
   return path.join(getAppPath(), '..', 'cli', 'dist', 'index.js');
+}
+
+function getDashboardDir(): string | null {
+  const candidates = [
+    path.join(process.resourcesPath, 'dashboard'),
+    path.join(getAppPath(), '..', 'dashboard', 'dist'),
+    path.join(getAppPath(), 'dashboard'),
+  ];
+  return candidates.find((p) => fs.existsSync(path.join(p, 'index.html'))) ?? null;
+}
+
+/**
+ * Serve the dashboard over 127.0.0.1. Vite emits ES modules, and Chromium
+ * always fetches module scripts with CORS — which fails on the opaque file://
+ * origin, leaving the window stuck on its backgroundColor. A tiny local HTTP
+ * server avoids that entirely.
+ */
+function startUiServer(rootDir: string): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const mime: Record<string, string> = {
+      '.html': 'text/html; charset=utf-8',
+      '.js': 'text/javascript; charset=utf-8',
+      '.mjs': 'text/javascript; charset=utf-8',
+      '.css': 'text/css; charset=utf-8',
+      '.json': 'application/json; charset=utf-8',
+      '.svg': 'image/svg+xml',
+      '.png': 'image/png',
+      '.jpg': 'image/jpeg',
+      '.webp': 'image/webp',
+      '.ico': 'image/x-icon',
+      '.woff': 'font/woff',
+      '.woff2': 'font/woff2',
+      '.map': 'application/json; charset=utf-8',
+      '.webmanifest': 'application/manifest+json',
+    };
+
+    const server = http.createServer((req, res) => {
+      try {
+        const urlPath = decodeURIComponent((req.url || '/').split('?')[0]);
+        let filePath = path.join(rootDir, urlPath === '/' ? 'index.html' : urlPath);
+        if (!filePath.startsWith(rootDir)) {
+          res.writeHead(403).end('Forbidden');
+          return;
+        }
+        if (!fs.existsSync(filePath) || fs.statSync(filePath).isDirectory()) {
+          filePath = path.join(rootDir, 'index.html');
+        }
+        const ext = path.extname(filePath).toLowerCase();
+        res.writeHead(200, {
+          'Content-Type': mime[ext] || 'application/octet-stream',
+          'Cache-Control': 'no-cache',
+        });
+        fs.createReadStream(filePath).pipe(res);
+      } catch {
+        res.writeHead(500).end('Internal error');
+      }
+    });
+
+    server.once('error', reject);
+    server.listen(0, '127.0.0.1', () => {
+      const addr = server.address();
+      const port = typeof addr === 'object' && addr ? addr.port : 0;
+      if (!port) {
+        reject(new Error('UI server failed to bind a port'));
+        return;
+      }
+      uiServer = server;
+      uiServerPort = port;
+      resolve(`http://127.0.0.1:${port}/index.html`);
+    });
+  });
+}
+
+function stopUiServer(): void {
+  try {
+    uiServer?.close();
+  } catch {
+    // ignore
+  }
+  uiServer = null;
+  uiServerPort = 0;
 }
 
 // ─── Settings store (used by the dashboard via IPC) ─────────────
@@ -187,6 +280,29 @@ function unregisterHotkeys(): void {
 
 // ─── Window ──────────────────────────────────────────────────────
 
+function showLoadError(message: string): void {
+  const safe = message.replace(/[<>&]/g, (c) => ({ '<': '&lt;', '>': '&gt;', '&': '&amp;' })[c]!);
+  const html = `<!DOCTYPE html><html><head><meta charset="utf-8"><title>Browser AI Bridge</title>
+<style>
+  body { margin:0; min-height:100vh; display:flex; align-items:center; justify-content:center;
+         font-family: system-ui, sans-serif; background:#1a1a2e; color:#eee; padding:32px; }
+  .box { max-width:520px; background:#252542; border:1px solid #3d3d66; border-radius:12px; padding:24px; }
+  h1 { margin:0 0 12px; font-size:18px; color:#c4b5fd; }
+  p { margin:0 0 8px; line-height:1.5; color:#c8c8e0; font-size:14px; word-break:break-word; }
+</style></head><body><div class="box">
+<h1>Не удалось загрузить интерфейс</h1>
+<p>${safe}</p>
+<p>Попробуй переустановить приложение или запустить: <code>npm run build</code></p>
+</div></body></html>`;
+  const tmp = path.join(app.getPath('temp'), 'bab-load-error.html');
+  try {
+    fs.writeFileSync(tmp, html, 'utf-8');
+    mainWindow?.loadFile(tmp).catch(() => {});
+  } catch {
+    // last resort
+  }
+}
+
 function createWindow(): void {
   mainWindow = new BrowserWindow({
     width: 1280,
@@ -211,11 +327,38 @@ function createWindow(): void {
     mainWindow.loadURL('http://localhost:5173');
     mainWindow.webContents.openDevTools();
   } else {
-    const dashboardPath = path.join(process.resourcesPath, 'dashboard', 'index.html');
-    if (fs.existsSync(dashboardPath)) {
-      mainWindow.loadFile(dashboardPath);
+    const dashboardDir = getDashboardDir();
+    if (!dashboardDir) {
+      console.error('[window] Dashboard not found in resources');
+      showLoadError('Dashboard UI files not found in resources.');
+    } else {
+      startUiServer(dashboardDir)
+        .then((url) => {
+          console.log('[window] Serving dashboard at', url, 'from', dashboardDir);
+          return mainWindow!.loadURL(url);
+        })
+        .catch((err) => {
+          console.error('[window] UI server / load failed:', err);
+          // Fallback: file:// may still work for non-module assets
+          const indexHtml = path.join(dashboardDir, 'index.html');
+          mainWindow
+            ?.loadURL(pathToFileURL(indexHtml).href)
+            .catch(() => showLoadError(String(err)));
+        });
     }
   }
+
+  mainWindow.webContents.on('did-fail-load', (_e, code, desc, url) => {
+    console.error('[window] did-fail-load', code, desc, url);
+    if (code === -3) return; // aborted (redirect / navigation cancel)
+    if (url.startsWith('data:') || url.endsWith('bab-load-error.html')) return;
+    showLoadError(`${desc} (${code}) while loading ${url}`);
+  });
+
+  mainWindow.webContents.on('console-message', (_e, level, message, line, sourceId) => {
+    const tag = level >= 2 ? 'error' : level === 1 ? 'warn' : 'info';
+    console.log(`[renderer:${tag}] ${message} (${sourceId}:${line})`);
+  });
 
   // Prevent close — minimize to tray instead
   mainWindow.on('close', (e) => {
@@ -333,6 +476,8 @@ async function startServer(port = 3000): Promise<{ success: boolean; error?: str
       '--browser', browser,
       headless ? '--headless' : '--no-headless',
       useProfile ? '--profile' : '--no-profile',
+      // Shared app profile: login window and server see the same cookies.
+      '--profile-dir', getAppChromeProfileDir(),
     ];
 
     // Run the CLI with Electron's bundled Node runtime (ELECTRON_RUN_AS_NODE),
@@ -451,6 +596,7 @@ ipcMain.handle('open-external', async (_e: any, url: string) => {
 // ─── IPC: Provider detection & active provider ───────────────────
 
 const PROVIDER_URLS: Record<string, string> = {
+  'google-ai': 'https://www.google.com/search?udm=50',
   gemini: 'https://gemini.google.com',
   chatgpt: 'https://chatgpt.com',
   claude: 'https://claude.ai',
@@ -470,8 +616,29 @@ ipcMain.handle('check-chrome', async () => {
 
 ipcMain.handle('open-provider-signin', async (_e: any, url: string) => {
   try {
-    await shell.openExternal(url);
-    return { success: true, url };
+    const profileDir = getAppChromeProfileDir();
+    fs.mkdirSync(profileDir, { recursive: true });
+    const chrome = getChromeExecutablePath();
+    if (!fs.existsSync(chrome)) {
+      await shell.openExternal(url);
+      return { success: true, url, fallback: true };
+    }
+    // Dedicated login window on the app profile + CDP so the server can
+    // attach to the same Chrome afterwards. The everyday browser is untouched.
+    const child = spawn(
+      chrome,
+      [
+        `--user-data-dir=${profileDir}`,
+        `--remote-debugging-port=9222`,
+        '--no-first-run',
+        '--no-default-browser-check',
+        '--new-window',
+        url,
+      ],
+      { detached: true, stdio: 'ignore', windowsHide: false }
+    );
+    child.unref();
+    return { success: true, url, profileDir };
   } catch (error: any) {
     return { success: false, error: error.message };
   }
@@ -512,7 +679,7 @@ ipcMain.handle('get-detected-providers', async () => {
 });
 
 ipcMain.handle('set-active-provider', async (_e: any, providerId: string) => {
-  const allowed = ['gemini', 'chatgpt', 'claude', 'deepseek'];
+  const allowed = ['google-ai', 'gemini', 'chatgpt', 'claude', 'deepseek'];
   if (!allowed.includes(providerId)) {
     return { success: false, error: 'Unknown provider' };
   }
@@ -698,4 +865,5 @@ app.on('before-quit', () => {
   isQuitting = true;
   unregisterHotkeys();
   stopServer();
+  stopUiServer();
 });

@@ -18,6 +18,8 @@ import { withRetry, withConnectionRetry } from './retry-logic.js';
 import { CDPClient } from './cdp-client.js';
 import { CdpTokenStream } from './stream-interceptor.js';
 import { ProviderBlockError, type BlockErrorCode } from './stream-parsers.js';
+import { connectToUserChrome } from './chrome-attach.js';
+import { ensureAppProfileDir } from './app-profile.js';
 
 export interface PlaywrightProviderOptions {
   id: string;
@@ -103,7 +105,9 @@ export class PlaywrightProvider implements Provider {
     // browser chosen in Settings (chrome | edge | brave | opera | vivaldi | chromium).
     const info = getBrowserInfo(this.browserId);
     const executablePath = this.executablePath || info?.executablePath || '';
-    const userDataDir = this.userDataDir || info?.userDataDir;
+    // App-managed profile (login window stores cookies here). Explicit
+    // userDataDir (e.g. multi-account) still wins.
+    const userDataDir = this.userDataDir || ensureAppProfileDir();
     if (!executablePath) {
       throw new Error(
         `${info?.name ?? this.browserId} is not installed. ` +
@@ -111,46 +115,45 @@ export class PlaywrightProvider implements Provider {
       );
     }
 
-    // Try to connect to existing Chrome via CDP first
+    // 1) Preferred: attach to the app-managed Chrome (the one the user
+    //    signed into via "Open site"). Works even when the everyday browser
+    //    is closed — cookies live in this profile directory.
+    if (this.useExistingProfile) {
+      try {
+        return await connectToUserChrome({
+          executablePath,
+          userDataDir,
+          cdpPort: this.cdpPort,
+          headless: this.headless,
+          allowRelaunch: true,
+        });
+      } catch (error) {
+        console.warn('[browser] attach to app profile failed:', error);
+      }
+    }
+
+    // 2) Plain CDP (Chrome already started with --remote-debugging-port).
     try {
       const browser = await chromium.connectOverCDP(`http://localhost:${this.cdpPort}`);
       console.log('Connected to existing Chrome via CDP');
       return browser;
     } catch {
-      // CDP connection failed, try persistent context
+      // fall through
     }
 
-    if (this.useExistingProfile && userDataDir) {
-      try {
-        const context = await chromium.launchPersistentContext(
-          userDataDir,
-          {
-            headless: this.headless,
-            executablePath,
-            args: [
-              '--disable-blink-features=AutomationControlled',
-              '--no-first-run',
-              '--no-default-browser-check',
-            ],
-          }
-        );
-        console.log('Launched Chrome with existing profile');
-        const browser = context.browser();
-        if (browser) {
-          return browser;
-        }
-        throw new Error('Persistent context did not expose a browser');
-      } catch (error) {
-        console.warn('Failed to launch with existing profile:', error);
-      }
-    }
-
-    console.log('Launching new Chrome instance');
+    // 3) Last resort: isolated browser (NO user logins).
+    console.warn(
+      '[browser] Falling back to an isolated Chrome without your profile. ' +
+        'Logins will not be available.'
+    );
     return await chromium.launch({
       headless: this.headless,
       executablePath,
     });
   }
+
+  // (persistent-context wrapper removed — attach path uses CDP on the
+  //  user's real Chrome profile via chrome-attach.ts)
 
   /**
    * Return the active session, recreating it if the tab was closed.

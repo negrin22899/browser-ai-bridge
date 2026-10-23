@@ -39,7 +39,7 @@ export class BrowserSession {
   async attach(page: Page): Promise<void> {
     this.page = page;
     this._url = page.url();
-    this._title = await page.title();
+    this._title = await page.title().catch(() => '');
   }
 
   async detach(): Promise<void> {
