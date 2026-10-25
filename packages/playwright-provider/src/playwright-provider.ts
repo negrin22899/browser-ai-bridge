@@ -18,8 +18,12 @@ import { withRetry, withConnectionRetry } from './retry-logic.js';
 import { CDPClient } from './cdp-client.js';
 import { CdpTokenStream } from './stream-interceptor.js';
 import { ProviderBlockError, type BlockErrorCode } from './stream-parsers.js';
-import { connectToUserChrome } from './chrome-attach.js';
-import { ensureAppProfileDir } from './app-profile.js';
+import {
+  ensureAppProfileDir,
+  loadAuthCookies,
+  toPlaywrightCookies,
+  hasGoogleSessionCookies,
+} from './app-profile.js';
 
 export interface PlaywrightProviderOptions {
   id: string;
@@ -101,12 +105,8 @@ export class PlaywrightProvider implements Provider {
   }
 
   private async launchBrowser(): Promise<Browser> {
-    // Multi-browser support: resolve the executable + profile dir for the
-    // browser chosen in Settings (chrome | edge | brave | opera | vivaldi | chromium).
     const info = getBrowserInfo(this.browserId);
     const executablePath = this.executablePath || info?.executablePath || '';
-    // App-managed profile (login window stores cookies here). Explicit
-    // userDataDir (e.g. multi-account) still wins.
     const userDataDir = this.userDataDir || ensureAppProfileDir();
     if (!executablePath) {
       throw new Error(
@@ -115,24 +115,38 @@ export class PlaywrightProvider implements Provider {
       );
     }
 
-    // 1) Preferred: attach to the app-managed Chrome (the one the user
-    //    signed into via "Open site"). Works even when the everyday browser
-    //    is closed — cookies live in this profile directory.
-    if (this.useExistingProfile) {
+    const cookies = toPlaywrightCookies(loadAuthCookies());
+    const hasAuth = cookies.length > 0 && hasGoogleSessionCookies();
+
+    // Default to a headless automation browser when we already have a saved
+    // Google session — no extra Chrome window on the user's screen.
+    const headless = this.headless || (hasAuth && this.useExistingProfile);
+
+    // 1) Fast path: headless browser + cookies from the OAuth popup.
+    if (hasAuth) {
       try {
-        return await connectToUserChrome({
+        const context = await chromium.launchPersistentContext(userDataDir, {
+          headless,
           executablePath,
-          userDataDir,
-          cdpPort: this.cdpPort,
-          headless: this.headless,
-          allowRelaunch: true,
+          args: [
+            '--no-first-run',
+            '--no-default-browser-check',
+            '--disable-blink-features=AutomationControlled',
+          ],
         });
+        try {
+          await context.addCookies(cookies as never);
+        } catch (e) {
+          console.warn('[browser] addCookies failed:', e);
+        }
+        console.log('[browser] Started with saved Google session (%d cookies)', cookies.length);
+        return context.browser() ?? (this.wrapContext(context) as unknown as Browser);
       } catch (error) {
-        console.warn('[browser] attach to app profile failed:', error);
+        console.warn('[browser] cookie-session launch failed:', error);
       }
     }
 
-    // 2) Plain CDP (Chrome already started with --remote-debugging-port).
+    // 2) CDP to a login Chrome if the user still has one open.
     try {
       const browser = await chromium.connectOverCDP(`http://localhost:${this.cdpPort}`);
       console.log('Connected to existing Chrome via CDP');
@@ -141,15 +155,26 @@ export class PlaywrightProvider implements Provider {
       // fall through
     }
 
-    // 3) Last resort: isolated browser (NO user logins).
-    console.warn(
-      '[browser] Falling back to an isolated Chrome without your profile. ' +
-        'Logins will not be available.'
-    );
+    // 3) Last resort: isolated browser.
+    console.warn('[browser] Launching isolated Chrome (no saved session)');
     return await chromium.launch({
       headless: this.headless,
       executablePath,
     });
+  }
+
+  /** Minimal Browser wrapper around a persistent context. */
+  private wrapContext(context: import('playwright-core').BrowserContext): Browser {
+    return {
+      contexts: () => [context],
+      newPage: () => context.newPage(),
+      close: async () => {
+        await context.close().catch(() => {});
+      },
+      isConnected: () => true,
+      on: () => {},
+      off: () => {},
+    } as unknown as Browser;
   }
 
   // (persistent-context wrapper removed — attach path uses CDP on the

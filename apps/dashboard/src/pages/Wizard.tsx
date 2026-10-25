@@ -120,6 +120,23 @@ export default function Wizard() {
     setVerifyState('checking');
     setVerifyError(null);
     try {
+      // 1) Real Google session check (app profile / login window).
+      if (isElectron() && window.electronAPI?.checkProviderStatus) {
+        const status = await window.electronAPI.checkProviderStatus(providerId);
+        if (!status?.connected && !status?.signedIn) {
+          setVerifyState('fail');
+          setVerifyError(
+            status?.error ||
+              t(
+                'Google-аккаунт не найден. Нажми «Открыть сайт» и войди в аккаунт.',
+                'No Google account found. Click "Open site" and sign in first.',
+              ),
+          );
+          return;
+        }
+      }
+
+      // 2) Start / reuse the server and wait until the provider is healthy.
       await ensureProviderActive();
       const row = await waitForProviderHealthy(providerId, { timeoutMs: 20000 });
       if (row?.healthy) {

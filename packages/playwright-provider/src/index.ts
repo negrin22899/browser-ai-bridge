@@ -92,7 +92,18 @@ export { connectToUserChrome, readDevToolsActivePort, isChromeRunning } from './
 export type { ChromeAttachOptions } from './chrome-attach.js';
 
 // App-managed login profile (keeps working when the everyday browser is closed)
-export { getAppProfileDir, ensureAppProfileDir, isSignedInHint } from './app-profile.js';
+export {
+  getAppProfileDir,
+  ensureAppProfileDir,
+  checkGoogleSignIn,
+  googleSignInUrl,
+  loadAuthCookies,
+  saveAuthCookies,
+  toPlaywrightCookies,
+  hasGoogleSessionCookies,
+  authCookiesPath,
+} from './app-profile.js';
+export type { SignInCheckResult } from './app-profile.js';
 
 // Native stream interception
 export { CdpTokenStream } from './stream-interceptor.js';

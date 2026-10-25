@@ -10,6 +10,8 @@ import {
   clipboard,
   globalShortcut,
   Notification,
+  session,
+  Session,
 } from 'electron';
 import path from 'path';
 import fs from 'fs';
@@ -23,6 +25,41 @@ let serverProcess: ChildProcess | null = null;
 let uiServer: http.Server | null = null;
 let uiServerPort = 0;
 let isQuitting = false;
+let signInWindow: BrowserWindow | null = null;
+
+/** Persisted Google auth cookies shared with Playwright. */
+function authCookiesPath(): string {
+  return path.join(
+    process.env.HOME || process.env.USERPROFILE || '',
+    '.browser-ai-bridge',
+    'auth-cookies.json'
+  );
+}
+
+function saveAuthCookies(cookies: any[]): void {
+  try {
+    const dir = path.dirname(authCookiesPath());
+    fs.mkdirSync(dir, { recursive: true });
+    fs.writeFileSync(authCookiesPath(), JSON.stringify(cookies, null, 2), 'utf-8');
+    console.log('[auth] Saved', cookies.length, 'cookies for Playwright');
+  } catch (e) {
+    console.error('[auth] Failed to save cookies:', e);
+  }
+}
+
+function loadAuthCookies(): any[] {
+  try {
+    const p = authCookiesPath();
+    if (!fs.existsSync(p)) return [];
+    return JSON.parse(fs.readFileSync(p, 'utf-8'));
+  } catch {
+    return [];
+  }
+}
+
+function getSignInSession(): Session {
+  return session.fromPartition('persist:bab-auth');
+}
 
 // App state
 const state = {
@@ -463,7 +500,10 @@ async function startServer(port = 3000): Promise<{ success: boolean; error?: str
     const browserSettings = settings.browser || {};
     const chosenPort = port || general.serverPort || settings.serverPort || 3000;
     const site = settings.provider || 'gemini';
-    const headless = browserSettings.headless ?? settings.headless ?? false;
+    // Headless when a saved Google session exists (OAuth popup) so no extra
+    // Chrome window appears next to the desktop app.
+    const hasSavedAuth = loadAuthCookies().length > 0;
+    const headless = browserSettings.headless ?? settings.headless ?? hasSavedAuth;
     const useProfile = browserSettings.useExistingProfile ?? settings.useExistingProfile ?? true;
     const browser =
       (typeof settings.browser === 'string' ? settings.browser : browserSettings.id) || 'chrome';
@@ -476,7 +516,6 @@ async function startServer(port = 3000): Promise<{ success: boolean; error?: str
       '--browser', browser,
       headless ? '--headless' : '--no-headless',
       useProfile ? '--profile' : '--no-profile',
-      // Shared app profile: login window and server see the same cookies.
       '--profile-dir', getAppChromeProfileDir(),
     ];
 
@@ -616,48 +655,124 @@ ipcMain.handle('check-chrome', async () => {
 
 ipcMain.handle('open-provider-signin', async (_e: any, url: string) => {
   try {
-    const profileDir = getAppChromeProfileDir();
-    fs.mkdirSync(profileDir, { recursive: true });
-    const chrome = getChromeExecutablePath();
-    if (!fs.existsSync(chrome)) {
-      await shell.openExternal(url);
-      return { success: true, url, fallback: true };
+    if (signInWindow && !signInWindow.isDestroyed()) {
+      signInWindow.focus();
+      return { success: true, url, reused: true };
     }
-    // Dedicated login window on the app profile + CDP so the server can
-    // attach to the same Chrome afterwards. The everyday browser is untouched.
-    const child = spawn(
-      chrome,
-      [
-        `--user-data-dir=${profileDir}`,
-        `--remote-debugging-port=9222`,
-        '--no-first-run',
-        '--no-default-browser-check',
-        '--new-window',
-        url,
-      ],
-      { detached: true, stdio: 'ignore', windowsHide: false }
-    );
-    child.unref();
-    return { success: true, url, profileDir };
+
+    // Google OAuth-style popup: compact window, no tab bar / address bar —
+    // same look as the official "Choose an account" window Google uses.
+    const signInUrl =
+      url.includes('accounts.google.com') || url.includes('myaccount.google.com')
+        ? url
+        : `https://accounts.google.com/AccountChooser?continue=${encodeURIComponent(url)}&hl=en`;
+
+    const ses = getSignInSession();
+
+    signInWindow = new BrowserWindow({
+      width: 480,
+      height: 700,
+      minWidth: 400,
+      minHeight: 560,
+      maxWidth: 560,
+      maxHeight: 820,
+      resizable: true,
+      maximizable: false,
+      fullscreenable: false,
+      modal: false,
+      parent: mainWindow ?? undefined,
+      title: 'Sign in with Google',
+      autoHideMenuBar: true,
+      backgroundColor: '#ffffff',
+      webPreferences: {
+        session: ses,
+        nodeIntegration: false,
+        contextIsolation: true,
+        sandbox: true,
+      },
+    });
+
+    signInWindow.setMenuBarVisibility(false);
+
+    // Persist cookies after every navigation so Playwright can reuse them
+    // even after this popup is closed.
+    const persist = async () => {
+      try {
+        const cookies = await ses.cookies.get({});
+        saveAuthCookies(cookies);
+      } catch (e) {
+        console.error('[auth] cookie persist failed:', e);
+      }
+    };
+
+    signInWindow.webContents.on('did-finish-load', async () => {
+      await persist();
+      const u = signInWindow?.webContents.getURL() || '';
+      // Signed in → myaccount / provider page, not the ServiceLogin form.
+      const signedIn =
+        /myaccount\.google\.com/i.test(u) ||
+        (/gemini\.google\.com|google\.com\/search|chatgpt\.com|claude\.ai|chat\.deepseek\.com/i.test(u) &&
+          !/ServiceLogin|signin|AccountChooser/i.test(u));
+      if (signedIn) {
+        await persist();
+        setTimeout(() => {
+          if (signInWindow && !signInWindow.isDestroyed()) {
+            signInWindow.close();
+          }
+        }, 1200);
+      }
+    });
+
+    signInWindow.on('closed', () => {
+      signInWindow = null;
+      void persist();
+    });
+
+    await signInWindow.loadURL(signInUrl);
+    return { success: true, url: signInUrl, mode: 'oauth-popup' };
   } catch (error: any) {
     return { success: false, error: error.message };
   }
 });
 
 ipcMain.handle('check-provider-status', async (_e: any, providerId: string) => {
-  const url = PROVIDER_URLS[providerId];
-  if (!url) return { connected: false, error: 'Unknown provider' };
-  const https = require('https');
-  return new Promise((resolve) => {
-    const req = https.get(url, { timeout: 5000 }, (res: any) => {
-      resolve({ connected: res.statusCode === 200, statusCode: res.statusCode, providerId });
-    });
-    req.on('error', () => resolve({ connected: false, error: 'Network error', providerId }));
-    req.on('timeout', () => {
-      req.destroy();
-      resolve({ connected: false, error: 'Timeout', providerId });
-    });
-  });
+  try {
+    const ses = getSignInSession();
+    const cookies = await ses.cookies.get({});
+    // Also consider cookies we already persisted to disk.
+    const all = [...cookies, ...loadAuthCookies()];
+    const names = new Set(all.map((c) => c.name));
+    const hasGoogleSession =
+      (names.has('SID') || names.has('__Secure-1PSID') || names.has('LSID') || names.has('SIDCC')) &&
+      (names.has('HSID') || names.has('SSID') || names.has('__Secure-3PSID') || names.has('NID'));
+
+    if (!hasGoogleSession) {
+      return {
+        connected: false,
+        signedIn: false,
+        error: 'Google session not found — sign in via the popup window',
+        providerId,
+      };
+    }
+
+    // Optional: who is signed in (email from myaccount page is handled in
+    // the popup; here we only confirm the session cookie set).
+    if (cookies.length > 0) saveAuthCookies(cookies);
+
+    return {
+      connected: true,
+      signedIn: true,
+      cookieCount: all.length,
+      providerId,
+    };
+  } catch (error: any) {
+    return {
+      connected: false,
+      signedIn: false,
+      error: error?.message || 'Sign-in check failed',
+      providerId,
+    };
+  }
 });
 
 ipcMain.handle('get-detected-providers', async () => {
