@@ -63,7 +63,7 @@ export class PlaywrightProvider implements Provider {
     this.id = options.id;
     this.name = options.name;
     this.adapter = options.adapter;
-    this.headless = options.headless ?? false;
+    this.headless = options.headless ?? true;
     this.browserId = options.browser ?? 'chrome';
     this.executablePath = options.executablePath;
     this.useExistingProfile = options.useExistingProfile ?? true;
@@ -118,9 +118,13 @@ export class PlaywrightProvider implements Provider {
     const cookies = toPlaywrightCookies(loadAuthCookies());
     const hasAuth = cookies.length > 0 && hasGoogleSessionCookies();
 
-    // Default to a headless automation browser when we already have a saved
-    // Google session — no extra Chrome window on the user's screen.
-    const headless = this.headless || (hasAuth && this.useExistingProfile);
+    // Always hide the automation browser — login is done in the OAuth popup.
+    // (this.headless / this.useExistingProfile / this.cdpPort stay available
+    // for future non-default flows; the product default is fully background.)
+    void this.headless;
+    void this.useExistingProfile;
+    void this.cdpPort;
+    const headless = true;
 
     // 1) Fast path: headless browser + cookies from the OAuth popup.
     if (hasAuth) {
@@ -139,26 +143,17 @@ export class PlaywrightProvider implements Provider {
         } catch (e) {
           console.warn('[browser] addCookies failed:', e);
         }
-        console.log('[browser] Started with saved Google session (%d cookies)', cookies.length);
+        console.log('[browser] Started headless with saved Google session (%d cookies)', cookies.length);
         return context.browser() ?? (this.wrapContext(context) as unknown as Browser);
       } catch (error) {
         console.warn('[browser] cookie-session launch failed:', error);
       }
     }
 
-    // 2) CDP to a login Chrome if the user still has one open.
-    try {
-      const browser = await chromium.connectOverCDP(`http://localhost:${this.cdpPort}`);
-      console.log('Connected to existing Chrome via CDP');
-      return browser;
-    } catch {
-      // fall through
-    }
-
-    // 3) Last resort: isolated browser.
-    console.warn('[browser] Launching isolated Chrome (no saved session)');
+    // 2) Isolated headless browser (no visible window).
+    console.warn('[browser] Launching isolated headless Chrome');
     return await chromium.launch({
-      headless: this.headless,
+      headless: true,
       executablePath,
     });
   }

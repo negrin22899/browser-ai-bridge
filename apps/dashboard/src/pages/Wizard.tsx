@@ -77,7 +77,14 @@ export default function Wizard() {
 
   const openSignin = () => {
     if (isElectron() && window.electronAPI?.openProviderSignin) {
-      window.electronAPI.openProviderSignin(chosenProvider.siteUrl);
+      window.electronAPI
+        .openProviderSignin(chosenProvider.siteUrl)
+        .then((r) => {
+          if (!r?.success) {
+            console.error('Sign-in popup failed:', r?.error);
+          }
+        })
+        .catch((e) => console.error('Sign-in popup error:', e));
     } else {
       window.open(chosenProvider.siteUrl, '_blank');
     }

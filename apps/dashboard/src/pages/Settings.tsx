@@ -26,7 +26,7 @@ const DEFAULT_SETTINGS = {
   browser: {
     id: 'chrome' as BrowserInfo['id'],
     useExistingProfile: true,
-    headless: false,
+    headless: true,
     defaultTimeout: 30000,
   },
   security: {

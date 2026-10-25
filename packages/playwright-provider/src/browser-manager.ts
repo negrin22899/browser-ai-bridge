@@ -26,7 +26,7 @@ export class BrowserManager {
       useExistingProfile: options?.useExistingProfile ?? true,
       executablePath: options?.executablePath ?? this.findChromePath(),
       userDataDir: options?.userDataDir ?? this.findUserDataDir(),
-      headless: options?.headless ?? false,
+      headless: options?.headless ?? true,
       cdpPort: options?.cdpPort ?? 9222,
     };
   }

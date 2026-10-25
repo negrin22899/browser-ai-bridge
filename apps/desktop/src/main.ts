@@ -500,10 +500,9 @@ async function startServer(port = 3000): Promise<{ success: boolean; error?: str
     const browserSettings = settings.browser || {};
     const chosenPort = port || general.serverPort || settings.serverPort || 3000;
     const site = settings.provider || 'gemini';
-    // Headless when a saved Google session exists (OAuth popup) so no extra
-    // Chrome window appears next to the desktop app.
-    const hasSavedAuth = loadAuthCookies().length > 0;
-    const headless = browserSettings.headless ?? settings.headless ?? hasSavedAuth;
+    // Automation browser is ALWAYS hidden — the user only wants the result,
+    // not a Chrome window. Login happens in the compact OAuth popup.
+    const headless = true;
     const useProfile = browserSettings.useExistingProfile ?? settings.useExistingProfile ?? true;
     const browser =
       (typeof settings.browser === 'string' ? settings.browser : browserSettings.id) || 'chrome';
@@ -660,14 +659,19 @@ ipcMain.handle('open-provider-signin', async (_e: any, url: string) => {
       return { success: true, url, reused: true };
     }
 
-    // Google OAuth-style popup: compact window, no tab bar / address bar —
-    // same look as the official "Choose an account" window Google uses.
+    // Compact Google OAuth popup — same look as Google's "Choose an account"
+    // window. Not a full Chrome, not a tab. Always on top briefly so it is
+    // not buried under the main dashboard.
     const signInUrl =
       url.includes('accounts.google.com') || url.includes('myaccount.google.com')
         ? url
         : `https://accounts.google.com/AccountChooser?continue=${encodeURIComponent(url)}&hl=en`;
 
     const ses = getSignInSession();
+    // Look like desktop Chrome so Google shows the normal account chooser.
+    ses.setUserAgent(
+      'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36'
+    );
 
     signInWindow = new BrowserWindow({
       width: 480,
@@ -679,11 +683,12 @@ ipcMain.handle('open-provider-signin', async (_e: any, url: string) => {
       resizable: true,
       maximizable: false,
       fullscreenable: false,
-      modal: false,
-      parent: mainWindow ?? undefined,
+      // No parent/modal: Google OAuth in a modal child often gets stuck.
       title: 'Sign in with Google',
       autoHideMenuBar: true,
       backgroundColor: '#ffffff',
+      alwaysOnTop: true,
+      center: true,
       webPreferences: {
         session: ses,
         nodeIntegration: false,
@@ -693,6 +698,13 @@ ipcMain.handle('open-provider-signin', async (_e: any, url: string) => {
     });
 
     signInWindow.setMenuBarVisibility(false);
+    signInWindow.setAlwaysOnTop(true, 'screen-saver');
+    setTimeout(() => {
+      if (signInWindow && !signInWindow.isDestroyed()) {
+        signInWindow.setAlwaysOnTop(false);
+        signInWindow.focus();
+      }
+    }, 1500);
 
     // Persist cookies after every navigation so Playwright can reuse them
     // even after this popup is closed.
