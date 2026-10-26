@@ -64,6 +64,7 @@ export function useElectron() {
   const [serverPort, setServerPort] = useState(3000);
   const [isMaximized, setIsMaximized] = useState(false);
   const [updateStatus, setUpdateStatus] = useState<{ status: string; version?: string; percent?: number } | null>(null);
+  const [serverBusy, setServerBusy] = useState(false);
 
   useEffect(() => {
     if (!isElectron()) return;
@@ -147,12 +148,22 @@ export function useElectron() {
 
   const startServer = useCallback(async (port?: number) => {
     if (!window.electronAPI) return { success: false, error: 'Not in Electron' };
-    return await window.electronAPI.startServer(port);
+    setServerBusy(true);
+    try {
+      return await window.electronAPI.startServer(port);
+    } finally {
+      setServerBusy(false);
+    }
   }, []);
 
   const stopServer = useCallback(async () => {
     if (!window.electronAPI) return { success: false };
-    return await window.electronAPI.stopServer();
+    setServerBusy(true);
+    try {
+      return await window.electronAPI.stopServer();
+    } finally {
+      setServerBusy(false);
+    }
   }, []);
 
   const checkForUpdates = useCallback(async () => {
@@ -164,6 +175,7 @@ export function useElectron() {
     isElectron: isElectron(),
     isReady,
     serverRunning,
+    serverBusy,
     serverPort,
     isMaximized,
     updateStatus,

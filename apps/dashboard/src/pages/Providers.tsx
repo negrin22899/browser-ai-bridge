@@ -40,6 +40,7 @@ export default function Providers() {
   const [loading, setLoading] = useState(true);
   const [switching, setSwitching] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [signedInAs, setSignedInAs] = useState<Record<string, string>>({});
 
   const loadStatus = useCallback(async () => {
     setError(null);
@@ -79,7 +80,6 @@ export default function Providers() {
 
   const switchProvider = async (id: string) => {
     if (!isElectron() || !window.electronAPI?.setActiveProvider) {
-      // In pure browser dev we can't restart the server ourselves.
       window.alert(
         language === 'ru'
           ? `Для переключения провайдера перезапустите сервер вручную: bab serve --site ${id}`
@@ -90,29 +90,42 @@ export default function Providers() {
     setSwitching(id);
     setError(null);
     try {
-      // Google providers need a real sign-in first — open the OAuth popup.
-      if (/google|gemini/i.test(id) && window.electronAPI?.checkProviderStatus) {
-        const st = await window.electronAPI.checkProviderStatus(id);
-        if (!st?.signedIn && !st?.connected) {
-          const row = CATALOG.find((c) => c.id === id);
-          if (row?.siteUrl && window.electronAPI?.openProviderSignin) {
-            await window.electronAPI.openProviderSignin(row.siteUrl);
-            setError(
-              language === 'ru'
-                ? 'Открылось окно входа Google. Войдите в аккаунт и нажмите «Make active» ещё раз.'
-                : 'Google sign-in window opened. Sign in, then press "Make active" again.',
-            );
-            setSwitching(null);
-            return;
-          }
-        }
-      }
-
       const result = await window.electronAPI.setActiveProvider(id);
       if (!result.success) throw new Error(result.error || 'Switch failed');
-      // Poll /health until the new provider reports healthy (or 20s elapses).
       await waitForProviderHealthy(id, { timeoutMs: 20000 });
       await loadStatus();
+    } catch (err) {
+      setError(humanizeError(err, language));
+    } finally {
+      setSwitching(null);
+    }
+  };
+
+  /**
+   * Step 2 of the account flow: user says "I signed in" after opening the
+   * site themselves. We verify their Chrome profile, then connect.
+   */
+  const confirmSignedIn = async (id: string) => {
+    if (!isElectron() || !window.electronAPI?.checkProviderStatus) return;
+    setSwitching(id);
+    setError(null);
+    try {
+      const st = await window.electronAPI.checkProviderStatus(id);
+      if (!st?.signedIn && !st?.connected) {
+        setError(
+          language === 'ru'
+            ? 'Аккаунт не найден. Открой сайт по кнопке выше, войди в аккаунт и нажми «Я вошёл» ещё раз.'
+            : 'Account not found. Open the site above, sign in, then press "I signed in" again.',
+        );
+        return;
+      }
+      if (st.email) {
+        setSignedInAs((m) => ({ ...m, [id]: st.email as string }));
+      } else {
+        setSignedInAs((m) => ({ ...m, [id]: 'ok' }));
+      }
+      // Verified — connect this provider.
+      await switchProvider(id);
     } catch (err) {
       setError(humanizeError(err, language));
     } finally {
@@ -180,7 +193,7 @@ export default function Providers() {
                 <TextStatesSwap
                   value={
                     activeId
-                      ? activeId.charAt(0).toUpperCase() + activeId.slice(1)
+                      ? CATALOG.find((c) => c.id === activeId)?.name || activeId
                       : language === 'ru' ? 'Нет' : 'None'
                   }
                 />
@@ -299,34 +312,63 @@ export default function Providers() {
                 </div>
 
                 <div className="flex items-center gap-2 flex-shrink-0">
-                  {isActive && !isHealthy && (
+                  {/* Step 1: open the site in the user's Chrome */}
+                  <button
+                    onClick={() => openSignin(p.siteUrl)}
+                    className="px-3 py-1.5 rounded-lg text-sm bg-surface-inset text-text hover:bg-border-strong transition-colors"
+                  >
+                    {language === 'ru' ? 'Открыть сайт' : 'Open site'}
+                  </button>
+
+                  {/* Step 2: user confirms they signed in — we verify + connect */}
+                  {!isHealthy && (
                     <button
-                      onClick={() => openSignin(p.siteUrl)}
-                      className="px-3 py-1.5 rounded-lg text-sm bg-warning/15 text-warning hover:bg-warning/25 transition-colors"
-                    >
-                      {language === 'ru' ? 'Войти в аккаунт' : 'Sign in'}
-                    </button>
-                  )}
-                  {!isActive && (
-                    <button
-                      onClick={() => switchProvider(p.id)}
+                      onClick={() => confirmSignedIn(p.id)}
                       disabled={isSwitchingThis || switching !== null}
-                      className="flex items-center gap-2 px-4 py-2 bg-accent text-accent-fg rounded-lg hover:opacity-90 text-sm disabled:opacity-60 transition-opacity"
+                      className="flex items-center gap-2 px-3 py-1.5 rounded-lg text-sm bg-accent text-accent-fg hover:opacity-90 disabled:opacity-60 transition-opacity"
                     >
                       {isSwitchingThis ? (
                         <>
                           <Loader2 className="w-4 h-4 animate-spin" />
-                          {language === 'ru' ? 'Переключаем…' : 'Switching…'}
+                          {language === 'ru' ? 'Проверяем…' : 'Checking…'}
                         </>
-                      ) : language === 'ru' ? (
-                        'Сделать активным'
                       ) : (
-                        'Make active'
+                        language === 'ru' ? 'Я вошёл в аккаунт' : 'I signed in'
+                      )}
+                    </button>
+                  )}
+
+                  {/* Direct activate (for non-Google or already signed in) */}
+                  {!isActive && isHealthy && (
+                    <button
+                      onClick={() => switchProvider(p.id)}
+                      disabled={isSwitchingThis || switching !== null}
+                      className="flex items-center gap-2 px-3 py-1.5 rounded-lg text-sm bg-success/15 text-success hover:bg-success/25 disabled:opacity-60 transition-colors"
+                    >
+                      {isSwitchingThis ? (
+                        <>
+                          <Loader2 className="w-4 h-4 animate-spin" />
+                          {language === 'ru' ? 'Подключаем…' : 'Connecting…'}
+                        </>
+                      ) : (
+                        language === 'ru' ? 'Сделать активным' : 'Make active'
                       )}
                     </button>
                   )}
                 </div>
               </div>
+
+              {/* Clear 3-step hint */}
+              {!isHealthy && (
+                <p className="mt-3 text-xs text-text-muted">
+                  {language === 'ru'
+                    ? '1) «Открыть сайт» → 2) войди в аккаунт в браузере → 3) «Я вошёл в аккаунт»'
+                    : '1) "Open site" → 2) sign in in your browser → 3) "I signed in"'}
+                  {signedInAs[p.id] && signedInAs[p.id] !== 'ok'
+                    ? ` · ${language === 'ru' ? 'Аккаунт:' : 'Account:'} ${signedInAs[p.id]}`
+                    : ''}
+                </p>
+              )}
             </div>
           );
         })}

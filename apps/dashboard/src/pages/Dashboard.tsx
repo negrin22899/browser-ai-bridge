@@ -17,6 +17,7 @@ import { useElectron } from '../hooks/useElectron';
 import { NumberPopIn, TextStatesSwap, ReasoningStream } from '../components/motion';
 
 const PROVIDER_URLS: Record<string, string> = {
+  'google-ai': 'https://www.google.com/search?udm=50',
   gemini: 'https://gemini.google.com',
   chatgpt: 'https://chatgpt.com',
   claude: 'https://claude.ai',
@@ -35,6 +36,7 @@ export default function Dashboard() {
   const [loading, setLoading] = useState(true);
   const [, setError] = useState<string | null>(null);
   const [serverDown, setServerDown] = useState(false);
+  const [serverBusy, setServerBusy] = useState(false);
 
   async function loadData() {
     setLoading(true);
@@ -172,13 +174,21 @@ export default function Dashboard() {
   const systemStatus = [
     { name: t('dashboard.runtimeReady'), status: health?.status === 'ok' },
     {
-      name: t('dashboard.toolsRegistered'),
+      // Real count of local tools (fs / git / shell) registered in the runtime.
+      name:
+        language === 'ru'
+          ? `Инструменты (файлы, git, shell)`
+          : `Tools (files, git, shell)`,
       value: toolsCount !== null ? String(toolsCount) : '—',
       status: toolsCount !== null && toolsCount > 0,
     },
     {
-      name: t('dashboard.permissionsActive'),
-      value: confirmCount > 0 ? `${confirmCount} confirm` : 'auto',
+      // How many tools ask for confirmation before running (not "active rights").
+      name:
+        language === 'ru'
+          ? 'Инструменты с подтверждением'
+          : 'Tools that ask before running',
+      value: confirmCount > 0 ? String(confirmCount) : '0',
       status: true,
     },
   ];
@@ -193,15 +203,41 @@ export default function Dashboard() {
         <div className="flex items-center gap-2">
           {isElectron && (
             <button
-              onClick={() => (serverRunning ? stopServer() : startServer())}
-              className={`flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-medium transition-colors ${
+              onClick={async () => {
+                setServerBusy(true);
+                try {
+                  if (serverRunning) await stopServer();
+                  else await startServer();
+                  // Give the process a moment, then re-read status.
+                  await new Promise((r) => setTimeout(r, 1500));
+                  await loadData();
+                } finally {
+                  setServerBusy(false);
+                }
+              }}
+              disabled={serverBusy}
+              className={`flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-medium transition-colors disabled:opacity-70 ${
                 serverRunning
                   ? 'bg-danger/15 text-danger hover:bg-danger/25'
                   : 'bg-success/15 text-success hover:bg-success/25'
               }`}
             >
-              <Power className="w-4 h-4" />
-              {serverRunning ? 'Stop' : 'Start'}
+              {serverBusy ? (
+                <RefreshCw className="w-4 h-4 animate-spin" />
+              ) : (
+                <Power className="w-4 h-4" />
+              )}
+              {serverBusy
+                ? language === 'ru'
+                  ? serverRunning
+                    ? 'Останавливаем…'
+                    : 'Запускаем…'
+                  : serverRunning
+                    ? 'Stopping…'
+                    : 'Starting…'
+                : serverRunning
+                  ? language === 'ru' ? 'Стоп' : 'Stop'
+                  : language === 'ru' ? 'Старт' : 'Start'}
             </button>
           )}
           <button

@@ -25,8 +25,8 @@ interface LayoutProps {
 
 export default function Layout({ children }: LayoutProps) {
   const location = useLocation();
-  const { t } = useLanguage();
-  const { serverRunning, serverPort, startServer, stopServer } = useElectron();
+  const { t, language } = useLanguage();
+  const { serverRunning, serverBusy, serverPort, startServer, stopServer } = useElectron();
   const [copied, setCopied] = useState(false);
 
   const navigation: Array<{ name: string; href: string; icon: IconsaxIcon }> = [
@@ -90,16 +90,21 @@ export default function Layout({ children }: LayoutProps) {
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-2 text-sm">
                 <span
-                  className={`w-2 h-2 rounded-full ${serverRunning ? 'bg-success' : 'bg-danger'}`}
+                  className={`w-2 h-2 rounded-full ${
+                    serverBusy ? 'bg-accent animate-pulse' : serverRunning ? 'bg-success' : 'bg-danger'
+                  }`}
                   aria-hidden
                 />
                 <span className="text-text-muted">
-                  {serverRunning ? `Port ${serverPort}` : 'Stopped'}
+                  {serverBusy
+                    ? language === 'ru' ? 'Запуск…' : 'Starting…'
+                    : serverRunning ? `Port ${serverPort}` : 'Stopped'}
                 </span>
               </div>
               <button
                 onClick={() => (serverRunning ? stopServer() : startServer())}
-                className={`p-1.5 rounded-lg transition-colors ${
+                disabled={serverBusy}
+                className={`p-1.5 rounded-lg transition-colors disabled:opacity-50 ${
                   serverRunning
                     ? 'text-danger hover:bg-danger/10'
                     : 'text-success hover:bg-success/10'

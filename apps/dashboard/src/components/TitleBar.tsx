@@ -1,4 +1,4 @@
-import { Minus, Square, X, Wifi, WifiOff, Sun, Moon, Sparkles, Languages, Palette } from 'lucide-react';
+import { Minus, Square, X, Wifi, WifiOff, Sun, Moon, Sparkles, Languages, Palette, Loader2 } from 'lucide-react';
 import { useElectron } from '../hooks/useElectron';
 import { useTheme, type Theme } from '../contexts/ThemeContext';
 import { useLanguage } from '../contexts/LanguageContext';
@@ -11,7 +11,7 @@ const THEME_ICONS: Record<Theme, typeof Sparkles> = {
 };
 
 export default function TitleBar() {
-  const { isElectron, minimize, maximize, close, serverRunning, startServer, stopServer } = useElectron();
+  const { isElectron, minimize, maximize, close, serverRunning, serverBusy, startServer, stopServer } = useElectron();
   const { theme, setTheme } = useTheme();
   const { language, setLanguage } = useLanguage();
 
@@ -31,7 +31,12 @@ export default function TitleBar() {
           className="flex items-center gap-2"
           style={{ WebkitAppRegion: 'no-drag' } as React.CSSProperties}
         >
-          {serverRunning ? (
+          {serverBusy ? (
+            <span className="flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] bg-accent-soft text-accent">
+              <Loader2 className="w-3 h-3 animate-spin" />
+              <span>{language === 'ru' ? 'Запуск…' : 'Starting…'}</span>
+            </span>
+          ) : serverRunning ? (
             <button
               onClick={() => stopServer()}
               className="flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] bg-success/15 text-success hover:bg-success/25 transition-colors"
