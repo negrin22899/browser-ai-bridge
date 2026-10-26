@@ -105,6 +105,15 @@ export {
 } from './app-profile.js';
 export type { SignInCheckResult } from './app-profile.js';
 
+// User's real Chrome profile (read-only snapshot — never kills Chrome)
+export {
+  chromeUserDataDir,
+  readChromeAccountHint,
+  snapshotChromeCookies,
+  chromeLooksSignedIn,
+  chromeIsRunning,
+} from './chrome-profile.js';
+
 // Native stream interception
 export { CdpTokenStream } from './stream-interceptor.js';
 export {

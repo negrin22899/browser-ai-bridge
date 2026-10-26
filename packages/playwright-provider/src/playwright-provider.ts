@@ -24,6 +24,7 @@ import {
   toPlaywrightCookies,
   hasGoogleSessionCookies,
 } from './app-profile.js';
+import { snapshotChromeCookies, chromeLooksSignedIn, readChromeAccountHint } from './chrome-profile.js';
 
 export interface PlaywrightProviderOptions {
   id: string;
@@ -119,45 +120,55 @@ export class PlaywrightProvider implements Provider {
     void this.useExistingProfile;
     void this.cdpPort;
 
-    // 1) Preferred: the user's everyday Chrome (already logged into Google).
-    //    Started with --remote-debugging-port=9222 by "Open site".
+    // 1) User's Chrome via CDP if it was started with --remote-debugging-port.
     try {
       const browser = await chromium.connectOverCDP('http://127.0.0.1:9222');
-      console.log('[browser] Attached to user Chrome (logged-in profile)');
+      console.log('[browser] Attached to user Chrome (CDP)');
       return browser;
     } catch {
-      // not running with CDP
+      // not exposed
+    }
+
+    // 2) Copy cookie DB from the real Chrome profile (never kills Chrome /
+    //    never closes tabs) and run headless with that login.
+    try {
+      const account = readChromeAccountHint();
+      const snap = snapshotChromeCookies(userDataDir);
+      if (snap) {
+        console.log('[browser] Using Chrome profile snapshot%s', account ? ` (${account})` : '');
+      }
+    } catch {
+      // best-effort
     }
 
     const cookies = toPlaywrightCookies(loadAuthCookies());
     const hasAuth = cookies.length > 0 && hasGoogleSessionCookies();
     const headless = true;
 
-    // 2) Headless + cookies from a previous session.
-    if (hasAuth) {
-      try {
-        const context = await chromium.launchPersistentContext(userDataDir, {
-          headless,
-          executablePath,
-          args: [
-            '--no-first-run',
-            '--no-default-browser-check',
-            '--disable-blink-features=AutomationControlled',
-          ],
-        });
+    try {
+      const context = await chromium.launchPersistentContext(userDataDir, {
+        headless,
+        executablePath,
+        args: [
+          '--no-first-run',
+          '--no-default-browser-check',
+          '--disable-blink-features=AutomationControlled',
+        ],
+      });
+      if (hasAuth) {
         try {
           await context.addCookies(cookies as never);
         } catch (e) {
           console.warn('[browser] addCookies failed:', e);
         }
-        console.log('[browser] Started headless with saved session (%d cookies)', cookies.length);
-        return context.browser() ?? (this.wrapContext(context) as unknown as Browser);
-      } catch (error) {
-        console.warn('[browser] cookie-session launch failed:', error);
       }
+      console.log('[browser] Started headless on profile snapshot');
+      return context.browser() ?? (this.wrapContext(context) as unknown as Browser);
+    } catch (error) {
+      console.warn('[browser] profile launch failed:', error);
     }
 
-    // 3) Isolated headless browser (no visible window).
+    // 3) Isolated headless (no login).
     console.warn('[browser] Launching isolated headless Chrome');
     return await chromium.launch({
       headless: true,
@@ -422,26 +433,12 @@ export class PlaywrightProvider implements Provider {
       const isGoogle = /google|gemini/i.test(this.id) || /google|gemini/i.test(this.adapter.siteUrl);
       if (isGoogle) {
         const cookiesOk = hasGoogleSessionCookies();
-        // User Chrome via CDP is also a valid "signed in" path.
-        let cdpOk = false;
-        try {
-          const res = await fetch('http://127.0.0.1:9222/json', { signal: AbortSignal.timeout(400) });
-          if (res.ok) {
-            const list = (await res.json()) as Array<{ url?: string }>;
-            cdpOk = list.some((t) =>
-              /myaccount\.google\.com|gemini\.google\.com|mail\.google\.com|google\.com\/search/i.test(
-                t.url || ''
-              )
-            );
-          }
-        } catch {
-          cdpOk = false;
-        }
-        if (!cookiesOk && !cdpOk && this._status !== 'connected') {
+        const chromeOk = chromeLooksSignedIn();
+        if (!cookiesOk && !chromeOk && this._status !== 'connected') {
           return {
             healthy: false,
-            error: 'Not signed in to Google — open Chrome / "Open site" first',
-            details: { status: this._status, needsAuth: true },
+            error: 'Not signed in to Google — open Chrome once (your profile) and press "Open site"',
+            details: { status: this._status, needsAuth: true, account: readChromeAccountHint() || undefined },
           };
         }
       }

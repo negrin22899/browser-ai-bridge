@@ -682,60 +682,46 @@ ipcMain.handle('check-chrome', async () => {
 
 ipcMain.handle('open-provider-signin', async (_e: any, url: string) => {
   try {
-    // Use the user's everyday Chrome profile (already signed into Google).
-    // We only enable CDP so Playwright can see that same browser — no
-    // OAuth popup, no "unknown app" warning from Google/Windows.
+    // NEVER kill / restart the user's Chrome — that closes their tabs.
+    // Just open a tab in the already-running, logged-in browser.
     const chrome = getChromeExecutablePath();
-    const userDataDir = getChromeUserDataDir();
     if (!fs.existsSync(chrome)) {
       await shell.openExternal(url);
       return { success: true, url, fallback: true };
     }
 
-    // If Chrome is already running, just open a tab in it (keep the login).
-    // Also start a CDP-enabled Chrome on the SAME profile when needed.
-    const target =
-      url.includes('accounts.google.com') || url.includes('myaccount.google.com')
-        ? url
-        : url;
+    // Opens a new tab in the existing Chrome window (tabs stay open).
+    const child = spawn(chrome, [`--new-tab`, url], {
+      detached: true,
+      stdio: 'ignore',
+      windowsHide: false,
+    });
+    child.unref();
 
+    // Snapshot cookie DB into our profile so Playwright can use the same
+    // login without attaching to (or restarting) the user's browser.
     try {
-      // Prefer opening a tab in the already-running, logged-in Chrome.
-      execSync(`"${chrome}" --new-window "${target}"`, { stdio: 'ignore', timeout: 3000 });
-    } catch {
-      // fall through to CDP launch
-    }
-
-    // Ensure a CDP endpoint exists on the real profile (restart once if not).
-    try {
-      const probe = await fetch('http://127.0.0.1:9222/json/version', {
-        signal: AbortSignal.timeout(400),
-      });
-      if (!probe.ok) throw new Error('no cdp');
-    } catch {
-      // Chrome is running without CDP — relaunch the same profile with it.
-      try {
-        execSync('taskkill /IM chrome.exe /F', { stdio: 'ignore' });
-      } catch {
-        // ignore
-      }
-      await new Promise((r) => setTimeout(r, 800));
-      const child = spawn(
-        chrome,
-        [
-          `--user-data-dir=${userDataDir}`,
-          '--remote-debugging-port=9222',
-          '--no-first-run',
-          '--no-default-browser-check',
-          '--restore-last-session',
-          target,
-        ],
-        { detached: true, stdio: 'ignore', windowsHide: false }
+      const { snapshotChromeCookies, chromeUserDataDir } = require(
+        (() => {
+          const cands = app.isPackaged
+            ? [
+                path.join(process.resourcesPath, 'packages', 'playwright-provider', 'dist', 'chrome-profile.js'),
+                path.join(process.resourcesPath, 'node_modules', '@bab', 'playwright-provider', 'dist', 'chrome-profile.js'),
+              ]
+            : [
+                path.join(__dirname, '..', '..', '..', 'packages', 'playwright-provider', 'dist', 'chrome-profile.js'),
+              ];
+          return cands.find((p) => fs.existsSync(p)) || cands[0];
+        })()
       );
-      child.unref();
+      const dest = getAppChromeProfileDir();
+      snapshotChromeCookies(dest);
+      void chromeUserDataDir;
+    } catch {
+      // snapshot is best-effort
     }
 
-    return { success: true, url: target, mode: 'user-chrome' };
+    return { success: true, url, mode: 'user-chrome-tab' };
   } catch (error: any) {
     return { success: false, error: error.message };
   }
@@ -743,50 +729,43 @@ ipcMain.handle('open-provider-signin', async (_e: any, url: string) => {
 
 ipcMain.handle('check-provider-status', async (_e: any, providerId: string) => {
   try {
-    // Ask Chrome (CDP on :9222) whether a Google session exists in the
-    // user's real profile — not a synthetic cookie jar.
-    let cookies: Array<{ name: string; domain?: string }> = [];
+    // Prefer real Chrome profile state (user is already logged in there).
     try {
-      const ver = await fetch('http://127.0.0.1:9222/json/version', {
-        signal: AbortSignal.timeout(600),
-      });
-      if (ver.ok) {
-        // Use /json to confirm CDP is up; cookie check via HTTP endpoint.
-        const targets = await fetch('http://127.0.0.1:9222/json', {
-          signal: AbortSignal.timeout(600),
-        });
-        if (targets.ok) {
-          // Heuristic: a tab on myaccount/gemini/google means logged-in Chrome.
-          const list = (await targets.json()) as Array<{ url?: string }>;
-          const loggedIn = list.some((t) =>
-            /myaccount\.google\.com|gemini\.google\.com|mail\.google\.com|google\.com\/search/i.test(
-              t.url || ''
-            )
-          );
-          return {
-            connected: loggedIn,
-            signedIn: loggedIn,
-            error: loggedIn ? undefined : 'Open Google in Chrome once (your profile) and try again',
-            providerId,
-            mode: 'user-chrome',
-          };
-        }
+      const cands = app.isPackaged
+        ? [
+            path.join(process.resourcesPath, 'packages', 'playwright-provider', 'dist', 'chrome-profile.js'),
+            path.join(process.resourcesPath, 'node_modules', '@bab', 'playwright-provider', 'dist', 'chrome-profile.js'),
+          ]
+        : [
+            path.join(__dirname, '..', '..', '..', 'packages', 'playwright-provider', 'dist', 'chrome-profile.js'),
+          ];
+      const modulePath = cands.find((p) => fs.existsSync(p));
+      if (modulePath) {
+        const { chromeLooksSignedIn, readChromeAccountHint } = require(modulePath);
+        const signedIn = chromeLooksSignedIn();
+        return {
+          connected: signedIn,
+          signedIn,
+          email: readChromeAccountHint() || undefined,
+          error: signedIn ? undefined : 'Open Chrome and sign in to Google once',
+          providerId,
+          mode: 'user-chrome',
+        };
       }
     } catch {
-      // CDP not available — fall through
+      // fall through
     }
 
-    // Fallback: saved cookie jar from a previous session.
-    cookies = loadAuthCookies() as Array<{ name: string; domain?: string }>;
+    const cookies = loadAuthCookies() as Array<{ name: string }>;
     const names = new Set(cookies.map((c) => c.name));
     const hasGoogleSession =
-      (names.has('SID') || names.has('__Secure-1PSID') || names.has('LSID') || names.has('SIDCC')) &&
+      (names.has('SID') || names.has('__Secure-1PSID') || names.has('LSID')) &&
       (names.has('HSID') || names.has('SSID') || names.has('__Secure-3PSID') || names.has('NID'));
 
     return {
       connected: hasGoogleSession,
       signedIn: hasGoogleSession,
-      error: hasGoogleSession ? undefined : 'Chrome CDP not running — press "Open site" once',
+      error: hasGoogleSession ? undefined : 'Sign in to Google in Chrome first',
       providerId,
     };
   } catch (error: any) {
