@@ -46,9 +46,11 @@ export default function Providers() {
     try {
       const h = await api.getHealth();
       setHealth(h.providers || {});
-      // Active provider is whichever backend reports (the CLI --site).
-      const activeCandidate = Object.keys(h.providers || {})[0] || null;
-      setActiveId(activeCandidate);
+      // Active = the provider that is actually healthy, not merely registered.
+      const providers = h.providers || {};
+      const healthyId =
+        Object.keys(providers).find((id) => providers[id]?.healthy) || null;
+      setActiveId(healthyId);
     } catch (err) {
       setError(humanizeError(err, language));
       setHealth({});
@@ -88,6 +90,24 @@ export default function Providers() {
     setSwitching(id);
     setError(null);
     try {
+      // Google providers need a real sign-in first — open the OAuth popup.
+      if (/google|gemini/i.test(id) && window.electronAPI?.checkProviderStatus) {
+        const st = await window.electronAPI.checkProviderStatus(id);
+        if (!st?.signedIn && !st?.connected) {
+          const row = CATALOG.find((c) => c.id === id);
+          if (row?.siteUrl && window.electronAPI?.openProviderSignin) {
+            await window.electronAPI.openProviderSignin(row.siteUrl);
+            setError(
+              language === 'ru'
+                ? 'Открылось окно входа Google. Войдите в аккаунт и нажмите «Make active» ещё раз.'
+                : 'Google sign-in window opened. Sign in, then press "Make active" again.',
+            );
+            setSwitching(null);
+            return;
+          }
+        }
+      }
+
       const result = await window.electronAPI.setActiveProvider(id);
       if (!result.success) throw new Error(result.error || 'Switch failed');
       // Poll /health until the new provider reports healthy (or 20s elapses).

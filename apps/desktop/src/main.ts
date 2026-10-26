@@ -485,6 +485,16 @@ async function startServer(port = 3000): Promise<{ success: boolean; error?: str
   if (state.serverRunning) return { success: true, port: state.port, site: state.site ?? undefined };
 
   try {
+    // Free port 3000 from a previous crashed server.
+    try {
+      execSync(
+        'for /f "tokens=5" %a in (\'netstat -ano ^| findstr ":3000" ^| findstr "LISTENING"\') do @taskkill /PID %a /F',
+        { stdio: 'ignore' }
+      );
+    } catch {
+      // nobody was listening
+    }
+
     const cliPath = getCliPath();
     if (!fs.existsSync(cliPath)) {
       const error = 'CLI entry not found. Please build the project first.';
@@ -499,7 +509,7 @@ async function startServer(port = 3000): Promise<{ success: boolean; error?: str
     const general = settings.general || {};
     const browserSettings = settings.browser || {};
     const chosenPort = port || general.serverPort || settings.serverPort || 3000;
-    const site = settings.provider || 'gemini';
+    const site = settings.provider || 'google-ai';
     // Automation browser is ALWAYS hidden — the user only wants the result,
     // not a Chrome window. Login happens in the compact OAuth popup.
     const headless = true;
@@ -531,7 +541,7 @@ async function startServer(port = 3000): Promise<{ success: boolean; error?: str
     state.port = chosenPort;
     state.site = site;
 
-    const READY_RE = /running at http:\/\/localhost:(\d+)/i;
+    const READY_RE = /running at http:\/\/(?:localhost|127\.0\.0\.1):(\d+)/i;
 
     serverProcess.stdout?.on('data', (data: Buffer) => {
       const text = data.toString();
@@ -968,21 +978,36 @@ ipcMain.handle('set-update-channel', async (_e: any, channel: string) => {
 
 // ─── App lifecycle ───────────────────────────────────────────────
 
-app.whenReady().then(async () => {
-  createWindow();
-  createTray();
-  registerHotkeys();
-  await setupAutoUpdater();
-
-  setTimeout(async () => {
-    try { await startServer(); } catch (err) { console.error('Failed to auto-start server:', err); }
-  }, 2000);
-
-  app.on('activate', () => {
-    if (BrowserWindow.getAllWindows().length === 0) createWindow();
-    else mainWindow?.show();
+// One app instance only — a second launch would double-spawn the server
+// and leave port 3000 in a half-dead state.
+const gotTheLock = app.requestSingleInstanceLock();
+if (!gotTheLock) {
+  app.quit();
+} else {
+  app.on('second-instance', () => {
+    if (mainWindow) {
+      if (mainWindow.isMinimized()) mainWindow.restore();
+      mainWindow.show();
+      mainWindow.focus();
+    }
   });
-});
+
+  app.whenReady().then(async () => {
+    createWindow();
+    createTray();
+    registerHotkeys();
+    await setupAutoUpdater();
+
+    setTimeout(async () => {
+      try { await startServer(); } catch (err) { console.error('Failed to auto-start server:', err); }
+    }, 2000);
+
+    app.on('activate', () => {
+      if (BrowserWindow.getAllWindows().length === 0) createWindow();
+      else mainWindow?.show();
+    });
+  });
+}
 
 app.on('window-all-closed', () => {
   // Stay in tray — don't quit

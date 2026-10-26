@@ -411,6 +411,17 @@ export class PlaywrightProvider implements Provider {
         };
       }
 
+      // Honest session check: Google providers need real SID/HSID cookies
+      // from the OAuth popup — an isolated headless Chrome is NOT "connected".
+      const isGoogle = /google|gemini/i.test(this.id) || /google|gemini/i.test(this.adapter.siteUrl);
+      if (isGoogle && !hasGoogleSessionCookies()) {
+        return {
+          healthy: false,
+          error: 'Not signed in to Google — use "Open site" and sign in',
+          details: { status: this._status, needsAuth: true },
+        };
+      }
+
       if (this._status === 'disconnected') {
         return {
           healthy: false,

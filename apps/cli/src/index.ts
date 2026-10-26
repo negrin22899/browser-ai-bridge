@@ -305,10 +305,11 @@ program
         await provider.connect();
         logger.info('Connected to browser AI');
       } catch (error) {
-        logger.error('Failed to connect:', {
+        logger.error('Failed to connect (API will still start in degraded mode):', {
           error: error instanceof Error ? error.message : String(error),
         });
-        process.exit(1);
+        // Do NOT exit — the HTTP API must stay up so the dashboard can talk
+        // to us and the user can retry sign-in / switch provider.
       }
     }
 
