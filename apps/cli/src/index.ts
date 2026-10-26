@@ -192,7 +192,7 @@ program
   .command('serve')
   .description('Start the API server')
   .option('-p, --port <port>', 'Port to listen on', '3000')
-  .option('-h, --host <host>', 'Host to bind to', 'localhost')
+  .option('-h, --host <host>', 'Host to bind to', '127.0.0.1')
   .option('--site <url>', 'AI site URL or provider name (google-ai, gemini, chatgpt, claude, deepseek)')
   .option('--headless', 'Run browser in headless mode (no visible window)', true)
   .option('--no-headless', 'Show browser window')
@@ -365,8 +365,9 @@ program
     const app = createServer({ providerManager, sessionManager, logger, promptEngine, runtime, eventBus, teamAuth, responseCache });
     const port = parseInt(options.port);
 
-    serve({ fetch: app.fetch, port, hostname: options.host }, (info) => {
-      logger.info(`Browser AI Bridge running at http://${options.host}:${info.port}`);
+    serve({ fetch: app.fetch, port, hostname: options.host || '127.0.0.1' }, (info) => {
+      const host = options.host || '127.0.0.1';
+      logger.info(`Browser AI Bridge running at http://${host}:${info.port}`);
       logger.info('Endpoints:');
       logger.info('  POST /v1/chat/completions - Chat completions');
       logger.info('  POST /v1/responses - Responses API');

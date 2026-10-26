@@ -115,18 +115,25 @@ export class PlaywrightProvider implements Provider {
       );
     }
 
-    const cookies = toPlaywrightCookies(loadAuthCookies());
-    const hasAuth = cookies.length > 0 && hasGoogleSessionCookies();
-
-    // Always hide the automation browser — login is done in the OAuth popup.
-    // (this.headless / this.useExistingProfile / this.cdpPort stay available
-    // for future non-default flows; the product default is fully background.)
     void this.headless;
     void this.useExistingProfile;
     void this.cdpPort;
+
+    // 1) Preferred: the user's everyday Chrome (already logged into Google).
+    //    Started with --remote-debugging-port=9222 by "Open site".
+    try {
+      const browser = await chromium.connectOverCDP('http://127.0.0.1:9222');
+      console.log('[browser] Attached to user Chrome (logged-in profile)');
+      return browser;
+    } catch {
+      // not running with CDP
+    }
+
+    const cookies = toPlaywrightCookies(loadAuthCookies());
+    const hasAuth = cookies.length > 0 && hasGoogleSessionCookies();
     const headless = true;
 
-    // 1) Fast path: headless browser + cookies from the OAuth popup.
+    // 2) Headless + cookies from a previous session.
     if (hasAuth) {
       try {
         const context = await chromium.launchPersistentContext(userDataDir, {
@@ -143,14 +150,14 @@ export class PlaywrightProvider implements Provider {
         } catch (e) {
           console.warn('[browser] addCookies failed:', e);
         }
-        console.log('[browser] Started headless with saved Google session (%d cookies)', cookies.length);
+        console.log('[browser] Started headless with saved session (%d cookies)', cookies.length);
         return context.browser() ?? (this.wrapContext(context) as unknown as Browser);
       } catch (error) {
         console.warn('[browser] cookie-session launch failed:', error);
       }
     }
 
-    // 2) Isolated headless browser (no visible window).
+    // 3) Isolated headless browser (no visible window).
     console.warn('[browser] Launching isolated headless Chrome');
     return await chromium.launch({
       headless: true,
@@ -411,15 +418,32 @@ export class PlaywrightProvider implements Provider {
         };
       }
 
-      // Honest session check: Google providers need real SID/HSID cookies
-      // from the OAuth popup — an isolated headless Chrome is NOT "connected".
+      // Honest session check for Google providers.
       const isGoogle = /google|gemini/i.test(this.id) || /google|gemini/i.test(this.adapter.siteUrl);
-      if (isGoogle && !hasGoogleSessionCookies()) {
-        return {
-          healthy: false,
-          error: 'Not signed in to Google — use "Open site" and sign in',
-          details: { status: this._status, needsAuth: true },
-        };
+      if (isGoogle) {
+        const cookiesOk = hasGoogleSessionCookies();
+        // User Chrome via CDP is also a valid "signed in" path.
+        let cdpOk = false;
+        try {
+          const res = await fetch('http://127.0.0.1:9222/json', { signal: AbortSignal.timeout(400) });
+          if (res.ok) {
+            const list = (await res.json()) as Array<{ url?: string }>;
+            cdpOk = list.some((t) =>
+              /myaccount\.google\.com|gemini\.google\.com|mail\.google\.com|google\.com\/search/i.test(
+                t.url || ''
+              )
+            );
+          }
+        } catch {
+          cdpOk = false;
+        }
+        if (!cookiesOk && !cdpOk && this._status !== 'connected') {
+          return {
+            healthy: false,
+            error: 'Not signed in to Google — open Chrome / "Open site" first',
+            details: { status: this._status, needsAuth: true },
+          };
+        }
       }
 
       if (this._status === 'disconnected') {

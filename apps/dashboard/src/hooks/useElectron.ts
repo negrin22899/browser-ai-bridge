@@ -80,15 +80,36 @@ export function useElectron() {
     // Get initial status
     api.getStatus().then((status) => {
       setServerRunning(status.serverRunning);
-      if (status.port) setServerPort(status.port);
+      if (status.port) {
+        setServerPort(status.port);
+        (window as any).__babPort = status.port;
+      }
       setIsReady(true);
     });
 
     // Listen for server status changes
     api.onServerStatus((status) => {
       setServerRunning(status.running);
-      if (status.port) setServerPort(status.port);
+      if (status.port) {
+        setServerPort(status.port);
+        (window as any).__babPort = status.port;
+      }
     });
+
+    // Poll /health — IPC state can lag behind reality (IPv6 bind, restarts).
+    const poll = async () => {
+      try {
+        const port = (window as any).__babPort || 3000;
+        const res = await fetch(`http://127.0.0.1:${port}/health`, {
+          signal: AbortSignal.timeout(800),
+        });
+        if (res.ok) setServerRunning(true);
+      } catch {
+        // leave last known state
+      }
+    };
+    const pollTimer = setInterval(poll, 5000);
+    poll();
 
     // Listen for window maximize state
     api.onWindowMaximized((maximized) => {
@@ -101,6 +122,7 @@ export function useElectron() {
     });
 
     return () => {
+      clearInterval(pollTimer);
       api.removeAllListeners('server-status');
       api.removeAllListeners('window-maximized');
       api.removeAllListeners('update-status');
